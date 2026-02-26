@@ -34,6 +34,9 @@ from .model_form.mfe import run_model_form_audit
 from .model_form.splits import generate_cv_splits
 from .model_form.forward import run_forward_checks
 from .model_form.pack import build_consistency_triangle_pack
+from .replay.replayer import replay_run
+from .replay.nondeterminism import nondeterminism_check
+from .forensics.compare import forensic_compare
 
 
 
@@ -136,6 +139,20 @@ def main(argv=None) -> int:
 
     cp = sub.add_parser("consistency-pack", help="Build Consistency Triangle reviewer pack (robustness + physics + model-form)")
     cp.add_argument("--run", type=str, required=True, help="Run directory, e.g. runs/shot_30201")
+
+
+    rr = sub.add_parser("replay-run", help="Verify run/pack artifacts against their declared hashes (v8)")
+    rr.add_argument("--target", type=str, required=True, help="Run directory or exported pack directory")
+    rr.add_argument("--mode", type=str, default="strict", choices=["strict","relaxed"], help="Env closure mode")
+
+    fp = sub.add_parser("forensic-compare", help="Forensic compare two runs/packs (v8)")
+    fp.add_argument("--A", type=str, required=True, help="Run or pack path A")
+    fp.add_argument("--B", type=str, required=True, help="Run or pack path B")
+    fp.add_argument("--out", type=str, default=None, help="Optional output directory (default ./forensics)")
+
+    nd = sub.add_parser("nondeterminism-check", help="Check replay hashing stability N times (v8)")
+    nd.add_argument("--target", type=str, required=True, help="Run directory or pack directory")
+    nd.add_argument("--n", type=int, default=3, help="Number of repeats (>=2)")
     rp.add_argument("--run", type=str, required=True, help="Run directory, e.g. runs/shot_30201")
     rp.add_argument("--out", type=str, default=None, help="Optional output directory (defaults to <run>/REVIEWER_PACK)")
 
@@ -504,6 +521,27 @@ def main(argv=None) -> int:
         pack = build_consistency_triangle_pack(run_dir)
         print(f"[OK] consistency triangle pack: {pack}")
         return 0
+
+
+    elif args.cmd == "replay-run":
+        target = Path(args.target).resolve()
+        rep = replay_run(target, mode=str(args.mode))
+        print(f"[OK] replay ok={rep.ok} missing={rep.n_missing} mismatch={rep.n_mismatch} env_match={rep.env_match}")
+        return 0 if rep.ok else 12
+
+    elif args.cmd == "forensic-compare":
+        A = Path(args.A).resolve()
+        B = Path(args.B).resolve()
+        out = Path(args.out).resolve() if args.out is not None else (Path.cwd() / "forensics")
+        delta = forensic_compare(A, B, out_dir=out)
+        print(f"[OK] forensic ok={delta.ok} divergence_class={delta.divergence_class} out={out}")
+        return 0 if delta.ok else 13
+
+    elif args.cmd == "nondeterminism-check":
+        target = Path(args.target).resolve()
+        rep = nondeterminism_check(target, n=int(args.n))
+        print(f"[OK] nondeterminism ok={rep.ok} hashes={rep.run_hashes}")
+        return 0 if rep.ok else 14
 
     if args.cmd == "run":
         # CLI overrides (kept deterministic and explicit): these override config for this invocation only.

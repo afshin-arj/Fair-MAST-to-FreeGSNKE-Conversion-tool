@@ -361,3 +361,9 @@ These commands provide deterministic cross-shot aggregation and A/B certified de
 - Model-form tiering (MFE-GREEN/YELLOW/RED)
 - Consistency Triangle reviewer pack (robustness + physics + model-form)
 - Atlas/comparator/regression-guard extensions for MFE
+
+
+## v8.0.0 — Truth-by-Replay Authority
+- replay-run: verifies artifacts vs declared hashes (strict/relaxed env closure)
+- forensic-compare: deterministic divergence attribution + first-difference
+- nondeterminism-check: replay hashing stability sentinel
