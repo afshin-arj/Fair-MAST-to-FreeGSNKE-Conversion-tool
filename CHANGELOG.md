@@ -9,6 +9,10 @@
 - Embedded the authority bundle into `inverse_dump.pkl` for forward replay integrity.
 - Updated generated `HOW_TO_RUN.txt` to require reviewing the authority bundle.
 
+## v9.0.1 — One-command bootstrap launchers (2026-02-26)
+- Added `run_pipeline.cmd` and `run_pipeline.sh` launchers that create/verify `.venv`, install dependencies, prompt for a shot number, and run the pipeline interactively.
+- Updated `README.md` and `HOW_TO_RUN.txt` to document the launchers.
+
 ## v4.1.0 (2026-02-19)
 - Added phase-consistency authority and scorecard outputs
 - Added sensitivity attribution ledger and dominant failure modes report

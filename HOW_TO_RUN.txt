@@ -1,6 +1,15 @@
 HOW TO RUN (Top-level)
 ======================
 
+Quickest start (interactive launcher)
+-----------------------------------
+
+Windows:
+  run_pipeline.cmd
+
+Linux/macOS:
+  ./run_pipeline.sh
+
 pip install -e .
 pip install -e ".[zarr]"   # optional, enables extraction
 

@@ -90,6 +90,26 @@ pytest -q
 
 ## 5. Quick Start (5-minute workflow)
 
+### 5.0 One-command interactive launcher (recommended)
+
+For a first run, use the interactive launcher. It will:
+
+- create/activate a local `.venv`
+- install this repo in editable mode (with `zarr,dev` extras)
+- ask for a shot number and run options
+
+Windows:
+
+```cmd
+run_pipeline.cmd
+```
+
+Linux/macOS:
+
+```bash
+./run_pipeline.sh
+```
+
 1) Validate FAIR-MAST groups for a shot:
 
 ```bash
