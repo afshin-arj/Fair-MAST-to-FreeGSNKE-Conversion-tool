@@ -107,6 +107,7 @@ Outputs land in:
 ```
 runs/shot_30201/
   inputs/
+    execution_authority/
   contracts/
   synthetic/
   metrics/
@@ -114,6 +115,15 @@ runs/shot_30201/
   inverse_run.py
   forward_run.py
   manifest.json
+
+The run folder is **execution-authoritative**: numerical settings (grid, profile knobs, boundary constraints, solver tolerances)
+are declared explicitly in:
+
+```
+runs/shot_<N>/inputs/execution_authority/execution_authority_bundle.json
+```
+
+Generated `inverse_run.py` / `forward_run.py` fail-fast if this bundle is missing.
 ```
 
 ---

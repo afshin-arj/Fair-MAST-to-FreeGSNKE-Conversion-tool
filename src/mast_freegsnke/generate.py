@@ -51,6 +51,10 @@ class ScriptGenerator:
             "     mast-freegsnke check --shot <SHOT> --config <CFG>\n\n"
             "1) Review inferred formed-plasma time window:\n"
             "     cat inputs/window.json\n\n"
+
+            "1.5) Review execution-state authority (NO hidden defaults):\n"
+            "     cat inputs/execution_authority/execution_authority_bundle.json\n"
+            "   Edit it if you want to change grid, profiles, boundary constraints, or solver tolerances.\n\n"
             "2) Map PF currents (recommended):\n"
             "     python map_pf_currents.py\n"
             "   Edit pf_map_rules.json if mapping is wrong.\n\n"

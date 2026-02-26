@@ -27,6 +27,7 @@ from .diagnostic_contracts import load_contracts, validate_contracts, write_reso
 from .coil_map import load_coil_map, validate_coil_map, write_resolved_coil_map
 from .synthetic_extract import extract_synthetic_by_contracts
 from .metrics import compare_from_contracts
+from .execution_authority import write_execution_authority
 
 
 @dataclass
@@ -176,6 +177,15 @@ class ShotPipeline:
             gen = ScriptGenerator(templates_dir=self.templates_dir)
             gen.generate(run_dir=run_dir, machine_dir=machine_dir, formed_frac=self.cfg.formed_plasma_frac)
             _stage("generate_scripts", True)
+
+            # Execution-state authority (v9): eliminate hidden defaults in generated scripts
+            # by exporting an explicit authority bundle under inputs/execution_authority/.
+            try:
+                ea_root = write_execution_authority(inputs_dir)
+                _stage("execution_authority", True, root=str(ea_root))
+            except Exception as e:
+                _stage("execution_authority", False, error=str(e))
+                blocking_errors.append(f"execution_authority_write_failed:{e}")
 
             # Time window: override > consensus > single-signal inference
             window_override: Optional[Dict[str, Any]] = None

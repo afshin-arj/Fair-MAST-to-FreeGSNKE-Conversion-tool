@@ -4,6 +4,7 @@
 # Author: © 2026 Afshin Arjhangmehr
 
 from pathlib import Path
+import json
 import pickle
 import numpy as np
 import matplotlib.pyplot as plt
@@ -18,6 +19,16 @@ MACHINE = Path({machine_dir!r})
 DUMP = HERE / "inverse_dump.pkl"
 ACTIVE_CIRCUITS = ["P2_inner","P2_outer","P3","P4","P5","P6","Solenoid"]
 
+
+def _load_execution_authority_bundle_fallback() -> dict:
+    bp = HERE / "inputs" / "execution_authority" / "execution_authority_bundle.json"
+    if not bp.exists():
+        raise FileNotFoundError("Missing execution authority bundle (fallback): " + str(bp))
+    obj = json.loads(bp.read_text())
+    if not isinstance(obj, dict):
+        raise ValueError("Execution authority bundle must be a JSON object")
+    return obj
+
 def set_active_currents(tokamak, dump):
     cur = dump.get("coil_currents", {})
     for cname, coil in getattr(tokamak, "coils", []):
@@ -27,6 +38,12 @@ def set_active_currents(tokamak, dump):
 def main():
     with open(DUMP, "rb") as f:
         dump = pickle.load(f)
+
+    ea = dump.get("execution_authority_bundle")
+    if ea is None:
+        ea = _load_execution_authority_bundle_fallback()
+    grid = ea["grid"]
+    solv = ea["solver"]
 
     tokamak = build_machine.tokamak(
         active_coils_path=str(MACHINE / "active_coils.pickle"),
@@ -38,9 +55,9 @@ def main():
 
     eq = equilibrium_update.Equilibrium(
         tokamak=tokamak,
-        Rmin=0.1, Rmax=2.0,
-        Zmin=-2.2, Zmax=2.2,
-        nx=65, ny=129,
+        Rmin=float(grid["Rmin"]), Rmax=float(grid["Rmax"]),
+        Zmin=float(grid["Zmin"]), Zmax=float(grid["Zmax"]),
+        nx=int(grid["nx"]), ny=int(grid["ny"]),
     )
 
     pk = dump["profile_kwargs"]
@@ -54,7 +71,13 @@ def main():
     )
 
     solver = GSstaticsolver.NKGSsolver(eq)
-    solver.solve(eq=eq, profiles=profiles, constrain=None, target_relative_tolerance=1e-6, verbose=True)
+    solver.solve(
+        eq=eq,
+        profiles=profiles,
+        constrain=None,
+        target_relative_tolerance=float(solv["forward_target_relative_tolerance"]),
+        verbose=True,
+    )
 
     fig, ax = plt.subplots(1,1, figsize=(6,10), dpi=140)
     tokamak.plot(axis=ax, show=False)

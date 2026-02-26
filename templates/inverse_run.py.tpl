@@ -44,6 +44,23 @@ def _load_window():
 _tw = _load_window()
 T_WINDOW = _tw
 
+
+def _load_execution_authority_bundle() -> dict:
+    """Load inputs/execution_authority/execution_authority_bundle.json.
+
+    Fail-fast: this run is execution-authoritative; no hidden defaults.
+    """
+    bp = Path(__file__).resolve().parent / "inputs" / "execution_authority" / "execution_authority_bundle.json"
+    if not bp.exists():
+        raise FileNotFoundError("Missing execution authority bundle: " + str(bp))
+    obj = json.loads(bp.read_text())
+    if not isinstance(obj, dict):
+        raise ValueError("Execution authority bundle must be a JSON object")
+    for k in ["grid", "profile", "boundary", "solver"]:
+        if k not in obj:
+            raise KeyError("Execution authority bundle missing key: " + str(k))
+    return obj
+
 #!/usr/bin/env python3
 # Generated FreeGSNKE diverted inverse solve (shape/topology first)
 #
@@ -107,6 +124,12 @@ def get_control_coil_names(tokamak):
     return names
 
 def main():
+    ea = _load_execution_authority_bundle()
+    grid = ea["grid"]
+    prof = ea["profile"]
+    bnd = ea["boundary"]
+    solv = ea["solver"]
+
     ip_df = pd.read_csv(INPUTS / "ip.csv")
     t0, ip0, ip_max = choose_formed_plasma_time(ip_df, frac={formed_frac})
     print(f"Selected formed-plasma time t0={{t0:.6f}} s  Ip={{ip0/1e6:.3f}} MA")
@@ -131,42 +154,41 @@ def main():
 
     eq = equilibrium_update.Equilibrium(
         tokamak=tokamak,
-        Rmin=0.1, Rmax=2.0,
-        Zmin=-2.2, Zmax=2.2,
-        nx=65, ny=129,
+        Rmin=float(grid["Rmin"]), Rmax=float(grid["Rmax"]),
+        Zmin=float(grid["Zmin"]), Zmax=float(grid["Zmax"]),
+        nx=int(grid["nx"]), ny=int(grid["ny"]),
     )
 
     profiles = ConstrainPaxisIp(
         eq=eq,
-        paxis=8e3,
+        paxis=float(prof["paxis_Pa"]),
         Ip=ip0,
-        fvac=0.5,
-        alpha_m=1.8,
-        alpha_n=1.2,
+        fvac=float(prof["fvac"]),
+        alpha_m=float(prof["alpha_m"]),
+        alpha_n=float(prof["alpha_n"]),
     )
 
-    Rx, Zx = 1.45, -1.60
-    Ro, Zo = 0.90, 0.00
-    null_points = [[Rx, Ro], [Zx, Zo]]
-    isoflux_set = np.array([[
-        [Rx, 0.60, 1.40, 1.25, 1.45, 1.65],
-        [Zx, 0.00, 0.00, -1.45, -1.62, -1.45],
-    ]], dtype=float)
-
+    # Boundary / inverse constraints (execution-authority controlled)
+    null_points = bnd["null_points"]
+    isoflux_set = np.array(bnd["isoflux_set"], dtype=float)
     constrain = Inverse_optimizer(null_points=null_points, isoflux_set=isoflux_set)
 
     solver = GSstaticsolver.NKGSsolver(eq)
     control_names = get_control_coil_names(eq.tokamak)
-    l2_reg = np.array([1e-8]*len(control_names), dtype=float)
-    if "P6" in control_names:
-        l2_reg[control_names.index("P6")] = 1e-5
+    l2 = solv.get("l2_reg", {})
+    l2_default = float(l2.get("default", 0.0))
+    l2_over = dict(l2.get("per_coil_override", {}))
+    l2_reg = np.array([l2_default]*len(control_names), dtype=float)
+    for cname, val in l2_over.items():
+        if cname in control_names:
+            l2_reg[control_names.index(cname)] = float(val)
 
     solver.solve(
         eq=eq,
         profiles=profiles,
         constrain=constrain,
-        target_relative_tolerance=1e-3,
-        target_relative_psit_update=1e-3,
+        target_relative_tolerance=float(solv["inverse_target_relative_tolerance"]),
+        target_relative_psit_update=float(solv["inverse_target_relative_psit_update"]),
         verbose=True,
         l2_reg=l2_reg,
     )
@@ -176,6 +198,7 @@ def main():
     fvac_val = profiles.fvac() if callable(getattr(profiles, "fvac", None)) else float(profiles.fvac)
     coil_currents = {cname: float(coil.current) for cname, coil in getattr(eq.tokamak, "coils", []) if hasattr(coil, "current")}
     dump = dict(
+        execution_authority_bundle=ea,
         pn=pn,
         pprime=np.array([profiles.pprime(x) for x in pn], dtype=float),
         ffprime=np.array([profiles.ffprime(x) for x in pn], dtype=float),
@@ -194,8 +217,14 @@ def main():
     fig, ax = plt.subplots(1,1, figsize=(6,10), dpi=140)
     tokamak.plot(axis=ax, show=False)
     eq.plot(axis=ax, show=False)
-    ax.plot(Rx, Zx, "rx", ms=10, label="X target")
-    ax.plot(Ro, Zo, "bo", ms=6, label="O target")
+    # Plot primary null-point targets if available
+    try:
+        Rx, Ro = float(null_points[0][0]), float(null_points[0][1])
+        Zx, Zo = float(null_points[1][0]), float(null_points[1][1])
+        ax.plot(Rx, Zx, "rx", ms=10, label="X target")
+        ax.plot(Ro, Zo, "bo", ms=6, label="O target")
+    except Exception:
+        pass
     ax.set_aspect("equal"); ax.grid(alpha=0.3)
     ax.legend(loc="best")
     fig.tight_layout()

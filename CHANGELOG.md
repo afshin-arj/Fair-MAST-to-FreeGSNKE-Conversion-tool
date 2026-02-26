@@ -3,6 +3,12 @@
 
 # Changelog
 
+## v9.0.0 — FreeGSNKE Execution-State Authority (2026-02-26)
+- Added execution authority bundle exported to `inputs/execution_authority/` for every run.
+- Eliminated hidden defaults in generated `inverse_run.py` / `forward_run.py` by sourcing grid/profile/boundary/solver settings from the bundle.
+- Embedded the authority bundle into `inverse_dump.pkl` for forward replay integrity.
+- Updated generated `HOW_TO_RUN.txt` to require reviewing the authority bundle.
+
 ## v4.1.0 (2026-02-19)
 - Added phase-consistency authority and scorecard outputs
 - Added sensitivity attribution ledger and dominant failure modes report
