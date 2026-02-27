@@ -3,7 +3,7 @@
 This module makes the *entire* numerical execution state explicit and hash-lockable,
 eliminating hidden defaults inside generated FreeGSNKE driver scripts.
 
-Authority scope (v9.0.0):
+Authority scope (v10.0.0):
   - Grid/resolution spec
   - Profile parameterization spec (ConstrainPaxisIp)
   - Boundary / inverse-constraint spec
@@ -77,6 +77,32 @@ class ConstrainPaxisIpSpec:
 
 
 @dataclass(frozen=True)
+class ProfileBasisSpec:
+    """Govern the functional basis used for profile representation.
+
+    FreeGSNKE's ConstrainPaxisIp parameterization has an *implicit* basis inside
+    FreeGSNKE; this authority object exists to prevent silent changes in that
+    implicit representation from going unnoticed.
+
+    This is intentionally descriptive rather than prescriptive until additional
+    basis options are wired.
+    """
+
+    basis_type: str = "ConstrainPaxisIp"
+    knot_policy: str = "implicit"
+    interpolation_order: int = 3
+    regularization: str = "none"
+    notes: str = ""
+
+    def validate(self) -> None:
+        _require(isinstance(self.basis_type, str) and self.basis_type.strip(), "ProfileBasisSpec: basis_type required")
+        _require(isinstance(self.knot_policy, str) and self.knot_policy.strip(), "ProfileBasisSpec: knot_policy required")
+        _require(isinstance(self.interpolation_order, int) and self.interpolation_order >= 1, "ProfileBasisSpec: interpolation_order must be int >= 1")
+        _require(isinstance(self.regularization, str), "ProfileBasisSpec: regularization must be str")
+        _require(isinstance(self.notes, str), "ProfileBasisSpec: notes must be str")
+
+
+@dataclass(frozen=True)
 class BoundarySpec:
     """Inverse-shape constraints for freegsnke.inverse.Inverse_optimizer."""
 
@@ -147,6 +173,7 @@ class ExecutionAuthorityBundle:
     authority_version: str
     grid: GridSpec
     profile: ConstrainPaxisIpSpec
+    profile_basis: ProfileBasisSpec
     boundary: BoundarySpec
     solver: SolverSpec
     passive_structure: PassiveStructureSpec
@@ -156,6 +183,7 @@ class ExecutionAuthorityBundle:
         _require(isinstance(self.authority_version, str) and self.authority_version.strip(), "Bundle: authority_version required")
         self.grid.validate()
         self.profile.validate()
+        self.profile_basis.validate()
         self.boundary.validate()
         self.solver.validate()
         self.passive_structure.validate()
@@ -171,6 +199,14 @@ def default_execution_authority_bundle() -> ExecutionAuthorityBundle:
     grid = GridSpec(Rmin=0.1, Rmax=2.0, Zmin=-2.2, Zmax=2.2, nx=65, ny=129)
 
     profile = ConstrainPaxisIpSpec(paxis_Pa=8e3, fvac=0.5, alpha_m=1.8, alpha_n=1.2)
+
+    profile_basis = ProfileBasisSpec(
+        basis_type="ConstrainPaxisIp",
+        knot_policy="implicit",
+        interpolation_order=3,
+        regularization="none",
+        notes="FreeGSNKE ConstrainPaxisIp basis is implicit; this authority prevents silent changes.",
+    )
 
     boundary = BoundarySpec(
         null_points=[[1.45, 0.90], [-1.60, 0.00]],
@@ -191,9 +227,10 @@ def default_execution_authority_bundle() -> ExecutionAuthorityBundle:
 
     return ExecutionAuthorityBundle(
         authority_name="freegsnke_execution_authority",
-        authority_version="9.0.0",
+        authority_version="10.0.0",
         grid=grid,
         profile=profile,
+        profile_basis=profile_basis,
         boundary=boundary,
         solver=solver,
         passive_structure=PassiveStructureSpec(),
@@ -224,6 +261,7 @@ def write_execution_authority(inputs_dir: Path) -> Path:
     (root / "execution_authority_bundle.json").write_text(json.dumps(bundle.to_json_dict(), indent=2) + "\n")
     (root / "grid_spec.json").write_text(json.dumps(asdict(bundle.grid), indent=2) + "\n")
     (root / "profile_spec.json").write_text(json.dumps(asdict(bundle.profile), indent=2) + "\n")
+    (root / "profile_basis_authority.json").write_text(json.dumps(asdict(bundle.profile_basis), indent=2) + "\n")
     (root / "boundary_spec.json").write_text(json.dumps(asdict(bundle.boundary), indent=2) + "\n")
     (root / "solver_spec.json").write_text(json.dumps(asdict(bundle.solver), indent=2) + "\n")
     (root / "passive_structure.json").write_text(json.dumps(asdict(bundle.passive_structure), indent=2) + "\n")
@@ -238,6 +276,7 @@ def load_execution_authority_bundle(bundle_path: Path) -> ExecutionAuthorityBund
 
     grid = GridSpec(**obj["grid"])
     profile = ConstrainPaxisIpSpec(**obj["profile"])
+    profile_basis = ProfileBasisSpec(**obj.get("profile_basis", {}))
     boundary = BoundarySpec(**obj["boundary"])
     l2_reg = L2RegSpec(**obj["solver"]["l2_reg"])
     solver = SolverSpec(
@@ -253,6 +292,7 @@ def load_execution_authority_bundle(bundle_path: Path) -> ExecutionAuthorityBund
         authority_version=str(obj.get("authority_version", "")),
         grid=grid,
         profile=profile,
+        profile_basis=profile_basis,
         boundary=boundary,
         solver=solver,
         passive_structure=passive,

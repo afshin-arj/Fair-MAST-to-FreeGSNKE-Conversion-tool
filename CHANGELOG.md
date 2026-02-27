@@ -1,3 +1,14 @@
+## v10.0.0 — FreeGSNKE Internal State Audit & Default-Elimination Authority
+
+## v10.0.1
+- Launcher logging: `run_pipeline.cmd` and `run_pipeline.sh` now tee full stdout/stderr to timestamped logs under `logs/` for easy issue reporting.
+- README updated with log-file locations and troubleshooting workflow.
+
+- Added default-detection sentinel report: `solver_introspection/DEFAULT_DETECTION_REPORT.json` (mismatch flagged where discoverable).
+- Added numerics trace evidence: `solver_introspection/numerics_trace.json` (best-effort convergence history extraction).
+- Hardened profile basis governance via `profile_basis_authority.json` and `profile_basis` section in execution authority bundle.
+- Updated FreeGSNKE script templates to write solver introspection artifacts automatically after inverse/forward runs.
+
 ## 5.0.0
 - Added cross-shot corpus indexing, atlas builder, certified atlas comparator, and deterministic regression guard.
 

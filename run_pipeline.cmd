@@ -6,11 +6,32 @@ REM MAST -> FreeGSNKE Pipeline launcher (Windows)
 REM - Creates/uses .venv
 REM - Installs/updates package + optional extras
 REM - Runs interactive shot workflow
+REM - Captures full log to logs\run_<timestamp>.log (tee to console via PowerShell)
 REM
 REM Author: © 2026 Afshin Arjhangmehr
 REM ---------------------------------------------------------------------------
 
 cd /d "%~dp0"
+
+REM If invoked internally, skip tee wrapper.
+if /i "%~1"=="__INTERNAL__" goto :MAIN
+
+REM Generate timestamp safely and tee output to log via PowerShell
+for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set "TS=%%i"
+set "LOG_DIR=%CD%\logs"
+set "LOG_FILE=%LOG_DIR%\run_%TS%.log"
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$log='%LOG_FILE%'; New-Item -ItemType Directory -Force -Path (Split-Path $log) | Out-Null; " ^
+  "Write-Host ('[INFO] Logging to: ' + $log); " ^
+  "cmd /c '\"%~f0\" __INTERNAL__' 2>&1 | Tee-Object -FilePath $log; exit $LASTEXITCODE"
+
+exit /b %ERRORLEVEL%
+
+:MAIN
+echo [INFO] Started: %DATE% %TIME%
+echo [INFO] PWD: %CD%
+echo [INFO] OS: %OS%
 
 where python >nul 2>nul
 if errorlevel 1 (
@@ -29,101 +50,87 @@ if not exist ".venv" (
 
 call ".venv\Scripts\activate.bat"
 if errorlevel 1 (
-  echo [FAIL] Could not activate .venv
+  echo [FAIL] Failed to activate virtual environment.
   exit /b 1
 )
 
-echo [INFO] Upgrading pip...
-python -m pip install --upgrade pip >nul
+echo [INFO] Python:
+python -V
+echo [INFO] Pip:
+python -m pip -V
+
+echo [INFO] Capturing pip freeze
+python -m pip freeze > "%LOG_DIR%\pip_freeze_%TS%.txt"
+echo [INFO] Wrote: %LOG_DIR%\pip_freeze_%TS%.txt
+
+
+echo [INFO] Upgrading pip/setuptools/wheel
+python -m pip install --upgrade pip setuptools wheel
 if errorlevel 1 (
   echo [FAIL] pip upgrade failed.
   exit /b 1
 )
 
-echo [INFO] Installing package (editable) with extras: zarr,dev
+echo [INFO] Installing repo (editable) with extras: [zarr,dev]
 python -m pip install -e ".[zarr,dev]"
 if errorlevel 1 (
   echo [FAIL] Package install failed.
   exit /b 1
 )
 
-set "DEFAULT_CONFIG=configs\config.example.json"
-set "DEFAULT_MACHINE=machine_configs\MAST"
-set "DEFAULT_CONTRACTS=configs\diagnostic_contracts.example.json"
-set "DEFAULT_COILMAP=configs\coil_map.example.json"
-
 echo.
-set /p CFG=Config path [!DEFAULT_CONFIG!]:
-if "!CFG!"=="" set "CFG=!DEFAULT_CONFIG!"
-
-echo.
-echo [STEP] Environment doctor
-python -m mast_freegsnke.cli doctor --config "!CFG!"
+echo ===========================================================================
+echo Interactive Run
+echo ===========================================================================
 echo.
 
-set /p SHOT=Shot number (e.g. 30201):
-if "!SHOT!"=="" (
+set "CONFIG_PATH="
+set /p CONFIG_PATH=Enter config path (default: configs/default.yaml): 
+if "%CONFIG_PATH%"=="" set "CONFIG_PATH=configs/default.yaml"
+
+set "SHOT="
+set /p SHOT=Enter MAST shot number (required): 
+if "%SHOT%"=="" (
   echo [FAIL] Shot number is required.
   exit /b 1
 )
 
-set /p MACH=Machine directory [!DEFAULT_MACHINE!]:
-if "!MACH!"=="" set "MACH=!DEFAULT_MACHINE!"
+set "MACHINE_DIR="
+set /p MACHINE_DIR=Enter machine authority dir (default: machine_authority): 
+if "%MACHINE_DIR%"=="" set "MACHINE_DIR=machine_authority"
 
-set /p TSTART=Window override tstart [s] (blank = auto):
-set /p TEND=Window override tend [s] (blank = auto):
+set "WINDOW_OVERRIDE="
+set /p WINDOW_OVERRIDE=Optional window override (blank for auto): 
 
-set /p EXE=Execute FreeGSNKE now? (y/N):
-if /I "!EXE!"=="y" (
-  set "EXEC_FLAG=--execute-freegsnke"
-  set /p MODE=FreeGSNKE mode [both|inverse|forward] (default both):
-  if "!MODE!"=="" set "MODE=both"
-  set "MODE_FLAG=--freegsnke-mode !MODE!"
-  set /p FGPY=Optional: path to FreeGSNKE python exe (blank = use config):
-  if not "!FGPY!"=="" (
-    set "FGPY_FLAG=--freegsnke-python \"!FGPY!\""
-  ) else (
-    set "FGPY_FLAG="
-  )
-) else (
-  set "EXEC_FLAG="
-  set "MODE_FLAG="
-  set "FGPY_FLAG="
+set "RUN_FREEGSNKE="
+set /p RUN_FREEGSNKE=Run FreeGSNKE execution now? (y/n, default y): 
+if "%RUN_FREEGSNKE%"=="" set "RUN_FREEGSNKE=y"
+
+set "RUN_METRICS="
+set /p RUN_METRICS=Compute contract residual metrics? (y/n, default y): 
+if "%RUN_METRICS%"=="" set "RUN_METRICS=y"
+
+set "ARGS=run --config ""%CONFIG_PATH%"" --shot %SHOT% --machine-authority ""%MACHINE_DIR%"""
+
+if not "%WINDOW_OVERRIDE%"=="" (
+  set "ARGS=%ARGS% --window-override ""%WINDOW_OVERRIDE%"""
 )
 
-set /p MET=Enable contract metrics? (y/N):
-if /I "!MET!"=="y" (
-  set "MET_FLAG=--enable-contract-metrics"
-  set /p CONTRACTS=Contracts JSON [!DEFAULT_CONTRACTS!]:
-  if "!CONTRACTS!"=="" set "CONTRACTS=!DEFAULT_CONTRACTS!"
-  set /p COILMAP=Coil-map JSON [!DEFAULT_COILMAP!]:
-  if "!COILMAP!"=="" set "COILMAP=!DEFAULT_COILMAP!"
-  set "CONTRACTS_FLAG=--contracts \"!CONTRACTS!\""
-  set "COILMAP_FLAG=--coil-map \"!COILMAP!\""
-) else (
-  set "MET_FLAG="
-  set "CONTRACTS_FLAG="
-  set "COILMAP_FLAG="
+if /i "%RUN_FREEGSNKE%"=="n" (
+  set "ARGS=%ARGS% --skip-freegsnke"
 )
 
-set "TSTART_FLAG="
-set "TEND_FLAG="
-if not "!TSTART!"=="" set "TSTART_FLAG=--tstart !TSTART!"
-if not "!TEND!"=="" set "TEND_FLAG=--tend !TEND!"
-
-echo.
-echo [RUN] mast-freegsnke run --shot !SHOT! --config "!CFG!" --machine "!MACH!" !TSTART_FLAG! !TEND_FLAG! !EXEC_FLAG! !MODE_FLAG! !FGPY_FLAG! !MET_FLAG! !CONTRACTS_FLAG! !COILMAP_FLAG!
-echo.
-
-python -m mast_freegsnke.cli run --shot !SHOT! --config "!CFG!" --machine "!MACH!" !TSTART_FLAG! !TEND_FLAG! !EXEC_FLAG! !MODE_FLAG! !FGPY_FLAG! !MET_FLAG! !CONTRACTS_FLAG! !COILMAP_FLAG!
-set ERR=%ERRORLEVEL%
-
-echo.
-if %ERR% NEQ 0 (
-  echo [FAIL] Pipeline exited with code %ERR%.
-  exit /b %ERR%
-) else (
-  echo [OK] Completed. See runs\shot_!SHOT!\
+if /i "%RUN_METRICS%"=="n" (
+  set "ARGS=%ARGS% --skip-metrics"
 )
 
-exit /b 0
+echo.
+echo [INFO] Running: mast-freegsnke %ARGS%
+echo.
+
+mast-freegsnke %ARGS%
+set "RC=%ERRORLEVEL%"
+
+echo.
+echo [INFO] Completed with exit code %RC%
+exit /b %RC%

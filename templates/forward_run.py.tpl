@@ -71,6 +71,14 @@ def main():
     )
 
     solver = GSstaticsolver.NKGSsolver(eq)
+
+    # --- v10.0.0: internal solver state introspection & default-detection sentinel ---
+    try:
+        from mast_freegsnke.solver_introspection import write_solver_introspection
+        _INTROSPECT_AVAILABLE = True
+    except Exception as _e:
+        print(f"[WARN] solver_introspection module not available: {_e}")
+        _INTROSPECT_AVAILABLE = False
     solver.solve(
         eq=eq,
         profiles=profiles,
@@ -91,6 +99,23 @@ def main():
     fig.tight_layout()
     fig.savefig(HERE/"forward_equilibrium.png", dpi=250, bbox_inches="tight")
     print("Saved forward_equilibrium.png")
+
+
+    if _INTROSPECT_AVAILABLE:
+        try:
+            write_solver_introspection(
+                HERE,
+                execution_authority_bundle=ea,
+                objects={
+                    "tokamak": tokamak,
+                    "eq": eq,
+                    "profiles": profiles,
+                    "solver": solver,
+                },
+            )
+            print("[OK] Wrote solver_introspection/")
+        except Exception as _e:
+            print(f"[WARN] solver introspection failed: {_e}")
 
 if __name__ == "__main__":
     main()

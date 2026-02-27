@@ -180,6 +180,22 @@ Execution logs are captured in:
 runs/shot_<N>/logs/
 ```
 
+Internal solver-state evidence is emitted after successful FreeGSNKE runs:
+
+```
+runs/shot_<N>/solver_introspection/
+  solver_state_snapshot.json
+  DEFAULT_DETECTION_REPORT.json
+  numerics_trace.json
+```
+
+The execution authority bundle now includes explicit profile basis governance:
+
+- `inputs/execution_authority/profile_basis_authority.json`
+- `execution_authority_bundle.json` → `profile_basis`
+
+This prevents silent changes to FreeGSNKE's implicit profile representation from going unnoticed.
+
 ---
 
 ## 7. Diagnostic Contracts Authority
@@ -397,3 +413,7 @@ These commands provide deterministic cross-shot aggregation and A/B certified de
 - replay-run: verifies artifacts vs declared hashes (strict/relaxed env closure)
 - forensic-compare: deterministic divergence attribution + first-difference
 - nondeterminism-check: replay hashing stability sentinel
+
+
+## Logs
+Each launcher writes a full console transcript to `logs/run_<timestamp>.log`.

@@ -56,7 +56,7 @@ def _load_execution_authority_bundle() -> dict:
     obj = json.loads(bp.read_text())
     if not isinstance(obj, dict):
         raise ValueError("Execution authority bundle must be a JSON object")
-    for k in ["grid", "profile", "boundary", "solver"]:
+    for k in ["grid", "profile", "profile_basis", "boundary", "solver"]:
         if k not in obj:
             raise KeyError("Execution authority bundle missing key: " + str(k))
     return obj
@@ -174,6 +174,14 @@ def main():
     constrain = Inverse_optimizer(null_points=null_points, isoflux_set=isoflux_set)
 
     solver = GSstaticsolver.NKGSsolver(eq)
+
+    # --- v10.0.0: internal solver state introspection & default-detection sentinel ---
+    try:
+        from mast_freegsnke.solver_introspection import write_solver_introspection
+        _INTROSPECT_AVAILABLE = True
+    except Exception as _e:
+        print(f"[WARN] solver_introspection module not available: {_e}")
+        _INTROSPECT_AVAILABLE = False
     control_names = get_control_coil_names(eq.tokamak)
     l2 = solv.get("l2_reg", {})
     l2_default = float(l2.get("default", 0.0))
@@ -193,6 +201,23 @@ def main():
         l2_reg=l2_reg,
     )
 
+
+    if _INTROSPECT_AVAILABLE:
+        try:
+            write_solver_introspection(
+                HERE,
+                execution_authority_bundle=ea,
+                objects={
+                    "tokamak": tokamak,
+                    "eq": eq,
+                    "profiles": profiles,
+                    "constrain": constrain,
+                    "solver": solver,
+                },
+            )
+            print("[OK] Wrote solver_introspection/")
+        except Exception as _e:
+            print(f"[WARN] solver introspection failed: {_e}")
     import pickle
     pn = np.linspace(0.0, 1.0, 401)
     fvac_val = profiles.fvac() if callable(getattr(profiles, "fvac", None)) else float(profiles.fvac)

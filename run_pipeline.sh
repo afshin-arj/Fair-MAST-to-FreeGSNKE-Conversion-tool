@@ -13,6 +13,20 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
+# Logging: capture full stdout/stderr to logs/run_<timestamp>.log while still echoing to console
+mkdir -p logs
+TS="$(date +%Y%m%d_%H%M%S)"
+LOG_FILE="logs/run_${TS}.log"
+exec > >(tee -a "$LOG_FILE") 2>&1
+echo "[INFO] Logging to: $LOG_FILE"
+echo "[INFO] Host: $(hostname 2>/dev/null || echo unknown)  OS: $(uname -a 2>/dev/null || echo unknown)"
+echo "[INFO] Started: $(date -Iseconds)"
+
+# Basic environment fingerprint (for support/debugging)
+echo "[ENV] Shell: $SHELL"
+echo "[ENV] PWD: $(pwd)"
+
+
 PY_BIN=""
 if command -v python3 >/dev/null 2>&1; then
   PY_BIN="python3"
@@ -30,8 +44,17 @@ fi
 
 source .venv/bin/activate
 
+echo "[INFO] Python:"
+python -V
+echo "[INFO] Pip:"
+python -m pip -V
+
+# Capture pip freeze for reproducibility
+python -m pip freeze > "logs/pip_freeze_${TS}.txt"
+echo "[INFO] Wrote: logs/pip_freeze_${TS}.txt"
+
 echo "[INFO] Upgrading pip..."
-python -m pip install --upgrade pip >/dev/null
+python -m pip install --upgrade pip
 
 echo "[INFO] Installing package (editable) with extras: zarr,dev"
 python -m pip install -e ".[zarr,dev]"
