@@ -65,7 +65,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     run_freegsnke = yn("Run FreeGSNKE execution now?", default="y")
     run_metrics = yn("Compute contract residual metrics?", default="y")
 
-    args = ["run", "--config", config_path, "--shot", str(shot), "--machine-authority", machine_dir]
+    args = ["run", "--config", config_path, "--shot", str(shot), "--machine", machine_dir]
     if window_override:
         args += ["--window-override", window_override]
     if run_freegsnke == "n":

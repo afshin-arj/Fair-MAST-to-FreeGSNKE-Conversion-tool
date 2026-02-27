@@ -1,5 +1,10 @@
 ## v10.0.0 — FreeGSNKE Internal State Audit & Default-Elimination Authority
 
+## 10.0.5
+
+- Fix Windows interactive runner: pass --machine (CLI contract) instead of --machine-authority.
+
+
 ## v10.0.1
 ## v10.0.2
 - Windows launcher: switched logging from `Tee-Object` piping to PowerShell `Start-Transcript` to preserve interactive stdin (prevents apparent “freeze” / premature exit on prompts).
@@ -95,4 +100,3 @@ All notable changes to this project are documented in this file.
 ## v10.0.3
 - Windows launcher: escaped parentheses in interactive prompts to avoid CMD parser errors like `. was unexpected at this time.` on some systems.
 - Windows launcher: quit (`q`) now exits with code 0 (clean exit).
-

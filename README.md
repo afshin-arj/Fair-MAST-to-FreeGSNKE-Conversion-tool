@@ -305,7 +305,7 @@ Minimum required files:
 Validate:
 
 ```bash
-mast-freegsnke machine-validate --machine-authority machine_authority/
+mast-freegsnke machine-validate --machine machine_authority/
 ```
 
 > Note: the shipped `machine_authority/` is a **template**. Populate it from an authoritative MAST/FreeGSNKE machine
