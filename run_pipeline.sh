@@ -73,11 +73,23 @@ echo "[STEP] Environment doctor"
 python -m mast_freegsnke.cli doctor --config "$CFG" || true
 
 echo
-read -r -p "Shot number (e.g. 30201): " SHOT
-if [[ -z "${SHOT}" ]]; then
-  echo "[FAIL] Shot number is required." >&2
-  exit 1
-fi
+while true; do
+  echo
+  read -r -p "Shot number (required, digits; 'q' to quit): " SHOT
+  if [[ "${SHOT,,}" == "q" ]]; then
+    echo "[INFO] User quit."
+    exit 2
+  fi
+  if [[ -z "${SHOT}" ]]; then
+    echo "[WARN] Shot number is required." >&2
+    continue
+  fi
+  if [[ ! "${SHOT}" =~ ^[0-9]+$ ]]; then
+    echo "[WARN] Shot must be digits only (e.g., 30201)." >&2
+    continue
+  fi
+  break
+done
 
 read -r -p "Machine directory [$DEFAULT_MACHINE]: " MACH
 MACH="${MACH:-$DEFAULT_MACHINE}"

@@ -1,6 +1,11 @@
 ## v10.0.0 — FreeGSNKE Internal State Audit & Default-Elimination Authority
 
 ## v10.0.1
+## v10.0.2
+- Windows launcher: switched logging from `Tee-Object` piping to PowerShell `Start-Transcript` to preserve interactive stdin (prevents apparent “freeze” / premature exit on prompts).
+- Launchers: required inputs (shot number) now reprompt until valid (digits only) or user quits (`q`).
+- Windows launcher: keeps the window open on error when launched by double-click (can disable via `RUN_PIPELINE_NO_PAUSE=1`).
+
 - Launcher logging: `run_pipeline.cmd` and `run_pipeline.sh` now tee full stdout/stderr to timestamped logs under `logs/` for easy issue reporting.
 - README updated with log-file locations and troubleshooting workflow.
 

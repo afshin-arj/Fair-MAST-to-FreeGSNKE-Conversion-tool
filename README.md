@@ -417,3 +417,13 @@ These commands provide deterministic cross-shot aggregation and A/B certified de
 
 ## Logs
 Each launcher writes a full console transcript to `logs/run_<timestamp>.log`.
+
+- Windows: logging uses PowerShell `Start-Transcript` (no piping), so interactive prompts reliably accept keyboard input.
+- Linux/macOS: stdout/stderr are mirrored to the log via `tee`.
+
+Each run also captures `logs/pip_freeze_<timestamp>.txt` for reproducibility.
+
+### Interactive prompts
+- Required fields (e.g. shot number) **reprompt until valid** (digits only) or you quit with `q`.
+- If you launch `run_pipeline.cmd` by double-click, the window will stay open on error so you can read the message.
+  - Set `RUN_PIPELINE_NO_PAUSE=1` to disable this behavior.
