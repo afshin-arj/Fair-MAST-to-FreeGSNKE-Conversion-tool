@@ -103,74 +103,9 @@ echo Interactive Run
 echo ===========================================================================
 echo.
 
-set "CONFIG_PATH="
-set /p CONFIG_PATH=Enter config path ^(default: configs/default.yaml^): 
-if "%CONFIG_PATH%"=="" set "CONFIG_PATH=configs/default.yaml"
-
-:ASK_SHOT
-set "SHOT="
-set /p SHOT=Enter MAST shot number (required, digits; 'q' to quit): 
-if /i "%SHOT%"=="q" (
-  echo [INFO] User quit.
-  exit /b 0
-)
-if "%SHOT%"=="" (
-  echo [WARN] Shot number is required.
-  goto :ASK_SHOT
-)
-echo %SHOT%| findstr /r "^[0-9][0-9]*$" >nul
-if errorlevel 1 (
-  echo [WARN] Shot must be digits only (e.g., 30201).
-  goto :ASK_SHOT
-)
-
-set "MACHINE_DIR="
-set /p MACHINE_DIR=Enter machine authority dir ^(default: machine_authority^): 
-if "%MACHINE_DIR%"=="" set "MACHINE_DIR=machine_authority"
-
-set "WINDOW_OVERRIDE="
-set /p WINDOW_OVERRIDE=Optional window override ^(blank for auto^): 
-
-:ASK_FREEGSNKE
-set "RUN_FREEGSNKE="
-set /p RUN_FREEGSNKE=Run FreeGSNKE execution now? ^(y/n, default y^): 
-if "%RUN_FREEGSNKE%"=="" set "RUN_FREEGSNKE=y"
-if /i "%RUN_FREEGSNKE%"=="y" goto :OK_FREEGSNKE
-if /i "%RUN_FREEGSNKE%"=="n" goto :OK_FREEGSNKE
-echo [WARN] Please enter y or n.
-goto :ASK_FREEGSNKE
-:OK_FREEGSNKE
-
-:ASK_METRICS
-set "RUN_METRICS="
-set /p RUN_METRICS=Compute contract residual metrics? ^(y/n, default y^): 
-if "%RUN_METRICS%"=="" set "RUN_METRICS=y"
-if /i "%RUN_METRICS%"=="y" goto :OK_METRICS
-if /i "%RUN_METRICS%"=="n" goto :OK_METRICS
-echo [WARN] Please enter y or n.
-goto :ASK_METRICS
-:OK_METRICS
-
-set "ARGS=run --config ""%CONFIG_PATH%"" --shot %SHOT% --machine-authority ""%MACHINE_DIR%"""
-
-if not "%WINDOW_OVERRIDE%"=="" (
-  set "ARGS=%ARGS% --window-override ""%WINDOW_OVERRIDE%"""
-)
-
-if /i "%RUN_FREEGSNKE%"=="n" (
-  set "ARGS=%ARGS% --skip-freegsnke"
-)
-
-if /i "%RUN_METRICS%"=="n" (
-  set "ARGS=%ARGS% --skip-metrics"
-)
-
-echo.
-echo [INFO] Running: mast-freegsnke %ARGS%
-echo.
-
-mast-freegsnke %ARGS%
+python -m mast_freegsnke.interactive_run --default-config "configs/default.yaml" --default-machine-authority "machine_authority"
 set "RC=%ERRORLEVEL%"
+
 
 echo.
 echo [INFO] Completed with exit code %RC%

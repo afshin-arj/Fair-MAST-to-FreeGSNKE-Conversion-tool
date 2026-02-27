@@ -431,3 +431,7 @@ Each run also captures `logs/pip_freeze_<timestamp>.txt` for reproducibility.
 
 ### Windows interactive prompt robustness
 The Windows launcher escapes parentheses in prompt strings to avoid `cmd.exe` parser errors (e.g. `. was unexpected at this time.`). If you previously saw the launcher terminate after entering a shot number, update to v10.0.3+.
+
+
+### Windows interactive runner note
+On Windows, interactive prompts are handled by a Python helper (`python -m mast_freegsnke.interactive_run`) to avoid cmd.exe parsing edge-cases while preserving full transcript logging.

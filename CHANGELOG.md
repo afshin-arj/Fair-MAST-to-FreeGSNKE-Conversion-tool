@@ -86,6 +86,12 @@ All notable changes to this project are documented in this file.
 - forensic-compare: deterministic divergence attribution + first-difference
 - nondeterminism-check: replay hashing stability sentinel
 
+
+## v10.0.4 — Windows interactive runner hardening (Python-driven prompts)
+- Move interactive prompts out of cmd/bash into Python module to eliminate cmd.exe parser edge cases.
+- run_pipeline.cmd/.sh now call python -m mast_freegsnke.interactive_run.
+- README updated accordingly.
+
 ## v10.0.3
 - Windows launcher: escaped parentheses in interactive prompts to avoid CMD parser errors like `. was unexpected at this time.` on some systems.
 - Windows launcher: quit (`q`) now exits with code 0 (clean exit).
