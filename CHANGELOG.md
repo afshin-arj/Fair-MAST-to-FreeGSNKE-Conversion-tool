@@ -1,5 +1,12 @@
 ## v10.0.0 — FreeGSNKE Internal State Audit & Default-Elimination Authority
 
+## 10.0.6
+
+- Added shipped default config at `configs/default.json` (JSON is the canonical format).
+- Interactive runner: default config path now `configs/default.json` and fails fast with a friendly message if config is missing.
+- Config loader: now supports JSON and YAML (`.json` / `.yaml` / `.yml`) and correctly populates all AppConfig fields.
+- Windows launcher: fixed `findstr` invocation to avoid `FINDSTR: Bad command line` noise.
+
 ## 10.0.5
 
 - Fix Windows interactive runner: pass --machine (CLI contract) instead of --machine-authority.

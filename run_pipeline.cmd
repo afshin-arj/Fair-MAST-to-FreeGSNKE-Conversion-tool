@@ -103,7 +103,7 @@ echo Interactive Run
 echo ===========================================================================
 echo.
 
-python -m mast_freegsnke.interactive_run --default-config "configs/default.yaml" --default-machine-authority "machine_authority"
+python -m mast_freegsnke.interactive_run --default-config "configs/default.json" --default-machine-authority "machine_authority"
 set "RC=%ERRORLEVEL%"
 
 
@@ -113,7 +113,7 @@ echo [INFO] Log: %LOG_FILE%
 
 REM Keep window open on error if launched by double-click (cmd /c).
 set "NEED_PAUSE=0"
-echo %CMDCMDLINE% | findstr /i "/c" >nul && set "NEED_PAUSE=1"
+echo %CMDCMDLINE% | findstr /i /c:"/c" >nul && set "NEED_PAUSE=1"
 if not "%RUN_PIPELINE_NO_PAUSE%"=="" set "NEED_PAUSE=0"
 if not "%RC%"=="0" (
   if "%NEED_PAUSE%"=="1" (

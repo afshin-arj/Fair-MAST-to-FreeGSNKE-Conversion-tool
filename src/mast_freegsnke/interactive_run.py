@@ -36,7 +36,7 @@ def _prompt_required_int(msg: str) -> int:
 
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(prog="mast-freegsnke-interactive")
-    ap.add_argument("--default-config", default="configs/default.yaml")
+    ap.add_argument("--default-config", default="configs/default.json")
     ap.add_argument("--default-machine-authority", default="machine_authority")
     ns = ap.parse_args(argv)
 
@@ -47,6 +47,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     print("")
 
     config_path = _prompt("Enter config path", default=ns.default_config)
+    # Fail fast with a friendly message if the path doesn't exist.
+    from pathlib import Path
+    if not Path(config_path).exists():
+        print(f"[FAIL] Config file not found: {config_path}")
+        print("[HINT] Use configs/default.json (shipped) or point to your own config JSON/YAML.")
+        return 2
     shot = _prompt_required_int("Enter MAST shot number (required, digits; 'q' to quit): ")
 
     machine_dir = _prompt("Enter machine authority dir", default=ns.default_machine_authority)

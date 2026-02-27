@@ -104,6 +104,9 @@ Windows:
 run_pipeline.cmd
 ```
 
+The interactive launcher defaults to the shipped config at `configs/default.json`. Edit that file (and/or copy it) to set
+your `level2_s3_prefix`, machine authority directory, and optional contract authorities.
+
 Linux/macOS:
 
 ```bash

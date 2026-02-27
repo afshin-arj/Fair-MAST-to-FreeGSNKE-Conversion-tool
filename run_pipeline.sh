@@ -59,7 +59,7 @@ python -m pip install --upgrade pip
 echo "[INFO] Installing package (editable) with extras: zarr,dev"
 python -m pip install -e ".[zarr,dev]"
 
-DEFAULT_CONFIG="configs/config.example.json"
+DEFAULT_CONFIG="configs/default.json"
 DEFAULT_MACHINE="machine_configs/MAST"
 DEFAULT_CONTRACTS="configs/diagnostic_contracts.example.json"
 DEFAULT_COILMAP="configs/coil_map.example.json"
