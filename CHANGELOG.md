@@ -85,3 +85,8 @@ All notable changes to this project are documented in this file.
 - replay-run: verifies artifacts vs declared hashes (strict/relaxed env closure)
 - forensic-compare: deterministic divergence attribution + first-difference
 - nondeterminism-check: replay hashing stability sentinel
+
+## v10.0.3
+- Windows launcher: escaped parentheses in interactive prompts to avoid CMD parser errors like `. was unexpected at this time.` on some systems.
+- Windows launcher: quit (`q`) now exits with code 0 (clean exit).
+

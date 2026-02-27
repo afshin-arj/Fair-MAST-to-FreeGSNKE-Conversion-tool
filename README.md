@@ -427,3 +427,7 @@ Each run also captures `logs/pip_freeze_<timestamp>.txt` for reproducibility.
 - Required fields (e.g. shot number) **reprompt until valid** (digits only) or you quit with `q`.
 - If you launch `run_pipeline.cmd` by double-click, the window will stay open on error so you can read the message.
   - Set `RUN_PIPELINE_NO_PAUSE=1` to disable this behavior.
+
+
+### Windows interactive prompt robustness
+The Windows launcher escapes parentheses in prompt strings to avoid `cmd.exe` parser errors (e.g. `. was unexpected at this time.`). If you previously saw the launcher terminate after entering a shot number, update to v10.0.3+.

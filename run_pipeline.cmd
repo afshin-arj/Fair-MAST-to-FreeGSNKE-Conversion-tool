@@ -104,7 +104,7 @@ echo ===========================================================================
 echo.
 
 set "CONFIG_PATH="
-set /p CONFIG_PATH=Enter config path (default: configs/default.yaml): 
+set /p CONFIG_PATH=Enter config path ^(default: configs/default.yaml^): 
 if "%CONFIG_PATH%"=="" set "CONFIG_PATH=configs/default.yaml"
 
 :ASK_SHOT
@@ -112,7 +112,7 @@ set "SHOT="
 set /p SHOT=Enter MAST shot number (required, digits; 'q' to quit): 
 if /i "%SHOT%"=="q" (
   echo [INFO] User quit.
-  exit /b 2
+  exit /b 0
 )
 if "%SHOT%"=="" (
   echo [WARN] Shot number is required.
@@ -125,15 +125,15 @@ if errorlevel 1 (
 )
 
 set "MACHINE_DIR="
-set /p MACHINE_DIR=Enter machine authority dir (default: machine_authority): 
+set /p MACHINE_DIR=Enter machine authority dir ^(default: machine_authority^): 
 if "%MACHINE_DIR%"=="" set "MACHINE_DIR=machine_authority"
 
 set "WINDOW_OVERRIDE="
-set /p WINDOW_OVERRIDE=Optional window override (blank for auto): 
+set /p WINDOW_OVERRIDE=Optional window override ^(blank for auto^): 
 
 :ASK_FREEGSNKE
 set "RUN_FREEGSNKE="
-set /p RUN_FREEGSNKE=Run FreeGSNKE execution now? (y/n, default y): 
+set /p RUN_FREEGSNKE=Run FreeGSNKE execution now? ^(y/n, default y^): 
 if "%RUN_FREEGSNKE%"=="" set "RUN_FREEGSNKE=y"
 if /i "%RUN_FREEGSNKE%"=="y" goto :OK_FREEGSNKE
 if /i "%RUN_FREEGSNKE%"=="n" goto :OK_FREEGSNKE
@@ -143,7 +143,7 @@ goto :ASK_FREEGSNKE
 
 :ASK_METRICS
 set "RUN_METRICS="
-set /p RUN_METRICS=Compute contract residual metrics? (y/n, default y): 
+set /p RUN_METRICS=Compute contract residual metrics? ^(y/n, default y^): 
 if "%RUN_METRICS%"=="" set "RUN_METRICS=y"
 if /i "%RUN_METRICS%"=="y" goto :OK_METRICS
 if /i "%RUN_METRICS%"=="n" goto :OK_METRICS
