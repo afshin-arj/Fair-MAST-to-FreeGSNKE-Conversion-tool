@@ -1,5 +1,9 @@
 ## v10.0.7 — S3 Transport Authority (endpoint/no-sign + timeout)
 
+## 10.0.8
+- Shot-scoped S3 preflight: avoid listing entire Level-2 shots prefix; probe only candidate shot roots derived from layout patterns.
+- Pipeline stage renamed to s3_shot_preflight.
+
 - Added config keys: `s3_endpoint_url`, `s3_no_sign_request`, `s5cmd_timeout_s`.
 - Wired these into all `s5cmd` calls and added transport preflight.
 - Added hard timeout to prevent indefinite hangs.

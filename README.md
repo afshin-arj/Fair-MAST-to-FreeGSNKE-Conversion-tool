@@ -450,3 +450,7 @@ This pipeline uses `s5cmd` for Level-2 Zarr access. For public MAST Level-2 data
 - `s5cmd_timeout_s`: e.g. `60`
 
 If the endpoint/prefix is wrong, the pipeline fails fast at the `s3_transport_preflight` stage.
+
+
+### S3 preflight behavior (v10.0.8)
+The pipeline performs a **shot-scoped** S3 preflight: it probes only the candidate shot-root paths implied by `s3_layout_patterns` (e.g. `s3://.../30200.zarr/`) instead of listing the entire `shots/` prefix, which can take minutes on large archives.

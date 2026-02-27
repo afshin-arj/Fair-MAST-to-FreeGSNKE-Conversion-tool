@@ -30,13 +30,73 @@ class BulkDownloader:
             cmd += ["--endpoint-url", self.s3_endpoint_url]
         return cmd
 
-    def preflight(self) -> None:
-        """Fail-fast connectivity check to the configured S3 prefix."""
+    def preflight(self, shot: int | None = None) -> str:
+        """Fail-fast transport + layout preflight.
+
+        v10.0.7 verified transport by probing the prefix root, which can be extremely slow for large
+        archives (e.g. listing all shots). v10.0.8 makes this *shot-scoped*:
+
+        - If `shot` is provided, we probe only candidate shot-root paths derived from the configured
+          `layout_patterns` (O(N_patterns)).
+        - If `shot` is None, we probe only the prefix itself (still bounded by timeout), but we do
+          not enumerate large subtrees.
+
+        Returns
+        -------
+        resolved_shot_root:
+            The first discovered shot-root candidate (only meaningful when `shot` is provided).
+        """
         self._check_s5cmd()
         if not self.level2_s3_prefix or "CHANGE_ME" in self.level2_s3_prefix:
             raise RuntimeError("Config 'level2_s3_prefix' is not set. Edit configs/default.json.")
-        probe = self.level2_s3_prefix.rstrip("/") + "/"
-        rc, out = run_cmd(self._s5cmd_base() + ["ls", probe], timeout_s=self.timeout_s)
+
+        base = self.level2_s3_prefix.rstrip("/")
+
+        def _probe(path: str) -> tuple[int, str]:
+            probe = path.rstrip("/") + "/"
+            return run_cmd(self._s5cmd_base() + ["ls", probe], timeout_s=self.timeout_s)
+
+        if shot is not None:
+            tried: List[Dict[str, object]] = []
+            roots: List[str] = []
+            for pat in self.layout_patterns:
+                if "{group}" not in pat:
+                    continue
+                root_pat = pat.split("{group}", 1)[0].rstrip("/")
+                try:
+                    root = root_pat.format(prefix=base, shot=shot, group="")
+                except Exception:
+                    continue
+                root = root.rstrip("/")
+                if root and root not in roots:
+                    roots.append(root)
+
+            # Fallback: canonical MAST layout is {prefix}/{shot}.zarr/{group}/...
+            if not roots:
+                roots = [f"{base}/{shot}.zarr"]
+
+            for root in roots:
+                rc, out = _probe(root)
+                tried.append({"candidate": root.rstrip("/") + "/", "rc": int(rc)})
+                if rc == 0 and looks_like_exists_s5cmd_ls(out):
+                    return root
+
+            msg = "S3 shot-scoped preflight failed. Could not locate shot root.\n"
+            msg += f"shot: {shot}\n"
+            msg += f"prefix: {self.level2_s3_prefix}\n"
+            msg += "tried shot-root candidates:\n"
+            for t in tried:
+                msg += f"  - {t['candidate']} (rc={t['rc']})\n"
+            msg += (
+                "\n"
+                "hint: for public MAST Level-2, set "
+                "level2_s3_prefix=s3://mast/level2/shots, "
+                "s3_endpoint_url=https://s3.echo.stfc.ac.uk, "
+                "s3_no_sign_request=true, and use patterns like '{prefix}/{shot}.zarr/{group}'.\n"
+            )
+            raise RuntimeError(msg)
+
+        rc, out = _probe(base)
         if rc != 0:
             raise RuntimeError(
                 "S3 preflight failed (rc={}). Check endpoint/credentials/prefix.\n".format(rc)
@@ -44,6 +104,8 @@ class BulkDownloader:
                 + "hint: for MAST public data, set s3_endpoint_url=https://s3.echo.stfc.ac.uk and s3_no_sign_request=true\n"
                 + out
             )
+        return base
+
     def _render_candidates(self, shot: int, group: str) -> List[str]:
         base = self.level2_s3_prefix.rstrip("/")
         return [pat.format(prefix=base, group=group, shot=shot) for pat in self.layout_patterns]

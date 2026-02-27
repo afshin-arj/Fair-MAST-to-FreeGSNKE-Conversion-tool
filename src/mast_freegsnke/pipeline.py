@@ -158,8 +158,8 @@ class ShotPipeline:
             )
 
             # Transport preflight (v10.0.7): prevent indefinite hangs / wrong endpoints
-            dl.preflight()
-            _stage("s3_transport_preflight", True, endpoint=self.cfg.s3_endpoint_url, no_sign=bool(self.cfg.s3_no_sign_request), timeout_s=int(self.cfg.s5cmd_timeout_s))
+            dl.preflight(shot)
+            _stage("s3_shot_preflight", True, endpoint=self.cfg.s3_endpoint_url, no_sign=bool(self.cfg.s3_no_sign_request), timeout_s=int(self.cfg.s5cmd_timeout_s))
 
             # Pre-check group availability (no downloads yet)
             avail = check_groups(shot=shot, groups=self.cfg.required_groups, discover=dl.discover_group_path)
