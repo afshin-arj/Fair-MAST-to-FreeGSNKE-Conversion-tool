@@ -463,3 +463,7 @@ If a run fails, the CLI prints a full Python traceback into the launcher log and
 - `runs/shot_<N>/EXCEPTION_TRACEBACK.txt`
 
 Attach that file (and `logs/run_*.log`) when reporting issues.
+
+
+## Template Safety Authority (v10.0.10)
+Generated FreeGSNKE runner scripts are rendered via token substitution (not Python `str.format`) to avoid collisions with braces in f-strings and dict literals.

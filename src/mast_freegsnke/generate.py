@@ -20,6 +20,25 @@ MAP_HELPER = "#!/usr/bin/env python3\n# Auto-map pf_active_raw.csv -> pf_current
 class ScriptGenerator:
     templates_dir: Path
 
+    def _render_template(self, template: str, *, machine_dir: Path, formed_frac: float | None = None) -> str:
+        """Render code templates safely (no str.format collisions).
+
+        Templates must use literal tokens:
+          - __MACHINE_DIR_REPR__
+          - __FORMED_FRAC__ (optional)
+
+        This avoids accidental interpretation of Python braces (dicts, f-strings) by str.format().
+        """
+        out = template.replace("__MACHINE_DIR_REPR__", repr(str(machine_dir)))
+        if "__FORMED_FRAC__" in out:
+            if formed_frac is None:
+                raise ValueError("Template requires __FORMED_FRAC__ but formed_frac is None")
+            out = out.replace("__FORMED_FRAC__", str(float(formed_frac)))
+        # Guardrail: refuse unreplaced tokens
+        if "__MACHINE_DIR_REPR__" in out or "__FORMED_FRAC__" in out:
+            raise ValueError("Unreplaced template tokens remain in rendered script")
+        return out
+
     def generate(self, run_dir: Path, machine_dir: Path, formed_frac: float) -> None:
         run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir/"inputs").mkdir(parents=True, exist_ok=True)
@@ -27,8 +46,8 @@ class ScriptGenerator:
         inv_tpl = (self.templates_dir/"inverse_run.py.tpl").read_text()
         fwd_tpl = (self.templates_dir/"forward_run.py.tpl").read_text()
 
-        (run_dir/"inverse_run.py").write_text(inv_tpl.format(machine_dir=str(machine_dir), formed_frac=formed_frac))
-        (run_dir/"forward_run.py").write_text(fwd_tpl.format(machine_dir=str(machine_dir)))
+        (run_dir/"inverse_run.py").write_text(self._render_template(inv_tpl, machine_dir=machine_dir, formed_frac=formed_frac))
+        (run_dir/"forward_run.py").write_text(self._render_template(fwd_tpl, machine_dir=machine_dir))
 
         (run_dir/"pf_map_rules.json").write_text(json.dumps(DEFAULT_PF_RULES, indent=2) + "\n")
         (run_dir/"map_pf_currents.py").write_text(MAP_HELPER)
@@ -64,4 +83,4 @@ class ScriptGenerator:
             "     python inverse_run.py\n\n"
             "5) Run forward replay:\n"
             "     python forward_run.py\n"
-        ).format(machine_dir=machine_dir)
+        )

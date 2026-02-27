@@ -79,9 +79,9 @@ from freegsnke.inverse import Inverse_optimizer
 
 HERE = Path(__file__).resolve().parent
 INPUTS = HERE / "inputs"
-MACHINE = Path({machine_dir!r})
+MACHINE = Path(__MACHINE_DIR_REPR__)
 
-def choose_formed_plasma_time(ip_df: pd.DataFrame, frac: float = {formed_frac}):
+def choose_formed_plasma_time(ip_df: pd.DataFrame, frac: float = __FORMED_FRAC__):
     t = ip_df["time"].to_numpy(dtype=float)
     ip = ip_df["ip"].to_numpy(dtype=float)
     mask_pos = ip > 0
@@ -131,7 +131,7 @@ def main():
     solv = ea["solver"]
 
     ip_df = pd.read_csv(INPUTS / "ip.csv")
-    t0, ip0, ip_max = choose_formed_plasma_time(ip_df, frac={formed_frac})
+    t0, ip0, ip_max = choose_formed_plasma_time(ip_df, frac=__FORMED_FRAC__)
     print(f"Selected formed-plasma time t0={{t0:.6f}} s  Ip={{ip0/1e6:.3f}} MA")
 
     tokamak = build_machine.tokamak(

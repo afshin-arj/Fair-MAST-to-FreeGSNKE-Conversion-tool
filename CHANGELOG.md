@@ -1,3 +1,7 @@
+## 10.0.10
+- Template Safety Authority: eliminate unsafe str.format() rendering for generated Python scripts; use token substitution to avoid brace collisions (f-strings/dicts).
+- Added regression test for template rendering.
+
 ## 10.0.9
 - Write full traceback to launcher log and runs/shot_<N>/EXCEPTION_TRACEBACK.txt on failure.
 

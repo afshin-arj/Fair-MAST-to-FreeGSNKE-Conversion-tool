@@ -15,7 +15,7 @@ from freegsnke.jtor_update import ConstrainPaxisIp
 from freegsnke import GSstaticsolver
 
 HERE = Path(__file__).resolve().parent
-MACHINE = Path({machine_dir!r})
+MACHINE = Path(__MACHINE_DIR_REPR__)
 DUMP = HERE / "inverse_dump.pkl"
 ACTIVE_CIRCUITS = ["P2_inner","P2_outer","P3","P4","P5","P6","Solenoid"]
 
