@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import traceback
 import importlib
 import shutil
 from pathlib import Path
@@ -570,7 +571,22 @@ def main(argv=None) -> int:
             print(f"[OK] Run folder: {run_dir}")
             return 0
         except Exception as e:
+            # Print a full traceback to stdout/stderr (captured by launcher logs)
+            tb = traceback.format_exc()
             print(f"[FAIL] run error: {e}")
+            print("[TRACEBACK] ------------------------------")
+            print(tb.rstrip())
+            print("[TRACEBACK] ------------------------------")
+            # Best-effort: if a run folder exists, also persist the traceback for sharing.
+            try:
+                runs_root = Path(cfg.runs_dir)
+                run_dir = runs_root / f"shot_{args.shot}"
+                run_dir.mkdir(parents=True, exist_ok=True)
+                out = run_dir / "EXCEPTION_TRACEBACK.txt"
+                out.write_text(tb, encoding="utf-8")
+                print(f"[INFO] Wrote traceback: {out}")
+            except Exception:
+                pass
             # manifest should exist in run folder
             return 11
 

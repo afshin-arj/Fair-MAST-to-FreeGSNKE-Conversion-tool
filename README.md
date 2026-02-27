@@ -454,3 +454,12 @@ If the endpoint/prefix is wrong, the pipeline fails fast at the `s3_transport_pr
 
 ### S3 preflight behavior (v10.0.8)
 The pipeline performs a **shot-scoped** S3 preflight: it probes only the candidate shot-root paths implied by `s3_layout_patterns` (e.g. `s3://.../30200.zarr/`) instead of listing the entire `shots/` prefix, which can take minutes on large archives.
+
+
+## Debugging
+
+If a run fails, the CLI prints a full Python traceback into the launcher log and also writes it to:
+
+- `runs/shot_<N>/EXCEPTION_TRACEBACK.txt`
+
+Attach that file (and `logs/run_*.log`) when reporting issues.

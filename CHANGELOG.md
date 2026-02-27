@@ -1,3 +1,6 @@
+## 10.0.9
+- Write full traceback to launcher log and runs/shot_<N>/EXCEPTION_TRACEBACK.txt on failure.
+
 ## v10.0.7 — S3 Transport Authority (endpoint/no-sign + timeout)
 
 ## 10.0.8
