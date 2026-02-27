@@ -16,6 +16,12 @@ class AppConfig:
     required_groups: List[str]
     level2_s3_prefix: str
     s5cmd_path: str
+    # Optional S3 endpoint URL (MAST uses https://s3.echo.stfc.ac.uk)
+    s3_endpoint_url: Optional[str]
+    # If True, use anonymous S3 access (--no-sign-request)
+    s3_no_sign_request: bool
+    # Timeout for s5cmd operations (seconds). Prevents indefinite hangs.
+    s5cmd_timeout_s: int
     runs_dir: Path
     cache_dir: Path
     formed_plasma_frac: float
@@ -67,6 +73,9 @@ class AppConfig:
         required_groups = list(obj.get("required_groups", ["pf_active", "magnetics"]))
         level2_s3_prefix = str(obj.get("level2_s3_prefix", ""))
         s5cmd_path = str(obj.get("s5cmd_path", "s5cmd"))
+        s3_endpoint_url = (str(obj["s3_endpoint_url"]) if obj.get("s3_endpoint_url") else None)
+        s3_no_sign_request = bool(obj.get("s3_no_sign_request", False))
+        s5cmd_timeout_s = int(obj.get("s5cmd_timeout_s", 60))
         runs_dir = Path(obj.get("runs_dir", "runs"))
         cache_dir = Path(obj.get("cache_dir", "data_cache"))
         formed_plasma_frac = float(obj.get("formed_plasma_frac", 0.80))
@@ -96,6 +105,9 @@ class AppConfig:
             required_groups=required_groups,
             level2_s3_prefix=level2_s3_prefix,
             s5cmd_path=s5cmd_path,
+            s3_endpoint_url=s3_endpoint_url,
+            s3_no_sign_request=s3_no_sign_request,
+            s5cmd_timeout_s=s5cmd_timeout_s,
             runs_dir=runs_dir,
             cache_dir=cache_dir,
             formed_plasma_frac=formed_plasma_frac,

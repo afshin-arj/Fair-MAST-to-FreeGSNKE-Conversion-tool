@@ -438,3 +438,15 @@ The Windows launcher escapes parentheses in prompt strings to avoid `cmd.exe` pa
 
 ### Windows interactive runner note
 On Windows, interactive prompts are handled by a Python helper (`python -m mast_freegsnke.interactive_run`) to avoid cmd.exe parsing edge-cases while preserving full transcript logging.
+
+
+## S3 transport configuration (MAST public Level-2)
+
+This pipeline uses `s5cmd` for Level-2 Zarr access. For public MAST Level-2 data, use:
+
+- `level2_s3_prefix`: `s3://mast/level2/shots`
+- `s3_endpoint_url`: `https://s3.echo.stfc.ac.uk`
+- `s3_no_sign_request`: `true`
+- `s5cmd_timeout_s`: e.g. `60`
+
+If the endpoint/prefix is wrong, the pipeline fails fast at the `s3_transport_preflight` stage.

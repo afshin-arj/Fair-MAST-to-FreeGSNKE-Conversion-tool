@@ -124,6 +124,9 @@ class ShotPipeline:
                 "required_groups": list(self.cfg.required_groups),
                 "level2_s3_prefix": self.cfg.level2_s3_prefix,
                 "s3_layout_patterns": list(self.cfg.s3_layout_patterns),
+                "s3_endpoint_url": self.cfg.s3_endpoint_url,
+                "s3_no_sign_request": bool(self.cfg.s3_no_sign_request),
+                "s5cmd_timeout_s": int(self.cfg.s5cmd_timeout_s),
                 "cache_root": str(self.cfg.cache_dir),
                 "machine_dir": str(machine_dir),
                 "formed_plasma_frac": float(self.cfg.formed_plasma_frac),
@@ -149,7 +152,14 @@ class ShotPipeline:
                 s5cmd_path=self.cfg.s5cmd_path,
                 level2_s3_prefix=self.cfg.level2_s3_prefix,
                 layout_patterns=self.cfg.s3_layout_patterns,
+                s3_endpoint_url=self.cfg.s3_endpoint_url,
+                s3_no_sign_request=self.cfg.s3_no_sign_request,
+                timeout_s=self.cfg.s5cmd_timeout_s,
             )
+
+            # Transport preflight (v10.0.7): prevent indefinite hangs / wrong endpoints
+            dl.preflight()
+            _stage("s3_transport_preflight", True, endpoint=self.cfg.s3_endpoint_url, no_sign=bool(self.cfg.s3_no_sign_request), timeout_s=int(self.cfg.s5cmd_timeout_s))
 
             # Pre-check group availability (no downloads yet)
             avail = check_groups(shot=shot, groups=self.cfg.required_groups, discover=dl.discover_group_path)

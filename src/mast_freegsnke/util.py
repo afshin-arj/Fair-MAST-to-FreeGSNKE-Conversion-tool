@@ -25,10 +25,24 @@ def ensure_dir(p: Path) -> Path:
     p.mkdir(parents=True, exist_ok=True)
     return p
 
-def run_cmd(cmd: List[str]) -> Tuple[int, str]:
-    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    return p.returncode, p.stdout
+def run_cmd(cmd: List[str], timeout_s: int | None = 60) -> Tuple[int, str]:
+    """Run a command and capture combined stdout/stderr.
 
+    Returns (rc, output). On timeout, rc=124 and output contains a marker.
+    """
+    try:
+        p = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=timeout_s,
+        )
+        return p.returncode, p.stdout
+    except subprocess.TimeoutExpired as e:
+        out = (e.stdout or "")
+        out += "\n[TIMEOUT] command exceeded {}s\n".format(timeout_s)
+        return 124, out
 def looks_like_exists_s5cmd_ls(output: str) -> bool:
     lines = [ln.strip() for ln in output.splitlines() if ln.strip()]
     if not lines:

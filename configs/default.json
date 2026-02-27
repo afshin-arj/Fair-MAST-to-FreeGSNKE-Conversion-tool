@@ -1,34 +1,32 @@
 {
   "mastapp_base_url": "https://mastapp.site/json",
-  "required_groups": ["pf_active", "magnetics"],
-
-  "level2_s3_prefix": "s3://CHANGE_ME/level2",
+  "required_groups": [
+    "pf_active",
+    "magnetics"
+  ],
+  "level2_s3_prefix": "s3://mast/level2/shots",
   "s5cmd_path": "s5cmd",
-
   "runs_dir": "runs",
   "cache_dir": "data_cache",
-
   "formed_plasma_frac": 0.8,
   "allow_missing_geometry": false,
-
   "execute_freegsnke": false,
   "freegsnke_run_mode": "none",
   "freegsnke_python": null,
-
   "diagnostics_compare": [],
   "diagnostic_contracts_path": null,
   "coil_map_path": null,
   "enable_contract_metrics": false,
-
   "machine_authority_dir": "machine_authority",
   "require_machine_authority": false,
   "provenance_hash_data": false,
-
   "s3_layout_patterns": [
-    "{prefix}/{group}/shot_{shot}.zarr",
-    "{prefix}/shot_{shot}/{group}.zarr",
-    "{prefix}/shot_{shot}_{group}.zarr",
-    "{prefix}/{group}/shot{shot}.zarr",
-    "{prefix}/shot{shot}/{group}.zarr"
-  ]
+    "{prefix}/{shot}.zarr/{group}",
+    "{prefix}/{shot}.zarr/{group}/*",
+    "{prefix}/shot_{shot}.zarr/{group}",
+    "{prefix}/shot_{shot}.zarr/{group}/*"
+  ],
+  "s3_endpoint_url": "https://s3.echo.stfc.ac.uk",
+  "s3_no_sign_request": true,
+  "s5cmd_timeout_s": 60
 }
