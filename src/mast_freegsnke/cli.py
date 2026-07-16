@@ -279,15 +279,14 @@ def main(argv=None) -> int:
 
         # FreeGSNKE python
         if cfg.execute_freegsnke:
-            freeg_py = cfg.freegsnke_python or sys.executable
-            fp = Path(freeg_py)
-            if not fp.is_absolute():
-                fp = (Path.cwd() / fp).resolve()
+            from .freegsnke_runner import resolve_freegsnke_python
+
+            exe = resolve_freegsnke_python(cfg.freegsnke_python, Path.cwd())
+            fp = Path(exe)
             if cfg.freegsnke_python and not fp.exists():
-                print(f"[FAIL] freegsnke_python not found: {fp}")
+                print(f"[FAIL] freegsnke_python not found: {cfg.freegsnke_python} (resolved: {fp})")
                 ok = False
             else:
-                exe = str(fp) if fp.exists() else sys.executable
                 try:
                     chk = subprocess.run(
                         [exe, "-c", "import freegsnke; print(getattr(freegsnke,'__version__','ok'))"],

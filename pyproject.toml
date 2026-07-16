@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mast-freegsnke-pipeline"
-version = "10.1.1"
+version = "10.1.2"
 description = "Deterministic pipeline: FAIR-MAST shot data → cached inputs → generated FreeGSNKE reconstruction run folder (scripts, windows, geometry, contracts, metrics)"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -19,7 +19,9 @@ dependencies = [
 zarr = [
   "xarray>=2023.12.0",
   "fsspec>=2023.12.0",
-  "zarr>=2.16.0",
+  # FAIR-MAST Level-2 Zarr v3 stores use fixed_length_utf32 arrays, which
+  # zarr-python only understands from 3.1.0 (requires Python >= 3.11).
+  "zarr>=3.1.0",
 ]
 dev = ["pytest>=7.4.0"]
 

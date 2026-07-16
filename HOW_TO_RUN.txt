@@ -10,15 +10,18 @@ Windows:
 Linux/macOS:
   ./run_pipeline.sh
 
+Both launchers prompt for the shot number ONLY. Everything else (download,
+extraction, coil map, machine authority, FreeGSNKE inverse+forward execution)
+comes from the shipped configs/default.json.
+
+Manual install + CLI:
+
 pip install -e .
 pip install -e ".[zarr]"   # optional, enables extraction
 
-cp configs/config.example.json configs/config.json
-# set level2_s3_prefix in configs/config.json
-
-mast-freegsnke doctor --config configs/config.json
-mast-freegsnke check --shot 30201 --config configs/config.json
-mast-freegsnke run --shot 30201 --config configs/config.json --machine machine_configs/SHAMS
+mast-freegsnke doctor --config configs/default.json
+mast-freegsnke check --shot 30201 --config configs/default.json
+mast-freegsnke run --shot 30201 --config configs/default.json
 
 Optional: execute FreeGSNKE scripts after generation (requires freegsnke installed in the selected Python environment):
 

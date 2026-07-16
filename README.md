@@ -1,6 +1,6 @@
 # Fair-MAST → FreeGSNKE Conversion Tool
 
-**Version 10.1.1** · Deterministic reconstruction pipeline for MAST experimental data
+**Version 10.1.2** · Deterministic reconstruction pipeline for MAST experimental data
 
 Enter a **MAST shot number**. The pipeline downloads FAIR-MAST Level-2 data, builds FreeGSNKE inputs under explicit authorities, runs inverse and forward reconstructions, and writes a fully auditable run folder.
 
@@ -301,6 +301,6 @@ Cite this repository and include the run’s `manifest.json`, authorities, and c
 
 ## License & citation
 
-See repository license terms. Package version: **10.1.1**.
+See repository license terms. Package version: **10.1.2**.
 
 Full history: [`CHANGELOG.md`](CHANGELOG.md)

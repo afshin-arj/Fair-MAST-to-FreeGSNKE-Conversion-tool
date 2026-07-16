@@ -26,6 +26,36 @@ def _default_python() -> str:
     return sys.executable
 
 
+def resolve_freegsnke_python(configured: Optional[str], repo_root: Optional[Path] = None) -> str:
+    """Resolve FreeGSNKE interpreter path portably across Windows/POSIX venvs."""
+    if not configured:
+        return _default_python()
+    root = repo_root or Path.cwd()
+    p = Path(configured)
+    if not p.is_absolute():
+        p = (root / p).resolve()
+    if p.exists():
+        return str(p)
+    # Allow configs/default.json to ship a Windows-style path while still working
+    # on POSIX (and vice versa) when the sibling venv layout exists.
+    name = p.name.lower()
+    parent = p.parent
+    candidates: list[Path] = []
+    if name in {"python.exe", "python"}:
+        venv_root = parent.parent if parent.name.lower() in {"scripts", "bin"} else parent
+        candidates.extend(
+            [
+                venv_root / "Scripts" / "python.exe",
+                venv_root / "bin" / "python",
+                venv_root / "bin" / "python3",
+            ]
+        )
+    for cand in candidates:
+        if cand.exists():
+            return str(cand.resolve())
+    return str(p)
+
+
 def _detect_import_error(stderr_text: str) -> Optional[str]:
     # Keep this conservative and deterministic.
     if "ModuleNotFoundError" in stderr_text and "freegsnke" in stderr_text:
@@ -43,11 +73,7 @@ class FreeGSNKERunner:
     """
 
     def __init__(self, python_exe: Optional[str] = None, env: Optional[Dict[str, str]] = None):
-        raw = python_exe or _default_python()
-        p = Path(raw)
-        if not p.is_absolute():
-            p = (Path.cwd() / p).resolve()
-        self.python_exe = str(p) if p.exists() else raw
+        self.python_exe = resolve_freegsnke_python(python_exe)
         self.env = dict(os.environ)
         if env:
             self.env.update({str(k): str(v) for k, v in env.items()})

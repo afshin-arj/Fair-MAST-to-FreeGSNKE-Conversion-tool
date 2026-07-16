@@ -1,3 +1,11 @@
+## 10.1.2 — Shot-only launcher hardening + FAIR-MAST Zarr stack
+- `run_pipeline.cmd` / `run_pipeline.sh` are shot-only (no stale machine-authority flag; no y/n prompts).
+- Prefer Python 3.11 when creating the pipeline venv; FreeGSNKE python path resolves across Windows/`bin` layouts.
+- Pin `zarr>=3.1.0` so FAIR-MAST Level-2 `fixed_length_utf32` arrays extract correctly.
+- Regression tests for interactive launcher wrappers and FreeGSNKE runner import hints.
+- Verified end-to-end smoke: shot 30201 inverse + forward success under `configs/default.json`.
+- Contract residual metrics remain opt-in (`enable_contract_metrics=false`) until a real diagnostic-contracts authority is shipped (no fabrication).
+
 ## 10.1.1 — Unblock full FreeGSNKE path
 - Build `machine_authority/` from FAIR-MAST Level-2 geometry (no invented metrology).
 - Export `coil_current` channels into `pf_active_raw.csv`; ship `configs/coil_map.json` with explicit feed sums.

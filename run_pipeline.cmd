@@ -51,15 +51,25 @@ echo [INFO] PWD: %CD%
 echo [INFO] OS: %OS%
 echo [INFO] Log file: %LOG_FILE%
 
-where python >nul 2>nul
-if errorlevel 1 (
-  echo [FAIL] Python not found on PATH. Install Python 3.9+ and retry.
-  exit /b 1
+REM Prefer Python 3.11 for the pipeline venv (matches FreeGSNKE stack / FAIR-MAST Zarr).
+set "PY_BOOT="
+where py >nul 2>nul
+if not errorlevel 1 (
+  py -3.11 -c "import sys" >nul 2>nul
+  if not errorlevel 1 set "PY_BOOT=py -3.11"
+)
+if "%PY_BOOT%"=="" (
+  where python >nul 2>nul
+  if errorlevel 1 (
+    echo [FAIL] Python not found on PATH. Install Python 3.11+ and retry.
+    exit /b 1
+  )
+  set "PY_BOOT=python"
 )
 
 if not exist ".venv" (
-  echo [INFO] Creating virtual environment: .venv
-  python -m venv .venv
+  echo [INFO] Creating virtual environment: .venv  ^(bootstrap: %PY_BOOT%^)
+  %PY_BOOT% -m venv .venv
   if errorlevel 1 (
     echo [FAIL] venv creation failed.
     exit /b 1
@@ -103,7 +113,7 @@ echo Interactive Run
 echo ===========================================================================
 echo.
 
-python -m mast_freegsnke.interactive_run --default-config "configs/default.json" --default-machine-authority "machine_authority"
+python -m mast_freegsnke.interactive_run --default-config "configs/default.json"
 set "RC=%ERRORLEVEL%"
 
 
