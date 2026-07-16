@@ -2,11 +2,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Any
-import importlib
+import importlib.util
+
 
 def _require(pkg: str):
     if importlib.util.find_spec(pkg) is None:
         raise RuntimeError(f"Missing optional dependency '{pkg}'. Install with: pip install -e '.[zarr]'")
+
 
 @dataclass
 class Extractor:
@@ -76,13 +78,33 @@ class Extractor:
 
         pd.DataFrame({"time": t, "ip": ip}).to_csv(out_inputs_dir/"ip.csv", index=False)
 
+        # PF currents: prefer coil_current (channel, time) with current_channel labels.
         pf_df = pd.DataFrame({"time": ds_pf[t_pf].values.astype(float)})
         exported_pf = []
-        for k in ds_pf.data_vars:
-            arr = ds_pf[k].values
-            if getattr(arr, "ndim", None) == 1 and arr.shape[0] == pf_df.shape[0]:
-                pf_df[k] = arr.astype(float)
-                exported_pf.append(k)
+        if "coil_current" in ds_pf and "current_channel" in ds_pf.coords:
+            channels = [str(x) for x in ds_pf["current_channel"].values.tolist()]
+            arr = np.asarray(ds_pf["coil_current"].values, dtype=float)
+            # Expected dims: (current_channel, time)
+            if arr.ndim == 2 and arr.shape[1] == pf_df.shape[0]:
+                for i, ch in enumerate(channels):
+                    col = ch  # keep FAIR-MAST label (e.g. "P2IL FEED", "SOL")
+                    pf_df[col] = arr[i, :].astype(float)
+                    exported_pf.append(col)
+            elif arr.ndim == 2 and arr.shape[0] == pf_df.shape[0]:
+                for i, ch in enumerate(channels):
+                    col = ch
+                    pf_df[col] = arr[:, i].astype(float)
+                    exported_pf.append(col)
+            else:
+                raise RuntimeError(
+                    f"Unexpected coil_current shape {arr.shape} vs time length {pf_df.shape[0]}"
+                )
+        else:
+            for k in ds_pf.data_vars:
+                arr = ds_pf[k].values
+                if getattr(arr, "ndim", None) == 1 and arr.shape[0] == pf_df.shape[0]:
+                    pf_df[k] = arr.astype(float)
+                    exported_pf.append(k)
         pf_df.to_csv(out_inputs_dir/"pf_active_raw.csv", index=False)
 
         # Do NOT invent NaN placeholder pf_currents.csv. Production mapping must come from

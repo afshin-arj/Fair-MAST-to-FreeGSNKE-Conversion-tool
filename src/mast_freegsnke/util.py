@@ -50,3 +50,20 @@ def looks_like_exists_s5cmd_ls(output: str) -> bool:
     if all(ln.upper().startswith("ERROR") for ln in lines):
         return False
     return True
+
+
+def resolve_s5cmd_path(configured: str, repo_root: Path | None = None) -> str:
+    """Resolve s5cmd executable: absolute/PATH hit, else repo tools/s5cmd(.exe)."""
+    import shutil
+
+    p = Path(configured)
+    if p.is_file():
+        return str(p.resolve())
+    which = shutil.which(configured)
+    if which:
+        return which
+    root = repo_root or Path.cwd()
+    for cand in (root / "tools" / "s5cmd.exe", root / "tools" / "s5cmd"):
+        if cand.is_file():
+            return str(cand.resolve())
+    return configured

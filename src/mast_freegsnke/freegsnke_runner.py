@@ -43,7 +43,11 @@ class FreeGSNKERunner:
     """
 
     def __init__(self, python_exe: Optional[str] = None, env: Optional[Dict[str, str]] = None):
-        self.python_exe = python_exe or _default_python()
+        raw = python_exe or _default_python()
+        p = Path(raw)
+        if not p.is_absolute():
+            p = (Path.cwd() / p).resolve()
+        self.python_exe = str(p) if p.exists() else raw
         self.env = dict(os.environ)
         if env:
             self.env.update({str(k): str(v) for k, v in env.items()})

@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import json
 
-from .util import run_cmd, looks_like_exists_s5cmd_ls
+from .util import run_cmd, looks_like_exists_s5cmd_ls, resolve_s5cmd_path
 
 @dataclass
 class BulkDownloader:
@@ -18,10 +18,14 @@ class BulkDownloader:
     timeout_s: int = 60
 
     def _check_s5cmd(self) -> None:
-        p = Path(self.s5cmd_path)
-        if p.is_file() or shutil.which(self.s5cmd_path) is not None:
+        resolved = resolve_s5cmd_path(self.s5cmd_path)
+        p = Path(resolved)
+        if p.is_file() or shutil.which(resolved) is not None:
+            self.s5cmd_path = resolved
             return
-        raise RuntimeError(f"s5cmd not found on PATH: '{self.s5cmd_path}'. Install s5cmd first.")
+        raise RuntimeError(
+            f"s5cmd not found: '{self.s5cmd_path}'. Install s5cmd or place it at tools/s5cmd.exe."
+        )
 
 
     def _s5cmd_base(self) -> List[str]:

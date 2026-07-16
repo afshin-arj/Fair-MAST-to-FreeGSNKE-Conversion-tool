@@ -1,14 +1,95 @@
 {
-  "schema_version": "1.0",
-  "notes": "TEMPLATE. Define PF coil geometry and naming used by FreeGSNKE machine. Used for governance and future wiring.",
   "coils": [
     {
-      "coil": "PF1",
-      "r_m": 1.0,
-      "z_m": 0.5,
-      "n_turns": 10,
-      "polarity": "+",
-      "units": "A"
+      "coil": "P2_inner",
+      "n_filaments": 24,
+      "r_m": 0.4746999964118004,
+      "source_arrays": [
+        "p2_inner_lower_r",
+        "p2_inner_upper_r",
+        "p2_inner_lower_z",
+        "p2_inner_upper_z"
+      ],
+      "units": "A",
+      "z_m": 0.002310037612915039
+    },
+    {
+      "coil": "P2_outer",
+      "n_filaments": 16,
+      "r_m": 0.5277000069618225,
+      "source_arrays": [
+        "p2_outer_lower_r",
+        "p2_outer_upper_r",
+        "p2_outer_lower_z",
+        "p2_outer_upper_z"
+      ],
+      "units": "A",
+      "z_m": 0.002310037612915039
+    },
+    {
+      "coil": "P3",
+      "n_filaments": 16,
+      "r_m": 1.1028500199317932,
+      "source_arrays": [
+        "p3_lower_r",
+        "p3_upper_r",
+        "p3_lower_z",
+        "p3_upper_z"
+      ],
+      "units": "A",
+      "z_m": 0.0032849907875061035
+    },
+    {
+      "coil": "P4",
+      "n_filaments": 46,
+      "r_m": 1.4964673830115276,
+      "source_arrays": [
+        "p4_lower_r",
+        "p4_upper_r",
+        "p4_lower_z",
+        "p4_upper_z"
+      ],
+      "units": "A",
+      "z_m": 0.0019378454788871434
+    },
+    {
+      "coil": "P5",
+      "n_filaments": 46,
+      "r_m": 1.6467391097027322,
+      "source_arrays": [
+        "p5_lower_r",
+        "p5_upper_r",
+        "p5_lower_z",
+        "p5_upper_z"
+      ],
+      "units": "A",
+      "z_m": 0.0043369959230008335
+    },
+    {
+      "coil": "P6",
+      "n_filaments": 8,
+      "r_m": 1.4405999779701233,
+      "source_arrays": [
+        "p6_lower_r",
+        "p6_upper_r",
+        "p6_lower_z",
+        "p6_upper_z"
+      ],
+      "units": "A",
+      "z_m": -0.00020000338554382324
+    },
+    {
+      "coil": "Solenoid",
+      "n_filaments": 656,
+      "r_m": 0.13821890205144882,
+      "source_arrays": [
+        "sol_r",
+        "sol_z"
+      ],
+      "units": "A",
+      "z_m": -0.005682719878500282
     }
-  ]
+  ],
+  "notes": "Coil centroids derived from FAIR-MAST pf_active.zarr filament r/z arrays (mean of finite samples).",
+  "schema_version": "1.0"
 }

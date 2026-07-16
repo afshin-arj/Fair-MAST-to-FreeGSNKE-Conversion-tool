@@ -1,12 +1,881 @@
 {
-  "schema_version": "1.0",
-  "notes": "TEMPLATE registry of canonical diagnostics and expected units.",
   "diagnostics": [
     {
-      "name": "psi_floop_FLOOP_001",
-      "kind": "flux_loop",
-      "units": "Wb",
-      "source": "synthetic+experimental"
+      "dtype": "flux_loop",
+      "name": "FL_P2U_1"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P2U_2"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P2U_3"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P2U_4"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P2L_1"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P2L_2"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P2L_3"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P2L_4"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P3U_1"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P3U_2"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P3U_3"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P3U_4"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P3L_1"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P3L_2"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P3L_3"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P3L_4"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P4U_1"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P4U_2"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P4U_3"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P4U_4"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P4L_1"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P4L_2"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P4L_3"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P4L_4"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P5U_1"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P5U_2"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P5U_3"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P5U_4"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P5L_1"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P5L_2"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P5L_3"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P5L_4"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P6L_1"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_P6L_2"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_CC01"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_CC02"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_CC03"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_CC04"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_CC05"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_CC06"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_CC07"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_CC08"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_CC09"
+    },
+    {
+      "dtype": "flux_loop",
+      "name": "FL_CC010"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBR01"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBR02"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBR03"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBR04"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBR05"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBR06"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBR07"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBR08"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBR09"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBR10"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBR11"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBR12"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBR13"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBR14"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBR15"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBR16"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBR17"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBR18"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBR19"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBV01"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBV02"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBV03"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBV04"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBV05"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBV06"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBV07"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBV08"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBV09"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBV10"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBV11"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBV12"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBV13"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBV14"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBV15"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBV16"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBV17"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBV18"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OBV19"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_201"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_202"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_203"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_204"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_205"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_206"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_207"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_208"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_209"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_210"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_211"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_212"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_213"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_214"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_215"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_216"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_217"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_218"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_219"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_110"
+    },
+    {
+      "dtype": "pickup",
+      "name": "OMV_310"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV01"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV02"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV03"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV04"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV05"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV06"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV07"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV08"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV09"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV10"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV11"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV12"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV13"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV14"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV15"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV16"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV17"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV18"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV19"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV20"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV21"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV22"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV23"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV24"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV25"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV26"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV27"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV28"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV29"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV30"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV31"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV32"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV33"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV34"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV35"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV36"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV37"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV38"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV39"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CCBV40"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_201"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_202*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_203*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_204*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_205*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_206*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_207*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_208*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_209*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_210*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_211*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_212*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_213*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_214*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_215*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_216*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_217*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_218*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_219*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_220*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_221*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_222*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_223*"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_224"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_225"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_226"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_227"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_228"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_229"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_230"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_231"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_232"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_233"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_234"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_235"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_236"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_237"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_238"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_239"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MV_240"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_101"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_102"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_103"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_104"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_105"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_106"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_107"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_108"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_109"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_110"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_111"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_112"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_201"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_202"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_203"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_204"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_205"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_206"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_207"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_208"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_209"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_210"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_211"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_212"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_301"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_302"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_303"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_304"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_305"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_306"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_307"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_308"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_309"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_310"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_311"
+    },
+    {
+      "dtype": "pickup",
+      "name": "CC_MT_312"
     }
-  ]
+  ],
+  "schema_version": "1.0"
 }

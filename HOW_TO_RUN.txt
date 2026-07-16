@@ -22,8 +22,18 @@ mast-freegsnke run --shot 30201 --config configs/config.json --machine machine_c
 
 Optional: execute FreeGSNKE scripts after generation (requires freegsnke installed in the selected Python environment):
 
-  mast-freegsnke run --shot 30201 --config configs/config.json --machine machine_configs/MAST \
-    --execute-freegsnke --freegsnke-mode inverse
+  # One-time FreeGSNKE env (Python 3.11; 3.14 may lack scipy wheels):
+  py -3.11 -m venv .venv-freegsnke
+  .venv-freegsnke\Scripts\python -m pip install -r requirements-freegsnke.txt
+
+  # One-time s5cmd (if not on PATH):
+  python scripts/ensure_s5cmd.py
+
+  # Build machine_authority from a downloaded FAIR-MAST shot cache:
+  python scripts/build_authority_from_fairmast.py --shot-cache data_cache/shot_30201 --out machine_authority --shot 30201
+  python scripts/fetch_freegsnke_machine.py
+
+  mast-freegsnke run --shot 30201 --config configs/default.json
 
 If FreeGSNKE lives in a different venv/conda env, point to that python:
 

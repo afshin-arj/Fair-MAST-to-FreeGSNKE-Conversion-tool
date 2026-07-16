@@ -80,7 +80,8 @@ def test_apply_coil_map_binding(tmp_path: Path) -> None:
         mapping={
             "P2_INNER_A": {"coil": "P2_inner", "scale": 1.0, "sign": 1},
             "P2_OUTER_A": {"coil": "P2_outer", "scale": 2.0, "sign": -1},
-        }
+        },
+        circuits={},
     )
     out = tmp_path / "pf_currents.csv"
     rep = apply_coil_map(raw, out, coil_map)
@@ -97,11 +98,37 @@ def test_apply_coil_map_rejects_duplicate_coil(tmp_path: Path) -> None:
         mapping={
             "A": {"coil": "P2_inner", "scale": 1.0, "sign": 1},
             "B": {"coil": "P2_inner", "scale": 1.0, "sign": 1},
-        }
+        },
+        circuits={},
     )
     rep = apply_coil_map(raw, tmp_path / "out.csv", coil_map)
     assert not rep["ok"]
     assert any("duplicate_coil_target" in e for e in rep["errors"])
+
+
+def test_apply_coil_map_circuits_sum(tmp_path: Path) -> None:
+    raw = tmp_path / "pf_active_raw.csv"
+    pd.DataFrame(
+        {"time": [0.0, 1.0], "P2IL FEED": [1.0, 2.0], "P2IU FEED": [3.0, 4.0], "SOL": [10.0, 20.0]}
+    ).to_csv(raw, index=False)
+    coil_map = CoilMap(
+        mapping={},
+        circuits={
+            "P2_inner": {
+                "exp_columns": ["P2IL FEED", "P2IU FEED"],
+                "combine": "sum",
+                "scale": 1.0,
+                "sign": 1,
+            },
+            "Solenoid": {"exp_columns": ["SOL"], "combine": "identity", "scale": 1.0, "sign": 1},
+        },
+    )
+    out = tmp_path / "pf_currents.csv"
+    rep = apply_coil_map(raw, out, coil_map)
+    assert rep["ok"], rep
+    df = pd.read_csv(out)
+    assert list(df["P2_inner"]) == [4.0, 6.0]
+    assert list(df["Solenoid"]) == [10.0, 20.0]
 
 
 def test_resolve_contracts_for_run(tmp_path: Path) -> None:

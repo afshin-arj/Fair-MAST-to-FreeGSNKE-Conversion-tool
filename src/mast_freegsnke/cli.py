@@ -6,6 +6,7 @@ import json
 import traceback
 import importlib
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -211,11 +212,15 @@ def main(argv=None) -> int:
 
     if args.cmd == "doctor":
         ok = True
-        if shutil.which(cfg.s5cmd_path) is None:
-            print(f"[FAIL] s5cmd not found: {cfg.s5cmd_path}")
-            ok = False
+        from .util import resolve_s5cmd_path
+
+        s5 = resolve_s5cmd_path(cfg.s5cmd_path, Path.cwd())
+        if Path(s5).is_file() or shutil.which(s5):
+            print(f"[OK] s5cmd: {s5}")
+            object.__setattr__(cfg, "s5cmd_path", s5)
         else:
-            print(f"[OK] s5cmd: {cfg.s5cmd_path}")
+            print(f"[FAIL] s5cmd not found: {cfg.s5cmd_path} (also checked tools/s5cmd.exe)")
+            ok = False
 
         if not cfg.level2_s3_prefix or "CHANGE_ME" in cfg.level2_s3_prefix:
             print("[FAIL] level2_s3_prefix not set in config.json")
@@ -273,22 +278,31 @@ def main(argv=None) -> int:
             print("[WARN] coil_map_path not set")
 
         # FreeGSNKE python
-        freeg_py = cfg.freegsnke_python or sys.executable
         if cfg.execute_freegsnke:
-            try:
-                import importlib.util as _ilu
-
-                # Best-effort: check freegsnke import in selected interpreter via subprocess would be heavier;
-                # here we only check local env when freegsnke_python is unset.
-                if cfg.freegsnke_python:
-                    print(f"[OK] freegsnke_python set: {cfg.freegsnke_python}")
-                elif _ilu.find_spec("freegsnke") is not None:
-                    print("[OK] freegsnke importable in current Python")
-                else:
-                    print("[FAIL] freegsnke not importable; set freegsnke_python in config")
+            freeg_py = cfg.freegsnke_python or sys.executable
+            fp = Path(freeg_py)
+            if not fp.is_absolute():
+                fp = (Path.cwd() / fp).resolve()
+            if cfg.freegsnke_python and not fp.exists():
+                print(f"[FAIL] freegsnke_python not found: {fp}")
+                ok = False
+            else:
+                exe = str(fp) if fp.exists() else sys.executable
+                try:
+                    chk = subprocess.run(
+                        [exe, "-c", "import freegsnke; print(getattr(freegsnke,'__version__','ok'))"],
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                    if chk.returncode == 0:
+                        print(f"[OK] freegsnke in {exe}: {chk.stdout.strip()}")
+                    else:
+                        print(f"[FAIL] freegsnke not importable in {exe}: {chk.stderr.strip()[:200]}")
+                        ok = False
+                except Exception as e:
+                    print(f"[FAIL] freegsnke check error: {e}")
                     ok = False
-            except Exception as e:
-                print(f"[WARN] freegsnke check error: {e}")
 
         if _has("xarray") and _has("pandas") and _has("zarr") and _has("numpy"):
             print("[OK] optional zarr stack installed (extraction enabled)")
@@ -690,3 +704,7 @@ def main(argv=None) -> int:
             return 11
 
     return 1
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+

@@ -1,15 +1,18 @@
 {
-  "schema_version": "1.0",
-  "authority_name": "MAST_FreeGSNKE_MachineAuthority",
-  "authority_version": "0.0-template",
-  "provenance": {
-    "source_repo": "CHANGE_ME",
-    "source_commit": "CHANGE_ME",
-    "metrology_reference": "CHANGE_ME"
-  },
+  "authority_name": "MAST_FAIRMAST_Level2_MachineAuthority",
+  "authority_version": "1.0.0-fairmast",
   "files": {
-    "probe_geometry": "probe_geometry.json",
     "coil_geometry": "coil_geometry.json",
-    "diagnostic_registry": "diagnostic_registry.json"
-  }
+    "diagnostic_registry": "diagnostic_registry.json",
+    "probe_geometry": "probe_geometry.json"
+  },
+  "provenance": {
+    "metrology_reference": "magnetics.zarr + pf_active.zarr geometry arrays",
+    "shot": 30201,
+    "shot_cache": "data_cache\\shot_30201",
+    "source": "FAIR-MAST Level-2 Zarr",
+    "source_commit": "n/a-level2-archive",
+    "source_repo": "https://github.com/ukaea/mast-data"
+  },
+  "schema_version": "1.0"
 }

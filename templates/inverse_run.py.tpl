@@ -144,14 +144,22 @@ def main():
 
     ip_df = pd.read_csv(INPUTS / "ip.csv")
     t0, ip0, ip_max = choose_formed_plasma_time(ip_df, frac=__FORMED_FRAC__)
-    print(f"Selected formed-plasma time t0={{t0:.6f}} s  Ip={{ip0/1e6:.3f}} MA")
+    print(f"Selected formed-plasma time t0={t0:.6f} s  Ip={ip0/1e6:.3f} MA")
 
     tokamak = build_machine.tokamak(
         active_coils_path=str(MACHINE / "active_coils.pickle"),
         passive_coils_path=str(MACHINE / "passive_coils.pickle"),
         limiter_path=str(MACHINE / "limiter.pickle"),
         wall_path=str(MACHINE / "wall.pickle"),
-        magnetic_probe_path=str(MACHINE / "magnetic_probes.pickle") if (MACHINE / "magnetic_probes.pickle").exists() else None,
+        magnetic_probe_path=(
+            str(HERE / "magnetic_probes.pickle")
+            if (HERE / "magnetic_probes.pickle").exists()
+            else (
+                str(MACHINE / "magnetic_probes.pickle")
+                if (MACHINE / "magnetic_probes.pickle").exists()
+                else None
+            )
+        ),
     )
     pf_init = load_pf_currents(t0)
     set_machine_currents(tokamak, pf_init)

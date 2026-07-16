@@ -1,3 +1,9 @@
+## 10.1.1 — Unblock full FreeGSNKE path
+- Build `machine_authority/` from FAIR-MAST Level-2 geometry (no invented metrology).
+- Export `coil_current` channels into `pf_active_raw.csv`; ship `configs/coil_map.json` with explicit feed sums.
+- Resolve `s5cmd` via PATH or `tools/s5cmd.exe`; add `scripts/ensure_s5cmd.py`.
+- Document FreeGSNKE in `.venv-freegsnke` (Python 3.11) via `freegsnke_python` in `configs/default.json`.
+
 ## 10.1.0 — Shot-only automation + authority binding
 - Interactive launcher prompts for shot number only (config-driven defaults).
 - CLI `--machine` optional when `machine_authority_dir` is set.

@@ -110,34 +110,26 @@ def to_freegsnke_magnetic_probes(geom: ProbeGeometry) -> Dict[str, object]:
       magnetic_probes = {'flux_loops': [{'name', 'position'(R,Z)}...],
                          'pickups':    [{'name','position'(R,phi,Z),'orientation','orientation_vector'}...]}
 
-    We follow that convention exactly. citeturn4view0
+    Positions/vectors are plain Python lists so pickles are cross-interpreter portable
+    (avoid embedding numpy arrays from a different Python/numpy ABI).
     """
-    # Optional numpy acceleration; we avoid a hard dependency.
-    try:
-        import numpy as np  # type: ignore
-    except Exception:
-        np = None  # type: ignore
-
     flux_loops: List[Dict[str, object]] = []
     for fl in geom.flux_loops:
-        pos = [float(fl.r_m), float(fl.z_m)]
         flux_loops.append(
             {
                 "name": fl.name,
-                "position": (np.array(pos) if np is not None else pos),
+                "position": [float(fl.r_m), float(fl.z_m)],
             }
         )
 
     pickups: List[Dict[str, object]] = []
     for pc in geom.pickup_coils:
-        pos3 = [float(pc.r_m), float(pc.phi_deg), float(pc.z_m)]
-        n3 = [float(pc.n_r), float(pc.n_phi), float(pc.n_z)]
         pickups.append(
             {
                 "name": pc.name,
-                "position": (np.array(pos3) if np is not None else pos3),
+                "position": [float(pc.r_m), float(pc.phi_deg), float(pc.z_m)],
                 "orientation": (pc.orientation or "UNSPECIFIED"),
-                "orientation_vector": (np.array(n3) if np is not None else n3),
+                "orientation_vector": [float(pc.n_r), float(pc.n_phi), float(pc.n_z)],
             }
         )
 

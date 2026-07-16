@@ -1,0 +1,7 @@
+# FreeGSNKE execution environment (Python 3.11 recommended)
+# Create: py -3.11 -m venv .venv-freegsnke
+# Then:   .venv-freegsnke\Scripts\python -m pip install -r requirements-freegsnke.txt
+freegsnke[freegs4e]==3.0.1
+pandas>=2.0.0
+matplotlib>=3.6.0
+numpy>=1.23.0

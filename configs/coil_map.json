@@ -1,0 +1,48 @@
+{
+  "version": "1.1",
+  "notes": "FAIR-MAST Level-2 current_channel labels → FreeGSNKE circuit names. Multi-feed circuits use explicit combine=sum (not silent heuristics).",
+  "circuits": {
+    "Solenoid": {
+      "exp_columns": ["SOL"],
+      "combine": "identity",
+      "scale": 1.0,
+      "sign": 1
+    },
+    "P2_inner": {
+      "exp_columns": ["P2IL FEED", "P2IU FEED"],
+      "combine": "sum",
+      "scale": 1.0,
+      "sign": 1
+    },
+    "P2_outer": {
+      "exp_columns": ["P2OL FEED", "P2OU FEED"],
+      "combine": "sum",
+      "scale": 1.0,
+      "sign": 1
+    },
+    "P3": {
+      "exp_columns": ["P3L FEED", "P3U FEED"],
+      "combine": "sum",
+      "scale": 1.0,
+      "sign": 1
+    },
+    "P4": {
+      "exp_columns": ["P4L FEED", "P4U FEED"],
+      "combine": "sum",
+      "scale": 1.0,
+      "sign": 1
+    },
+    "P5": {
+      "exp_columns": ["P5L FEED", "P5U FEED"],
+      "combine": "sum",
+      "scale": 1.0,
+      "sign": 1
+    },
+    "P6": {
+      "exp_columns": ["P6L", "P6U"],
+      "combine": "sum",
+      "scale": 1.0,
+      "sign": 1
+    }
+  }
+}
