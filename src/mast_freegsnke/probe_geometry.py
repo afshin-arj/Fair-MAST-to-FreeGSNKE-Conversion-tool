@@ -318,6 +318,11 @@ def build_geometry_from_machine_dir(machine_dir: Path) -> Tuple[Optional[ProbeGe
     json_path = machine_dir / "probe_geometry.json"
     if json_path.exists():
         try:
+            raw_txt = json_path.read_text(encoding="utf-8")
+            if "TEMPLATE" in raw_txt.upper() or "CHANGE_ME" in raw_txt.upper():
+                report["errors"] = ["template_or_CHANGE_ME_probe_geometry_refused"]
+                report["notes"].append("Refuse template probe geometry (do not invent metrology)")
+                return None, report
             geom = _load_json_geometry(json_path)
             ok, errs = validate_geometry(geom)
             if not ok:

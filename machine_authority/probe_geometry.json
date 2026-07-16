@@ -1,25 +1,6 @@
 {
   "schema_version": "1.0",
-  "notes": "TEMPLATE. Fill with authoritative MAST probe metrology. Required for FreeGSNKE synthetic diagnostics.",
-  "flux_loops": [
-    {
-      "name": "FLOOP_001",
-      "r_m": 1.0,
-      "z_m": 0.0,
-      "turns": 1,
-      "area_m2": 0.01
-    }
-  ],
-  "pickup_coils": [
-    {
-      "name": "PICKUP_001",
-      "r_m": 1.0,
-      "phi_deg": 0.0,
-      "z_m": 0.0,
-      "n_r": 1.0,
-      "n_phi": 0.0,
-      "n_z": 0.0,
-      "area_m2": 0.0001
-    }
-  ]
+  "notes": "TEMPLATE. Fill with authoritative MAST probe metrology. Required for FreeGSNKE synthetic diagnostics. Empty lists intentionally — this pipeline will not invent metrology.",
+  "flux_loops": [],
+  "pickup_coils": []
 }

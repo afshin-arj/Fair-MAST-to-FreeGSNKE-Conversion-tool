@@ -102,13 +102,25 @@ def interp_at_time(df, t0, value_col):
     return float(np.interp(t0, t[order], y[order]))
 
 def load_pf_currents(t0: float) -> dict:
-    df = pd.read_csv(INPUTS / "pf_currents.csv")
+    path = INPUTS / "pf_currents.csv"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Missing {path}. Provide coil_map_path in config so the pipeline can apply_coil_map."
+        )
+    df = pd.read_csv(path)
     out = {}
+    missing = []
     for c in ["P2_inner","P2_outer","P3","P4","P5","P6","Solenoid"]:
         if c in df.columns and np.isfinite(df[c]).any():
             out[c] = interp_at_time(df, t0, c)
         else:
-            out[c] = 0.0
+            missing.append(c)
+    if missing:
+        raise RuntimeError(
+            "PF currents missing/non-finite for circuits: "
+            + ", ".join(missing)
+            + ". Fix coil_map authority (no silent 0.0 A defaults)."
+        )
     return out
 
 def set_machine_currents(tokamak, currents_dict):

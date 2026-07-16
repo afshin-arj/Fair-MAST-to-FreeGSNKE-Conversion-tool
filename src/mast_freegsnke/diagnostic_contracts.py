@@ -182,3 +182,8 @@ def write_resolved_contracts(run_dir: Path, contracts: List[DiagnosticContract])
     }
     out_path.write_text(json.dumps(obj, indent=2, sort_keys=True))
     return out_path
+
+
+def resolve_contracts_for_run(contracts_path: Path, run_dir: Path) -> List[DiagnosticContract]:
+    """Load contracts with paths resolved relative to the run directory (shot-scoped)."""
+    return load_contracts(contracts_path, base_dir=Path(run_dir).resolve())

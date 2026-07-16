@@ -1,0 +1,15 @@
+---
+description: North star — shot number only; full FreeGSNKE pipeline automatic
+alwaysApply: true
+---
+
+# Shot-only automation
+
+User-facing happy path: **enter MAST shot number → get FreeGSNKE results**.
+
+When changing CLI, interactive launcher, configs, or pipeline stages:
+
+- Do not add new required prompts in the happy path
+- Default config must enable download + extract + generate + execute + metrics when authorities exist
+- Missing authority → fail with a clear blocking error and fix hint, never invent metrology
+- Prefer wiring existing authorities (`coil_map`, contracts, execution_authority) over new heuristic paths

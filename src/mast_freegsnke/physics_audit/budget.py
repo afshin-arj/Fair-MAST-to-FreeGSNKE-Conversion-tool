@@ -45,10 +45,8 @@ def build_residual_budget_from_window(window_payload: Dict[str, Any], primary_me
         ds = 0.0
     buckets["continuity"] = max(abs(ds), 0.0)
 
-    # (4) placeholder buckets (explicit zeros to keep schema stable)
-    buckets.setdefault("coil_mapping", 0.0)
-    buckets.setdefault("diagnostic_subset", 0.0)
-    buckets.setdefault("contract_scale", 0.0)
+    # (4) Unmeasured buckets intentionally OMITTED (not 0.0 — zeros look like evidence).
+    # Unmeasured: coil_mapping, diagnostic_subset, contract_scale
 
     return buckets
 

@@ -1,0 +1,15 @@
+---
+description: Determinism and authority-layer conventions for mast_freegsnke
+globs: src/mast_freegsnke/**/*.py
+alwaysApply: false
+---
+
+# Authority & determinism
+
+- Frozen stage order; log every stage in `manifest.json`
+- Precedence: window override > consensus > single-signal
+- Geometry sources resolve deterministically; never invent positions/areas/turns
+- Generated FreeGSNKE scripts must read `execution_authority_bundle.json` (fail-fast if missing)
+- Template rendering: token substitution only (`__TOKEN__`), never `str.format` on Python templates
+- Residual budget buckets that are unmeasured must be `UNMEASURED`, not `0.0`
+- Coil mapping: explicit `coil_map` only for production; heuristics may suggest, not silently apply

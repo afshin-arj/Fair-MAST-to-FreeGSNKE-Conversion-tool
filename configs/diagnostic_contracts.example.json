@@ -6,20 +6,20 @@
       "dtype": "flux_loop",
       "units": "Wb",
       "exp": {
-        "csv": "runs/shot_00000/inputs/magnetics.csv",
+        "csv": "inputs/magnetics.csv",
         "time_col": "time",
         "value_col": "FL1",
         "scale": 1.0,
         "sign": 1.0
       },
       "syn": {
-        "csv": "runs/shot_00000/synthetic/synthetic_flux_loops.csv",
+        "csv": "synthetic/synthetic_flux_loop.csv",
         "time_col": "time",
         "value_col": "FL1",
         "scale": 1.0,
         "sign": 1.0
       },
-      "notes": "Edit paths/columns for your shot; keep deterministic sign/scale conventions."
+      "notes": "Paths are relative to the run directory (shot-scoped). Edit columns for your shot; keep deterministic sign/scale."
     }
   ]
 }

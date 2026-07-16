@@ -36,6 +36,17 @@ def load_machine_authority(root: Path) -> MachineAuthority:
     return MachineAuthority(root=root, manifest=manifest, probe_geometry=probe, coil_geometry=coil, diagnostic_registry=reg)
 
 
+def _looks_like_template(text: str) -> bool:
+    t = (text or "").strip().lower()
+    return (
+        "change_me" in t
+        or t == "template"
+        or t.endswith("-template")
+        or "0.0-template" in t
+        or t.startswith("template")
+    )
+
+
 def validate_machine_authority(ma: MachineAuthority) -> Dict[str, Any]:
     errors: List[str] = []
 
@@ -48,6 +59,19 @@ def validate_machine_authority(ma: MachineAuthority) -> Dict[str, Any]:
     _req(ma.manifest, "authority_name", "authority_manifest")
     _req(ma.manifest, "authority_version", "authority_manifest")
     _req(ma.manifest, "provenance", "authority_manifest")
+
+    # Fail-closed: reject shipped templates / CHANGE_ME provenance (do not invent metrology).
+    ver = str(ma.manifest.get("authority_version", ""))
+    if _looks_like_template(ver):
+        errors.append(f"template_authority_version:{ver}")
+    prov = ma.manifest.get("provenance") or {}
+    if isinstance(prov, dict):
+        for k, v in prov.items():
+            if _looks_like_template(str(v)):
+                errors.append(f"template_provenance:{k}={v}")
+    notes = str(ma.probe_geometry.get("notes", "") or "")
+    if _looks_like_template(notes) or "template" in notes.lower():
+        errors.append("template_probe_geometry_notes")
 
     # Probe geometry minimal checks (do not invent metrology; just structural)
     _req(ma.probe_geometry, "schema_version", "probe_geometry")

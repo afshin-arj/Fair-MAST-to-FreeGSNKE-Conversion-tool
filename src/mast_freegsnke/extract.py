@@ -85,11 +85,8 @@ class Extractor:
                 exported_pf.append(k)
         pf_df.to_csv(out_inputs_dir/"pf_active_raw.csv", index=False)
 
-        circuits = ["P2_inner","P2_outer","P3","P4","P5","P6","Solenoid"]
-        circ_df = pd.DataFrame({"time": pf_df["time"].to_numpy()})
-        for c in circuits:
-            circ_df[c] = np.nan
-        circ_df.to_csv(out_inputs_dir/"pf_currents.csv", index=False)
+        # Do NOT invent NaN placeholder pf_currents.csv. Production mapping must come from
+        # explicit coil_map authority (pipeline apply_coil_map stage).
 
         mag_df = pd.DataFrame({"time": t})
         flux_vars = [k for k in ds_mag.data_vars if ("flux" in k.lower() or "loop" in k.lower())]

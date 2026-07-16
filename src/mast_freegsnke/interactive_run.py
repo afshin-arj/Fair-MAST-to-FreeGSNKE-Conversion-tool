@@ -1,4 +1,4 @@
-"""Interactive launcher logic implemented in Python for Windows batch reliability.
+"""Interactive launcher: shot number only; all other knobs from config.
 
 Author: © 2026 Afshin Arjhangmehr
 """
@@ -7,17 +7,11 @@ from __future__ import annotations
 
 import argparse
 import re
-import sys
+from pathlib import Path
 from typing import List, Optional
 
 from . import cli
-
-
-def _prompt(msg: str, default: Optional[str] = None) -> str:
-    if default is None:
-        return input(msg).strip()
-    s = input(f"{msg} [{default}]: ").strip()
-    return s or default
+from .config import AppConfig
 
 
 def _prompt_required_int(msg: str) -> int:
@@ -37,47 +31,32 @@ def _prompt_required_int(msg: str) -> int:
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(prog="mast-freegsnke-interactive")
     ap.add_argument("--default-config", default="configs/default.json")
-    ap.add_argument("--default-machine-authority", default="machine_authority")
     ns = ap.parse_args(argv)
 
     print("")
     print("===========================================================================")
-    print("Interactive Run")
+    print("Interactive Run (shot-only)")
     print("===========================================================================")
     print("")
 
-    config_path = _prompt("Enter config path", default=ns.default_config)
-    # Fail fast with a friendly message if the path doesn't exist.
-    from pathlib import Path
-    if not Path(config_path).exists():
+    config_path = Path(ns.default_config)
+    if not config_path.exists():
         print(f"[FAIL] Config file not found: {config_path}")
-        print("[HINT] Use configs/default.json (shipped) or point to your own config JSON/YAML.")
+        print("[HINT] Use configs/default.json (shipped) or pass --default-config <path>.")
         return 2
+
+    cfg = AppConfig.load(config_path)
+    print(f"[INFO] Using config: {config_path}")
+    print(f"[INFO] execute_freegsnke={cfg.execute_freegsnke} mode={cfg.freegsnke_run_mode}")
+    print(f"[INFO] machine_authority_dir={cfg.machine_authority_dir}")
+    print(f"[INFO] coil_map_path={cfg.coil_map_path}")
+    print(f"[INFO] enable_contract_metrics={cfg.enable_contract_metrics}")
+    print("")
+
     shot = _prompt_required_int("Enter MAST shot number (required, digits; 'q' to quit): ")
 
-    machine_dir = _prompt("Enter machine authority dir", default=ns.default_machine_authority)
-    window_override = input("Optional window override (blank for auto): ").strip()
-
-    # y/n prompts
-    def yn(msg: str, default: str = "y") -> str:
-        while True:
-            s = input(f"{msg} (y/n, default {default}): ").strip().lower()
-            if not s:
-                s = default
-            if s in ("y", "n"):
-                return s
-            print("[WARN] Please enter y or n.")
-
-    run_freegsnke = yn("Run FreeGSNKE execution now?", default="y")
-    run_metrics = yn("Compute contract residual metrics?", default="y")
-
-    args = ["run", "--config", config_path, "--shot", str(shot), "--machine", machine_dir]
-    if window_override:
-        args += ["--window-override", window_override]
-    if run_freegsnke == "n":
-        args += ["--skip-freegsnke"]
-    if run_metrics == "n":
-        args += ["--skip-metrics"]
+    args = ["run", "--config", str(config_path), "--shot", str(shot)]
+    # --machine omitted: CLI resolves from config.machine_authority_dir
 
     print("")
     print("[INFO] Running: mast-freegsnke " + " ".join(args))

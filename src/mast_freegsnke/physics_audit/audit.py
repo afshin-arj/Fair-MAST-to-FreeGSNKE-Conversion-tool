@@ -130,7 +130,17 @@ def run_physics_audit(run_dir: Path, config: PhysicsAuditConfig) -> PhysicsScore
         buckets = build_residual_budget_from_window(payload, primary_metric=config.primary_metric)
         ok = sanity_check_budget(buckets)
         total = budget_total(buckets)
-        rb = ResidualBudget(buckets=buckets, total=total, sanity_ok=ok, notes="Derived from robustness_v4 artifacts" if ok else "Sanity check failed")
+        rb = ResidualBudget(
+            buckets=buckets,
+            total=total,
+            sanity_ok=ok,
+            notes=(
+                "Derived from robustness_v4 artifacts; UNMEASURED buckets omitted: "
+                "coil_mapping,diagnostic_subset,contract_scale"
+                if ok
+                else "Sanity check failed"
+            ),
+        )
 
         # collect per window summary row
         per_window_rows.append({

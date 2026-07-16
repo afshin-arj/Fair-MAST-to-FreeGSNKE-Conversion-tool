@@ -23,11 +23,25 @@ from .probe_geometry import build_geometry_from_machine_dir, write_geometry_json
 from .machine_authority import machine_authority_from_dir, snapshot_machine_authority
 from .provenance import write_provenance, write_manifest_v2
 from .freegsnke_runner import FreeGSNKERunner, write_execution_report
-from .diagnostic_contracts import load_contracts, validate_contracts, write_resolved_contracts
-from .coil_map import load_coil_map, validate_coil_map, write_resolved_coil_map
+from .diagnostic_contracts import (
+    load_contracts,
+    resolve_contracts_for_run,
+    validate_contracts,
+    write_resolved_contracts,
+)
+from .coil_map import apply_coil_map, load_coil_map, validate_coil_map, write_resolved_coil_map
 from .synthetic_extract import extract_synthetic_by_contracts
 from .metrics import compare_from_contracts
 from .execution_authority import write_execution_authority
+
+
+def _resolve_config_path(raw: Optional[str], repo_root: Path) -> Optional[Path]:
+    if not raw:
+        return None
+    p = Path(raw)
+    if not p.is_absolute():
+        p = (repo_root / p).resolve()
+    return p
 
 
 @dataclass
@@ -181,7 +195,42 @@ class ShotPipeline:
             except Exception as e:
                 extract_meta = {"extract_error": str(e)}
                 _stage("extract_csv", False, error=str(e))
+                blocking_errors.append(f"extract_csv_failed: {e}")
             write_json(inputs_dir / "extract_meta.json", extract_meta)
+
+            # Coil-map authority → pf_currents.csv (binding; after extract, before execute)
+            raw_pf = inputs_dir / "pf_active_raw.csv"
+            cm_path = _resolve_config_path(self.cfg.coil_map_path, repo_root)
+            if cm_path is not None:
+                try:
+                    coil_map = load_coil_map(cm_path)
+                    cm_report = validate_coil_map(coil_map)
+                    write_resolved_coil_map(run_dir, coil_map)
+                    if not cm_report.get("ok", False):
+                        blocking_errors.append("coil_map_invalid: " + "; ".join(cm_report.get("errors", [])))
+                        _stage("coil_map", False, n=cm_report.get("n"), errors=cm_report.get("errors"))
+                    else:
+                        apply_rep = apply_coil_map(raw_pf, inputs_dir / "pf_currents.csv", coil_map)
+                        write_json(inputs_dir / "coil_map_apply_report.json", apply_rep)
+                        if not apply_rep.get("ok", False):
+                            blocking_errors.append(
+                                "coil_map_apply_failed: " + "; ".join(apply_rep.get("errors", []))
+                            )
+                            _stage("coil_map_apply", False, errors=apply_rep.get("errors"))
+                        else:
+                            _stage("coil_map_apply", True, n_mapped=apply_rep.get("n_mapped"), coils=apply_rep.get("coils"))
+                except Exception as e:
+                    blocking_errors.append(f"coil_map_failed: {type(e).__name__}: {e}")
+                    _stage("coil_map", False, error=str(e))
+            else:
+                if self.cfg.execute_freegsnke and raw_pf.exists():
+                    blocking_errors.append(
+                        "coil_map_required_for_execution: set coil_map_path in config "
+                        "(heuristic PF mapping is not allowed in the happy path)"
+                    )
+                    _stage("coil_map", False, note="missing_coil_map_path")
+                else:
+                    _stage("coil_map", True, note="no_coil_map_path")
 
             # Generate run scripts/stubs
             gen = ScriptGenerator(templates_dir=self.templates_dir)
@@ -216,7 +265,7 @@ class ShotPipeline:
             except Exception as e:
                 _stage("window_consensus", False, error=str(e))
 
-            final_tw: TimeWindow
+            final_tw: Optional[TimeWindow] = None
             if window_override is not None:
                 final_tw = TimeWindow(
                     t_start=float(window_override["t_start"]),
@@ -236,21 +285,29 @@ class ShotPipeline:
                     note=f"frac_sources_agree={consensus_obj.frac_sources_agree}",
                 )
             else:
-                final_tw = infer_time_window(inputs_dir=inputs_dir, formed_frac=self.cfg.formed_plasma_frac)
+                try:
+                    final_tw = infer_time_window(inputs_dir=inputs_dir, formed_frac=self.cfg.formed_plasma_frac)
+                except Exception as e:
+                    blocking_errors.append(f"window_finalize_failed: {e}")
+                    _stage("window_finalize", False, error=str(e))
 
-            write_json(inputs_dir / "window.json", final_tw.__dict__)
-            _stage("window_finalize", True, t_start=final_tw.t_start, t_end=final_tw.t_end, source=final_tw.source)
+            if final_tw is not None:
+                write_json(inputs_dir / "window.json", final_tw.__dict__)
+                _stage("window_finalize", True, t_start=final_tw.t_start, t_end=final_tw.t_end, source=final_tw.source)
 
             # QC diagnostics (best-effort, but failures are blocking if window exists)
             window_diag: Optional[WindowDiagnostics] = None
-            try:
-                window_diag = evaluate_time_window(inputs_dir=inputs_dir, tw=final_tw)
-                write_json(inputs_dir / "window_diagnostics.json", window_diag.__dict__)
-                (inputs_dir / "WINDOW_QC_REPORT.txt").write_text(format_diagnostics(window_diag))
-                _stage("window_qc", True, confidence=window_diag.confidence, flags=window_diag.flags)
-            except Exception as e:
-                blocking_errors.append(f"window_qc_failed: {e}")
-                _stage("window_qc", False, error=str(e))
+            if final_tw is not None:
+                try:
+                    window_diag = evaluate_time_window(inputs_dir=inputs_dir, tw=final_tw)
+                    write_json(inputs_dir / "window_diagnostics.json", window_diag.__dict__)
+                    (inputs_dir / "WINDOW_QC_REPORT.txt").write_text(format_diagnostics(window_diag))
+                    _stage("window_qc", True, confidence=window_diag.confidence, flags=window_diag.flags)
+                except Exception as e:
+                    blocking_errors.append(f"window_qc_failed: {e}")
+                    _stage("window_qc", False, error=str(e))
+            else:
+                _stage("window_qc", False, note="skipped_no_window")
 
             # Probe geometry (required for synthetic diagnostics)
             geom, geom_report = build_geometry_from_machine_dir(machine_dir=machine_dir)
@@ -312,33 +369,35 @@ class ShotPipeline:
                     # Contract-driven extraction + residual metrics (deterministic authority)
                     if self.cfg.enable_contract_metrics and self.cfg.diagnostic_contracts_path:
                         try:
-                            cpath = Path(self.cfg.diagnostic_contracts_path)
-                            contracts = load_contracts(cpath, base_dir=cpath.parent)
-                            contracts_report = validate_contracts(contracts, require_files=False)
-                            # Always write resolved contracts into run folder for audit (absolute paths).
+                            cpath = _resolve_config_path(self.cfg.diagnostic_contracts_path, repo_root)
+                            if cpath is None or not cpath.exists():
+                                raise FileNotFoundError(
+                                    f"diagnostic_contracts_path not found: {self.cfg.diagnostic_contracts_path}"
+                                )
+                            contracts = resolve_contracts_for_run(cpath, run_dir)
+                            # Require files when metrics enabled (fail-closed).
+                            contracts_report = validate_contracts(contracts, require_files=True)
                             write_resolved_contracts(run_dir, contracts)
-
-                            # Optional coil map authority (for PF mapping governance; not yet wired into FreeGSNKE templates).
-                            if self.cfg.coil_map_path:
-                                cm_path = Path(self.cfg.coil_map_path)
-                                coil_map = load_coil_map(cm_path)
-                                cm_report = validate_coil_map(coil_map)
-                                write_resolved_coil_map(run_dir, coil_map)
-                                if not cm_report.get("ok", False):
-                                    blocking_errors.append("coil_map_invalid: " + "; ".join(cm_report.get("errors", [])))
-                                    _stage("coil_map", False, n=cm_report.get("n"), errors=cm_report.get("errors"))
-                                else:
-                                    _stage("coil_map", True, n=cm_report.get("n"))
+                            if not contracts_report.get("ok", False):
+                                blocking_errors.append(
+                                    "contracts_invalid: " + "; ".join(contracts_report.get("errors", []))
+                                )
+                                _stage("contracts", False, errors=contracts_report.get("errors"))
                             else:
-                                _stage("coil_map", True, note="no_coil_map_path")
-
-                            # Normalize synthetic traces as specified by contracts (best effort)
-                            syn_res = extract_synthetic_by_contracts(run_dir, contracts)
-                            _stage("synthetic_extract", syn_res.ok, n_written=len(syn_res.written), errors=syn_res.errors)
-
-                            # Compute residuals (best effort, but if contracts exist this is usually desired)
-                            metrics_summary = compare_from_contracts(run_dir, contracts)
-                            _stage("residual_metrics_contracts", metrics_summary.get("ok", False), n_scored=metrics_summary.get("n_scored"), errors=metrics_summary.get("errors"))
+                                syn_res = extract_synthetic_by_contracts(run_dir, contracts)
+                                _stage(
+                                    "synthetic_extract",
+                                    syn_res.ok,
+                                    n_written=len(syn_res.written),
+                                    errors=syn_res.errors,
+                                )
+                                metrics_summary = compare_from_contracts(run_dir, contracts)
+                                _stage(
+                                    "residual_metrics_contracts",
+                                    metrics_summary.get("ok", False),
+                                    n_scored=metrics_summary.get("n_scored"),
+                                    errors=metrics_summary.get("errors"),
+                                )
                         except Exception as e:
                             # Contract system errors are blocking when explicitly enabled.
                             blocking_errors.append(f"contracts_failed: {type(e).__name__}: {e}")
@@ -353,7 +412,7 @@ class ShotPipeline:
                 {
                     "cache_dir": str(shot_cache) if shot_cache is not None else None,
                     "extract_meta": extract_meta,
-                    "time_window": final_tw.__dict__,
+                    "time_window": final_tw.__dict__ if final_tw is not None else None,
                     "time_window_qc": window_diag.__dict__ if window_diag is not None else None,
                     "time_window_override": window_override,
                     "time_window_consensus": consensus_obj.__dict__ if consensus_obj is not None else None,

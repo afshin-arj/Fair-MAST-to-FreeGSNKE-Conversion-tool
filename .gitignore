@@ -18,6 +18,10 @@ dist/
 # Local run outputs
 runs/
 cache/
+data_cache/
+tools/
+configs/*.local.json
+smoke_*.txt
 
 # OS / editor
 .DS_Store

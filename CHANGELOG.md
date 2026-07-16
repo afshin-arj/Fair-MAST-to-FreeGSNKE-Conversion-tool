@@ -1,3 +1,14 @@
+## 10.1.0 — Shot-only automation + authority binding
+- Interactive launcher prompts for shot number only (config-driven defaults).
+- CLI `--machine` optional when `machine_authority_dir` is set.
+- Coil map authority now **applies** PF mapping (`apply_coil_map`); heuristic mapper demoted to suggest-only.
+- Template/`CHANGE_ME` machine authority fail-closed; shipped probe geometry emptied.
+- Shot-scoped diagnostic contract resolution (`resolve_contracts_for_run`) with `require_files=True` when metrics enabled.
+- Doctor checks machine authority, coil map, and FreeGSNKE availability.
+- Unmeasured residual-budget buckets omitted (not fake zeros).
+- Fix `s5cmd sync` to use `/*` source trees (empty downloads were silently succeeding).
+- `check`/`run` pass S3 endpoint + no-sign settings; absolute `s5cmd` paths accepted.
+
 ## 10.0.10
 - Template Safety Authority: eliminate unsafe str.format() rendering for generated Python scripts; use token substitution to avoid brace collisions (f-strings/dicts).
 - Added regression test for template rendering.

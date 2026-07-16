@@ -6,6 +6,7 @@ import json
 import traceback
 import importlib
 import shutil
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -185,7 +186,12 @@ def main(argv=None) -> int:
     r = sub.add_parser("run", help="Run pipeline for a shot")
     r.add_argument("--shot", type=int, required=True)
     r.add_argument("--config", type=str, required=True)
-    r.add_argument("--machine", type=str, required=True)
+    r.add_argument(
+        "--machine",
+        type=str,
+        default=None,
+        help="Machine/authority directory (optional if config.machine_authority_dir is set)",
+    )
     r.add_argument("--tstart", type=float, default=None, help="Deterministic window override start time [s]")
     r.add_argument("--tend", type=float, default=None, help="Deterministic window override end time [s]")
     r.add_argument("--execute-freegsnke", action="store_true", help="Execute generated FreeGSNKE scripts (requires freegsnke in selected python)")
@@ -216,6 +222,73 @@ def main(argv=None) -> int:
             ok = False
         else:
             print("[OK] level2_s3_prefix set")
+
+        if cfg.s3_endpoint_url:
+            print(f"[OK] s3_endpoint_url: {cfg.s3_endpoint_url}")
+        else:
+            print("[WARN] s3_endpoint_url not set")
+
+        # Machine authority
+        ma_dir = None
+        if cfg.machine_authority_dir:
+            ma_dir = Path(cfg.machine_authority_dir)
+            if not ma_dir.is_absolute():
+                ma_dir = (Path.cwd() / ma_dir).resolve()
+        if ma_dir is None or not ma_dir.exists():
+            msg = "[FAIL]" if cfg.require_machine_authority else "[WARN]"
+            print(f"{msg} machine_authority_dir missing: {cfg.machine_authority_dir}")
+            if cfg.require_machine_authority:
+                ok = False
+        else:
+            from .machine_authority import machine_authority_from_dir
+
+            ma, rep = machine_authority_from_dir(ma_dir)
+            if ma is None:
+                print(f"[FAIL] machine authority invalid: {rep.get('errors')}")
+                if cfg.require_machine_authority:
+                    ok = False
+            else:
+                print(f"[OK] machine authority: {ma.manifest.get('authority_name')} v={ma.manifest.get('authority_version')}")
+
+        # Coil map
+        if cfg.coil_map_path:
+            cmp = Path(cfg.coil_map_path)
+            if not cmp.is_absolute():
+                cmp = (Path.cwd() / cmp).resolve()
+            if not cmp.exists():
+                print(f"[FAIL] coil_map_path not found: {cmp}")
+                ok = False
+            else:
+                cm = load_coil_map(cmp)
+                crep = validate_coil_map(cm)
+                if not crep.get("ok"):
+                    print(f"[FAIL] coil_map invalid: {crep.get('errors')}")
+                    ok = False
+                else:
+                    print(f"[OK] coil_map: {crep.get('n')} mappings")
+        elif cfg.execute_freegsnke:
+            print("[FAIL] coil_map_path required when execute_freegsnke=true")
+            ok = False
+        else:
+            print("[WARN] coil_map_path not set")
+
+        # FreeGSNKE python
+        freeg_py = cfg.freegsnke_python or sys.executable
+        if cfg.execute_freegsnke:
+            try:
+                import importlib.util as _ilu
+
+                # Best-effort: check freegsnke import in selected interpreter via subprocess would be heavier;
+                # here we only check local env when freegsnke_python is unset.
+                if cfg.freegsnke_python:
+                    print(f"[OK] freegsnke_python set: {cfg.freegsnke_python}")
+                elif _ilu.find_spec("freegsnke") is not None:
+                    print("[OK] freegsnke importable in current Python")
+                else:
+                    print("[FAIL] freegsnke not importable; set freegsnke_python in config")
+                    ok = False
+            except Exception as e:
+                print(f"[WARN] freegsnke check error: {e}")
 
         if _has("xarray") and _has("pandas") and _has("zarr") and _has("numpy"):
             print("[OK] optional zarr stack installed (extraction enabled)")
@@ -263,6 +336,9 @@ def main(argv=None) -> int:
             s5cmd_path=cfg.s5cmd_path,
             level2_s3_prefix=cfg.level2_s3_prefix,
             layout_patterns=cfg.s3_layout_patterns,
+            s3_endpoint_url=cfg.s3_endpoint_url,
+            s3_no_sign_request=cfg.s3_no_sign_request,
+            timeout_s=cfg.s5cmd_timeout_s,
         )
         avail = check_groups(shot=args.shot, groups=cfg.required_groups, discover=dl.discover_group_path)
 
@@ -561,14 +637,37 @@ def main(argv=None) -> int:
             object.__setattr__(cfg, "enable_contract_metrics", True)
 
         pipe = ShotPipeline(cfg=cfg, templates_dir=templates_dir)
+        # Resolve machine dir: CLI --machine wins; else config.machine_authority_dir.
+        if args.machine:
+            machine_dir = Path(args.machine)
+        elif cfg.machine_authority_dir:
+            machine_dir = Path(cfg.machine_authority_dir)
+            if not machine_dir.is_absolute():
+                machine_dir = (Path.cwd() / machine_dir).resolve()
+        else:
+            print(
+                "[FAIL] No machine directory: pass --machine or set machine_authority_dir in config"
+            )
+            return 2
+        if not machine_dir.exists():
+            print(f"[FAIL] Machine directory not found: {machine_dir}")
+            return 2
         try:
             run_dir = pipe.run(
                 shot=args.shot,
-                machine_dir=Path(args.machine),
+                machine_dir=machine_dir,
                 tstart=args.tstart,
                 tend=args.tend,
             )
             print(f"[OK] Run folder: {run_dir}")
+            # Surface blocking errors as non-zero exit for shot-only automation.
+            try:
+                man = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+                if man.get("status") != "success" or man.get("blocking_errors"):
+                    print(f"[FAIL] Run completed with status={man.get('status')} blocking_errors={man.get('blocking_errors')}")
+                    return 11
+            except Exception:
+                pass
             return 0
         except Exception as e:
             # Print a full traceback to stdout/stderr (captured by launcher logs)

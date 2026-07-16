@@ -1,0 +1,14 @@
+---
+description: Super-agent ship gate — no commit/push until tests green; never force-push main
+alwaysApply: true
+---
+
+# Ship gate
+
+When acting as / following `mast-freegsnke-super` or shipping to GitHub:
+
+1. **Modify → test → smoke → then git** — never commit a red build
+2. Prefer **feature branch + PR merge into `main`** (still lands on main)
+3. **Never** `git push --force` to `main`/`master`
+4. Do not commit `data_cache/`, secrets, or invented metrology
+5. Direct push to `main` only if the user explicitly demanded it in this chat and merge is fast-forward

@@ -18,8 +18,10 @@ class BulkDownloader:
     timeout_s: int = 60
 
     def _check_s5cmd(self) -> None:
-        if shutil.which(self.s5cmd_path) is None:
-            raise RuntimeError(f"s5cmd not found on PATH: '{self.s5cmd_path}'. Install s5cmd first.")
+        p = Path(self.s5cmd_path)
+        if p.is_file() or shutil.which(self.s5cmd_path) is not None:
+            return
+        raise RuntimeError(f"s5cmd not found on PATH: '{self.s5cmd_path}'. Install s5cmd first.")
 
 
     def _s5cmd_base(self) -> List[str]:
@@ -134,10 +136,23 @@ class BulkDownloader:
         resolved: Dict[str, str] = {}
         for g in groups:
             src = self.discover_group_path(shot, g)
-            resolved[g] = src
+            # discover may return a pattern that already ends with /*; normalize to a directory URI.
+            src_dir = src.rstrip("/")
+            if src_dir.endswith("/*"):
+                src_dir = src_dir[:-2].rstrip("/")
+            elif src_dir.endswith("*"):
+                src_dir = src_dir[:-1].rstrip("/")
+            resolved[g] = src_dir
             dst = shot_dir / f"{g}.zarr"
-            cmd = self._s5cmd_base() + ["sync", src, str(dst)]
-            subprocess.run(cmd, check=True, timeout=self.timeout_s)
+            dst.mkdir(parents=True, exist_ok=True)
+            # s5cmd sync requires a wildcard source to copy object trees into a local directory.
+            sync_src = src_dir.rstrip("/") + "/*"
+            cmd = self._s5cmd_base() + ["sync", sync_src, str(dst)]
+            # Downloads can exceed the short ls timeout; allow a longer bound for sync.
+            sync_timeout = max(int(self.timeout_s), 600)
+            subprocess.run(cmd, check=True, timeout=sync_timeout)
+            if not (dst / "zarr.json").exists() and not any(dst.iterdir()):
+                raise RuntimeError(f"s5cmd sync produced empty destination for {g}: {dst} (src={sync_src})")
 
         (shot_dir / "resolved_s3_paths.json").write_text(json.dumps(resolved, indent=2) + "\n")
         return shot_dir
