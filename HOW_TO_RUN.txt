@@ -40,85 +40,36 @@ Optional: execute FreeGSNKE scripts after generation (requires freegsnke install
 
 If FreeGSNKE lives in a different venv/conda env, point to that python:
 
-  mast-freegsnke run --shot 30201 --config configs/config.json --machine machine_configs/MAST \
-    --execute-freegsnke --freegsnke-mode both --freegsnke-python /path/to/python
+  mast-freegsnke run --shot 30201 --config configs/default.json \
+    --freegsnke-python /path/to/python
 
-After a run, you can recompute the time window:
-  mast-freegsnke window --shot 30201 --config configs/config.json
+After a run, you can recompute the time window / QC / consensus:
+  mast-freegsnke window --shot 30201 --config configs/default.json
+  mast-freegsnke windowqc --shot 30201 --config configs/default.json
+  mast-freegsnke consensus --shot 30201 --config configs/default.json
 
-Window QC:
-  mast-freegsnke windowqc --shot 30201 --config configs/config.json
-(Report written to runs/shot_<N>/inputs/WINDOW_QC_REPORT.txt)
-Time window consensus (multi-signal)
------------------------------------
-After a run (i.e. once inputs/*.csv exist), compute a multi-signal window consensus:
-  mast-freegsnke consensus --shot 30201 --config configs/config.json
-(Output written to runs/shot_<N>/inputs/window_consensus.json)
+Deterministic window override (optional; not part of the happy path):
+  mast-freegsnke run --shot 30201 --config configs/default.json --tstart 0.120 --tend 0.280
 
-Deterministic window override
------------------------------
-To override *all* inference deterministically:
-  mast-freegsnke run --shot 30201 --config configs/config.json --machine machine_configs/MAST --tstart 0.120 --tend 0.280
-(Override written to runs/shot_<N>/inputs/window_override.json and dominates consensus.)
-
-Magnetic probe geometry (required for FreeGSNKE synthetic diagnostics)
----------------------------------------------------------------------
-FAIR-MAST provides signals but does NOT provide full probe geometry (orientation vectors, areas, turns, etc.).
-This pipeline therefore requires a user-supplied geometry authority file:
-
-  <machine_dir>/probe_geometry.json
-
-If missing or invalid, the pipeline will still write the run folder and manifest, but will mark a blocking error:
-  probe_geometry_missing_or_invalid
-
-See:
-  runs/shot_<N>/probe_geometry_report.json
-
-When valid, the pipeline writes:
+Machine / probe geometry authority
+----------------------------------
+Production defaults use the shipped `machine_authority/` directory (FAIR-MAST Level-2
+geometry + coil map). Templates with CHANGE_ME / TEMPLATE markers are refused.
+Do not invent metrology. When geometry resolves, the run writes:
   runs/shot_<N>/magnetic_probes.pickle
   runs/shot_<N>/magnetic_probes.json
 
+Diagnostic contract metrics (optional; not enabled by default)
+--------------------------------------------------------------
+Residual metrics require a real diagnostic contracts JSON (not the example alone).
+Until that authority exists, `enable_contract_metrics` stays false in
+configs/default.json so the pipeline does not fabricate scoring. To enable later:
 
-PROBE GEOMETRY (synthetic diagnostics authority)
---------------------------------------------
-FreeGSNKE synthetic magnetic diagnostics require probe metrology that FAIR-MAST does not provide.
-Provide probe geometry in your machine directory using ONE of the following:
-  1) probe_geometry.json (preferred)
-  2) a python module in the machine dir defining build_probe_geometry() or get_probe_geometry()
-  3) flux_loops.csv + pickup_coils.csv
+  mast-freegsnke contracts-validate --contracts <path/to/diagnostic_contracts.json> --require-files
+  mast-freegsnke run --shot 30201 --config configs/default.json \
+    --enable-contract-metrics --contracts <path/to/diagnostic_contracts.json>
 
-Generate templates:
-  mast-freegsnke geom-template --machine machines/MAST
-
-Validate geometry resolution:
-  mast-freegsnke geom-validate --machine machines/MAST
-
-Run a lightweight smoke test:
-  mast-freegsnke geom-smoke --machine machines/MAST
-
-Config option:
-  allow_missing_geometry: false  # if true, pipeline continues without magnetic_probes outputs
-
-[v0.9.0] Magnetic probes output compatibility
-- runs/shot_<N>/magnetic_probes.pickle is now written in the FreeGSNKE `magnetic_probes` dictionary format:
-  {'flux_loops': [{'name','position':[R,Z]}, ...], 'pickups': [{'name','position':[R,phi,Z],'orientation','orientation_vector':[nR,nPhi,nZ]}, ...]}
-  (see FreeGSNKE docs example0 - build_tokamak_machine, 'Magnetic Probes' section).
-- runs/shot_<N>/magnetic_probes_internal.pickle stores the internal dataclass object for audit/debug only.
-
-
-=== Diagnostic contracts (v1.1.0) ===
-To compute residual metrics against FreeGSNKE synthetic diagnostics deterministically,
-provide a diagnostic contracts JSON and enable contract metrics:
-
-  mast-freegsnke contracts-validate --contracts configs/diagnostic_contracts.example.json
-
-Run with overrides:
-  mast-freegsnke run --shot 30201 --config configs/config.json --machine <machine_dir> \
-    --execute-freegsnke --freegsnke-mode both \
-    --enable-contract-metrics --contracts <path/to/diagnostic_contracts.json> \
-    --coil-map <path/to/coil_map.json>
-
-Outputs:
+Outputs (when enabled with a valid authority):
   runs/shot_<N>/contracts/*.resolved.json
-  runs/shot_<N>/synthetic/synthetic_<dtype>.csv (normalized)
+  runs/shot_<N>/synthetic/synthetic_<dtype>.csv
   runs/shot_<N>/metrics/reconstruction_metrics.json and residual_*.csv

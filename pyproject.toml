@@ -7,7 +7,7 @@ name = "mast-freegsnke-pipeline"
 version = "10.1.2"
 description = "Deterministic pipeline: FAIR-MAST shot data → cached inputs → generated FreeGSNKE reconstruction run folder (scripts, windows, geometry, contracts, metrics)"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
   "requests>=2.31.0",
   "numpy>=1.23.0",
