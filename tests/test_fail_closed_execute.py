@@ -102,7 +102,7 @@ def test_execute_skipped_when_blocking_errors(tmp_path: Path, monkeypatch) -> No
     monkeypatch.setattr(pl, "Extractor", FailingExtractor)
     monkeypatch.setattr(pl, "ScriptGenerator", FakeGenerator)
     monkeypatch.setattr(pl, "FreeGSNKERunner", FakeRunner)
-    monkeypatch.setattr(pl, "write_execution_authority", lambda inputs_dir: inputs_dir / "execution_authority")
+    monkeypatch.setattr(pl, "write_execution_authority", lambda inputs_dir, **kw: inputs_dir / "execution_authority")
     monkeypatch.setattr(pl, "write_provenance", lambda **kw: {"ok": True})
     monkeypatch.setattr(pl, "write_manifest_v2", lambda **kw: None)
 

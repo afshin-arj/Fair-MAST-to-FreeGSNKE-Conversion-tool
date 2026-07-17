@@ -1,18 +1,31 @@
 """Honest, single-line status for contract residual metrics.
 
-As of v10.3.0 the shot-only happy path ships a real diagnostic contracts
+As of v10.4.0 the shot-only happy path ships a real diagnostic contracts
 authority (configs/diagnostic_contracts.json) and enables metrics by default:
 
 - Extractor writes inputs/flux_loops.csv and inputs/pickups.csv with FAIR-MAST
-  channel names verbatim (units from zarr attrs: Wb / T).
-- Inverse FreeGSNKE runner emits synthetic/synthetic_fluxloops.csv and
-  synthetic/synthetic_pickups.csv via freegsnke.magnetic_probes.Probes
-  (calculate_fluxloop_value / calculate_pickup_value).
-- Metrics interpolate experimental traces onto the solved synthetic time
-  slice(s); failures remain blocking when enable_contract_metrics=true.
+  channel names verbatim (units from zarr attrs: Wb / T). Probe families on
+  other timebases (mirnov/saddle/omaha) are extracted verbatim for audit under
+  inputs/audit_other_timebase/ with evidence-based exclusion reasons.
+- Inverse FreeGSNKE runner solves one inverse equilibrium at the formed-plasma
+  t0 (for dump/plots/forward replay), then solves one forward-style Grad-
+  Shafranov equilibrium per deterministic window sample time
+  (metrics_timebase authority, rule linspace_window_inclusive, config key
+  metrics_n_times; solve_mode=forward_gs_at_measured_pf_ip) and emits multi-row
+  synthetic/synthetic_fluxloops.csv and synthetic/synthetic_pickups.csv via
+  freegsnke.magnetic_probes.Probes (calculate_fluxloop_value /
+  calculate_pickup_value), plus synthetic/synthetic_times.json.
+- Metrics interpolate experimental traces onto the solved synthetic times and
+  score RMS/MAE/max_abs across all sample times. ALL identity-mapped channels
+  are contracted; channels that are all-NaN on the current shot are skipped
+  shot-scoped (status skipped_all_nan), never fabricated. Real failures remain
+  blocking when enable_contract_metrics=true.
 
-Probe families on other timebases (mirnov/saddle/omaha) or without unit-matched
-identity remain excluded from the contracts authority.
+Probe families on other timebases (mirnov/saddle/omaha) remain excluded from
+the contracts authority on explicit Level-2 evidence (raw volts without
+published calibration factors; self-contradictory unit metadata such as
+units='T' vs label='Tesla/sec'/'mT'; no FreeGSNKE synthesizer for AC
+fluctuation or saddle surface-flux measurements).
 
 Author: © 2026 Afshin Arjhangmehr
 """

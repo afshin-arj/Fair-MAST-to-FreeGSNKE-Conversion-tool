@@ -147,6 +147,11 @@ class Extractor:
         Returns a report dict recorded in extract_meta (files, variables, units,
         channel names, and skipped variables with reasons). Fails fast on
         duplicate channel names within a family (never silently overwrite).
+
+        v10.4.0: probe families sampled on OTHER timebases (time_mirnov /
+        time_saddle / time_omaha) are additionally exported VERBATIM for audit
+        under inputs/audit_other_timebase/, with explicit evidence-based
+        reasons why they cannot be honestly scored (see _audit_other_timebase).
         """
         import numpy as np
         import pandas as pd
@@ -215,4 +220,104 @@ class Extractor:
         for family, df in family_frames.items():
             df.to_csv(out_inputs_dir / f"{family}.csv", index=False)
 
+        report["audit_other_timebase"] = self._audit_other_timebase(ds_mag, t_mag, out_inputs_dir)
+
         return report
+
+    @staticmethod
+    def _audit_other_timebase(ds_mag, t_mag: str, out_inputs_dir: Path) -> Dict[str, Any]:
+        """Extract probe families on OTHER timebases verbatim, for audit only.
+
+        Honest policy (authority-hardening): these families are NEVER contracted
+        for residual scoring, because FAIR-MAST Level-2 attrs give no explicit
+        calibration path and FreeGSNKE's Probes API cannot synthesize them.
+        Evidence recorded per variable (from the shot's own zarr attrs):
+          - units == 'V'  -> raw digitizer volts; no published V->T / V->Wb
+            sensitivity, gain, area or turns factors anywhere in Level-2 attrs
+            (geometry attrs state calibration: "None"; omaha label is 'arb').
+          - units vs label contradiction (e.g. units='T' vs label='Tesla/sec'
+            for mirnov arrays, units='T' vs label='mT' for saddle coils):
+            the unit metadata is self-inconsistent, so an identity contract
+            would assert a calibration FAIR-MAST itself does not assert.
+          - FreeGSNKE 3.0.1 Probes synthesizes only point flux loops (psi, Wb)
+            and point pickup coils (B.n, T); it has no model for AC/dB-dt
+            fluctuation signals nor for saddle-coil surface flux (28-point
+            3-D polyline geometry), so no synthetic counterpart exists.
+
+        The traces themselves are written verbatim (native timebase, channel
+        names verbatim) so reviewers can audit them; nothing is invented.
+        """
+        import numpy as np
+        import pandas as pd
+
+        audit_dir = out_inputs_dir / "audit_other_timebase"
+        out: Dict[str, Any] = {
+            "convention": (
+                "inputs/audit_other_timebase/<variable>.csv, columns = time,<FAIR-MAST channel names verbatim>; "
+                "audit-only, excluded from residual contracts (see contract_exclusion_reasons per variable)"
+            ),
+            "variables": {},
+        }
+
+        for k in sorted(ds_mag.data_vars):
+            v = ds_mag[k]
+            if getattr(v, "ndim", 0) != 2:
+                continue
+            dims = list(v.dims)
+            if t_mag in dims:
+                continue
+            time_dims = [d for d in dims if str(d).startswith("time") and d in ds_mag.coords]
+            if not time_dims:
+                continue  # e.g. saddle geometry polylines (channel, coordinate)
+            tdim = time_dims[0]
+            chan_dim = dims[0] if dims[1] == tdim else dims[1]
+            if chan_dim not in ds_mag.coords:
+                continue
+
+            channels = [str(x) for x in ds_mag[chan_dim].values.tolist()]
+            t_native = np.asarray(ds_mag[tdim].values, dtype=float)
+            arr = np.asarray(v.values, dtype=float)
+            if dims[0] == tdim:
+                arr = arr.T  # normalize to (channel, time)
+            if arr.shape != (len(channels), t_native.shape[0]):
+                out["variables"][k] = {"error": f"shape_mismatch:{arr.shape} vs ({len(channels)},{t_native.shape[0]})"}
+                continue
+
+            units = v.attrs.get("units")
+            label = v.attrs.get("label")
+            units_s = str(units) if units is not None else None
+            label_s = str(label) if label is not None else None
+
+            reasons = [
+                "not_on_shared_magnetics_timebase:" + str(tdim),
+                "no_freegsnke_synthesizer_for_family (Probes API supports only point flux loops and point pickups)",
+            ]
+            if units_s == "V":
+                reasons.append(
+                    "raw_voltage_units_V_no_published_calibration_in_level2_attrs"
+                    + (f" (label={label_s!r})" if label_s else "")
+                )
+            elif units_s is not None and label_s is not None and label_s not in (units_s, ""):
+                reasons.append(f"unit_metadata_contradiction:units={units_s!r},label={label_s!r}")
+
+            audit_dir.mkdir(parents=True, exist_ok=True)
+            data = {"time": t_native}
+            for i, ch in enumerate(channels):
+                data[ch] = arr[i, :]
+            csv_path = audit_dir / f"{k}.csv"
+            pd.DataFrame(data).to_csv(csv_path, index=False, float_format="%.8g")
+
+            out["variables"][k] = {
+                "csv": f"inputs/audit_other_timebase/{k}.csv",
+                "timebase": str(tdim),
+                "n_time": int(t_native.shape[0]),
+                "n_channels": len(channels),
+                "channels": channels,
+                "units": units_s,
+                "label": label_s,
+                "uda_name": (str(v.attrs["uda_name"]) if v.attrs.get("uda_name") is not None else None),
+                "finite_fraction": float(np.isfinite(arr).mean()),
+                "contract_exclusion_reasons": reasons,
+            }
+
+        return out

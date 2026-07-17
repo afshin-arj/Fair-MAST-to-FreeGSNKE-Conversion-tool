@@ -9,6 +9,8 @@ Authority scope (v10.0.0):
   - Boundary / inverse-constraint spec
   - Solver control spec (tolerances, iteration knobs, L2 regularization policy)
   - Passive structure placeholder (reserved for future wiring)
+  - Metrics timebase spec (v10.4.0): deterministic window sample times for
+    multi-time synthetic diagnostics / residual scoring
 
 Design laws:
   - Deterministic, audit-ready JSONs
@@ -152,6 +154,32 @@ class SolverSpec:
 
 
 @dataclass(frozen=True)
+class MetricsTimebaseSpec:
+    """Deterministic sample-time selection rule for multi-time synthetic diagnostics.
+
+    Rule 'linspace_window_inclusive' (the only supported rule, v10.4.0):
+    n_times equally spaced samples covering the finalized window
+    [t_start, t_end], inclusive of both endpoints. The inverse runner solves
+    one equilibrium per sample time (PF currents and Ip interpolated at that
+    time) and evaluates synthetic probes on each solution; metrics then score
+    residuals across all sample times.
+    """
+
+    rule: str = "linspace_window_inclusive"
+    n_times: int = 5
+
+    def validate(self) -> None:
+        _require(
+            self.rule == "linspace_window_inclusive",
+            f"MetricsTimebaseSpec: unsupported rule '{self.rule}' (only 'linspace_window_inclusive')",
+        )
+        _require(
+            isinstance(self.n_times, int) and 1 <= self.n_times <= 101,
+            "MetricsTimebaseSpec: n_times must be int in [1, 101]",
+        )
+
+
+@dataclass(frozen=True)
 class PassiveStructureSpec:
     """Reserved scaffold for future FreeGSNKE passive structure governance."""
 
@@ -177,6 +205,7 @@ class ExecutionAuthorityBundle:
     boundary: BoundarySpec
     solver: SolverSpec
     passive_structure: PassiveStructureSpec
+    metrics_timebase: MetricsTimebaseSpec = field(default_factory=MetricsTimebaseSpec)
 
     def validate(self) -> None:
         _require(isinstance(self.authority_name, str) and self.authority_name.strip(), "Bundle: authority_name required")
@@ -187,14 +216,15 @@ class ExecutionAuthorityBundle:
         self.boundary.validate()
         self.solver.validate()
         self.passive_structure.validate()
+        self.metrics_timebase.validate()
 
     def to_json_dict(self) -> Dict[str, Any]:
         # dataclasses.asdict is deterministic for insertion order in Python 3.7+.
         return asdict(self)
 
 
-def default_execution_authority_bundle() -> ExecutionAuthorityBundle:
-    """Defaults that reproduce v8.0.0 template behavior."""
+def default_execution_authority_bundle(metrics_n_times: int = 5) -> ExecutionAuthorityBundle:
+    """Defaults that reproduce v8.0.0 template behavior (+ v10.4.0 metrics timebase)."""
 
     grid = GridSpec(Rmin=0.1, Rmax=2.0, Zmin=-2.2, Zmax=2.2, nx=65, ny=129)
 
@@ -227,23 +257,28 @@ def default_execution_authority_bundle() -> ExecutionAuthorityBundle:
 
     return ExecutionAuthorityBundle(
         authority_name="freegsnke_execution_authority",
-        authority_version="10.0.0",
+        authority_version="10.4.0",
         grid=grid,
         profile=profile,
         profile_basis=profile_basis,
         boundary=boundary,
         solver=solver,
         passive_structure=PassiveStructureSpec(),
+        metrics_timebase=MetricsTimebaseSpec(n_times=int(metrics_n_times)),
     )
 
 
-def write_execution_authority(inputs_dir: Path) -> Path:
+def write_execution_authority(inputs_dir: Path, metrics_n_times: int = 5) -> Path:
     """Write the execution authority bundle under inputs/.
 
     Parameters
     ----------
     inputs_dir:
         The run inputs directory (run_dir/inputs).
+    metrics_n_times:
+        Number of deterministic window sample times for multi-time synthetic
+        diagnostics (config key ``metrics_n_times``; rule is
+        'linspace_window_inclusive').
 
     Returns
     -------
@@ -255,7 +290,7 @@ def write_execution_authority(inputs_dir: Path) -> Path:
     root = inputs_dir / "execution_authority"
     root.mkdir(parents=True, exist_ok=True)
 
-    bundle = default_execution_authority_bundle()
+    bundle = default_execution_authority_bundle(metrics_n_times=metrics_n_times)
     bundle.validate()
 
     (root / "execution_authority_bundle.json").write_text(json.dumps(bundle.to_json_dict(), indent=2) + "\n")
@@ -265,6 +300,7 @@ def write_execution_authority(inputs_dir: Path) -> Path:
     (root / "boundary_spec.json").write_text(json.dumps(asdict(bundle.boundary), indent=2) + "\n")
     (root / "solver_spec.json").write_text(json.dumps(asdict(bundle.solver), indent=2) + "\n")
     (root / "passive_structure.json").write_text(json.dumps(asdict(bundle.passive_structure), indent=2) + "\n")
+    (root / "metrics_timebase_authority.json").write_text(json.dumps(asdict(bundle.metrics_timebase), indent=2) + "\n")
 
     return root
 
@@ -286,6 +322,7 @@ def load_execution_authority_bundle(bundle_path: Path) -> ExecutionAuthorityBund
         l2_reg=l2_reg,
     )
     passive = PassiveStructureSpec(**obj.get("passive_structure", {}))
+    metrics_timebase = MetricsTimebaseSpec(**obj.get("metrics_timebase", {}))
 
     bundle = ExecutionAuthorityBundle(
         authority_name=str(obj.get("authority_name", "")),
@@ -296,6 +333,7 @@ def load_execution_authority_bundle(bundle_path: Path) -> ExecutionAuthorityBund
         boundary=boundary,
         solver=solver,
         passive_structure=passive,
+        metrics_timebase=metrics_timebase,
     )
     bundle.validate()
     return bundle

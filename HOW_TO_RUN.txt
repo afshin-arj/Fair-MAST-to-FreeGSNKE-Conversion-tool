@@ -84,8 +84,9 @@ Do not invent metrology. When geometry resolves, the run writes:
 
 Diagnostic contract metrics (enabled by default in configs/default.json)
 ------------------------------------------------------------------------
-As of v10.3.0 the shot-only happy path extracts experimental per-probe traces,
-emits FreeGSNKE synthetic probe CSVs, and scores residuals under an explicit
+As of v10.4.0 the shot-only happy path extracts experimental per-probe traces,
+solves FreeGSNKE at multiple deterministic window sample times, emits
+multi-row synthetic probe CSVs, and scores residuals under an explicit
 contracts authority:
 
   Experimental (from FAIR-MAST Level-2 magnetics.zarr):
@@ -93,23 +94,43 @@ contracts authority:
     inputs/pickups.csv      <- b_field_pol_probe_{ccbv,obv,obr}_field (T)
     Column names = FAIR-MAST channel coordinate values verbatim.
 
-  Synthetic (from FreeGSNKE inverse solve via tokamak.probes):
+  Synthetic (from FreeGSNKE inverse solves via tokamak.probes):
     synthetic/synthetic_fluxloops.csv
     synthetic/synthetic_pickups.csv
-    Column names = geometry-authority probe names; one row at solved t0.
+    Column names = geometry-authority probe names; ONE ROW PER SOLVED TIME.
+    Sample times: metrics_timebase execution authority, rule
+    linspace_window_inclusive with n_times (config key metrics_n_times,
+    default 5) equally spaced samples in the finalized window
+    [t_start, t_end]. Each row is an independent forward-style Grad-
+    Shafranov solve (constrain=None) with measured PF currents and Ip
+    interpolated at that time (solve_mode=forward_gs_at_measured_pf_ip).
+    The times and rule are recorded in synthetic/synthetic_times.json
+    and in the manifest. The single t0 inverse solve remains the source
+    of inverse_dump.pkl / plots / forward replay.
 
   Authority:
     configs/diagnostic_contracts.json
     (identity sign=1 / scale=1.0; flux loops: FL_<channel with / -> _>;
-     pickups: verbatim; units from zarr attrs)
+     pickups: verbatim; units from zarr attrs; ALL 93 identity-mapped
+     channels contracted -- no per-shot NaN exclusions)
 
   Metrics:
-    interpolate experimental onto the synthetic solve time(s); write
+    interpolate experimental onto the solved synthetic times; score
+    RMS/MAE/max_abs across all sample times; write
     SHOTS/<N>/metrics/reconstruction_metrics.json and residual_*.csv.
-    Failures remain blocking when enable_contract_metrics=true.
+    Channels that are all-NaN on the current shot are skipped shot-scoped
+    (status skipped_all_nan; n_skipped_all_nan in the summary) -- not a
+    blocking failure, never a fabricated zero. Real failures remain
+    blocking when enable_contract_metrics=true.
 
-Excluded (honestly): mirnov / saddle / omaha families (other timebases and/or
-uncalibrated volts) — no identity contract is shipped for them.
+Excluded (honestly, with evidence): mirnov / saddle / omaha families.
+Level-2 attrs give no calibration path (raw volts with no published V->T /
+V->Wb factors; self-contradictory unit metadata such as units='T' vs
+label='Tesla/sec' or 'mT') and FreeGSNKE Probes synthesizes only point flux
+loops and point pickups (no dB/dt fluctuation or saddle surface-flux model).
+Their traces ARE extracted verbatim for audit under
+SHOTS/<N>/inputs/audit_other_timebase/ with per-variable evidence in
+extract_meta.json.
 
 Validate without a run:
   mast-freegsnke contracts-validate --contracts configs/diagnostic_contracts.json
@@ -118,7 +139,9 @@ Outputs (on a successful shot run):
   SHOTS/<N>/contracts/diagnostic_contracts.resolved.json
   SHOTS/<N>/synthetic/synthetic_fluxloops.csv
   SHOTS/<N>/synthetic/synthetic_pickups.csv
+  SHOTS/<N>/synthetic/synthetic_times.json
   SHOTS/<N>/metrics/reconstruction_metrics.json and residual_*.csv
+  SHOTS/<N>/inputs/audit_other_timebase/*.csv (audit-only families)
 
 Reruns of the same shot
 -----------------------

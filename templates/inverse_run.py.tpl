@@ -123,17 +123,63 @@ def load_pf_currents(t0: float) -> dict:
         )
     return out
 
-def write_synthetic_probe_csvs(tokamak, eq, t0: float) -> None:
-    """Emit synthetic diagnostics for the solved equilibrium (v10.3.0).
+def compute_sample_times(ea: dict):
+    """Deterministic window sample times for multi-time synthetic diagnostics.
 
-    Uses FreeGSNKE's Probes API (built from magnetic_probes.pickle):
+    Governed by the metrics_timebase execution authority (v10.4.0):
+      rule 'linspace_window_inclusive' -> n_times equally spaced samples in
+      the finalized window [t_start, t_end], endpoints included.
+    Fail-fast: no window / no authority means no synthetic timebase.
+    """
+    mt = ea.get("metrics_timebase")
+    if not isinstance(mt, dict):
+        raise KeyError(
+            "Execution authority bundle missing 'metrics_timebase' "
+            "(required for multi-time synthetic diagnostics)"
+        )
+    rule = str(mt["rule"])
+    n = int(mt["n_times"])
+    if rule != "linspace_window_inclusive":
+        raise ValueError(f"Unsupported metrics_timebase rule: {rule}")
+    if T_WINDOW is None:
+        raise RuntimeError(
+            "inputs/window.json missing or invalid: multi-time synthetic diagnostics "
+            "require the finalized time window."
+        )
+    t_start, t_end = float(T_WINDOW[0]), float(T_WINDOW[1])
+    times = [float(x) for x in np.linspace(t_start, t_end, n)]
+    meta = {"rule": rule, "n_times": n, "t_start": t_start, "t_end": t_end}
+    return times, meta
+
+
+def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, ip_df, t0: float) -> None:
+    """Emit multi-time synthetic diagnostics (v10.4.0).
+
+    For EACH deterministic window sample time t_i (metrics_timebase authority),
+    a forward-style Grad-Shafranov solve is performed with:
+      - PF currents interpolated from pf_currents.csv at t_i (measured)
+      - Ip interpolated from ip.csv at t_i (measured)
+      - profile shape knobs from the execution-authority profile spec
+      - constrain=None (no Inverse_optimizer shape targets)
+
+    This is the strongest honest multi-time path that remains reliable: each
+    synthetic row is an independent GS solution driven by the measured PF/Ip
+    snapshot at that time (values genuinely vary with time). Re-running the
+    full inverse (shape) optimization at every sample time was found to stall
+    indefinitely under FreeGSNKE 3.0.1 for this MAST setup; the t0 inverse
+    solve above this call remains the source of inverse_dump.pkl / plots /
+    forward replay.
+
+    FreeGSNKE's Probes API evaluates each solved equilibrium:
       - calculate_fluxloop_value(eq): poloidal flux psi at each flux loop [Wb]
       - calculate_pickup_value(eq):   B . n_hat at each pickup coil [T]
 
     Output schema (consumed by diagnostic contracts / synthetic_extract):
-      synthetic/synthetic_fluxloops.csv : columns time,<probe names from geometry authority>
-      synthetic/synthetic_pickups.csv   : columns time,<probe names from geometry authority>
-    One row: the solved time slice t0. Fail-fast if probes are unavailable.
+      synthetic/synthetic_fluxloops.csv : columns time,<probe names>; one row per sample time
+      synthetic/synthetic_pickups.csv   : columns time,<probe names>; one row per sample time
+      synthetic/synthetic_times.json    : which times were solved and under which rule
+
+    Never repeats a single solve across times. Fail-fast if probes unavailable.
     """
     probes = getattr(tokamak, "probes", None)
     if probes is None or not hasattr(probes, "floops"):
@@ -143,23 +189,52 @@ def write_synthetic_probe_csvs(tokamak, eq, t0: float) -> None:
         )
     probes.initialise_setup(eq)
 
-    out_dir = HERE / "synthetic"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    times, tb_meta = compute_sample_times(ea)
 
     fl_names = [str(n) for n in probes.floop_order]
-    fl_vals = [float(v) for v in probes.calculate_fluxloop_value(eq)]
-    pd.DataFrame([[float(t0)] + fl_vals], columns=["time"] + fl_names).to_csv(
-        out_dir / "synthetic_fluxloops.csv", index=False
-    )
-
     pu_names = [str(n) for n in probes.pickup_order]
-    pu_vals = [float(v) for v in probes.calculate_pickup_value(eq)]
-    pd.DataFrame([[float(t0)] + pu_vals], columns=["time"] + pu_names).to_csv(
-        out_dir / "synthetic_pickups.csv", index=False
-    )
+    fl_rows = []
+    pu_rows = []
+    for t_i in times:
+        pf_i = load_pf_currents(t_i)
+        set_machine_currents(tokamak, pf_i)
+        ip_i = interp_at_time(ip_df, t_i, "ip")
+        profiles_i = ConstrainPaxisIp(eq=eq, Ip=float(ip_i), **profiles_kwargs)
+        solver.solve(
+            eq=eq,
+            profiles=profiles_i,
+            constrain=None,
+            target_relative_tolerance=float(solv["forward_target_relative_tolerance"]),
+            verbose=False,
+        )
+        fl_rows.append([float(t_i)] + [float(v) for v in probes.calculate_fluxloop_value(eq)])
+        pu_rows.append([float(t_i)] + [float(v) for v in probes.calculate_pickup_value(eq)])
+        print(f"[OK] window sample forward-GS: t={t_i:.6f}s Ip={ip_i/1e6:.3f} MA")
+
+    out_dir = HERE / "synthetic"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(fl_rows, columns=["time"] + fl_names).to_csv(out_dir / "synthetic_fluxloops.csv", index=False)
+    pd.DataFrame(pu_rows, columns=["time"] + pu_names).to_csv(out_dir / "synthetic_pickups.csv", index=False)
+    (out_dir / "synthetic_times.json").write_text(json.dumps(
+        {
+            **tb_meta,
+            "times": times,
+            "t0_formed_plasma": float(t0),
+            "solve_mode": "forward_gs_at_measured_pf_ip",
+            "note": (
+                "each row is an independent Grad-Shafranov solve (constrain=None) "
+                "at PF currents and Ip interpolated to that sample time; profile "
+                "shape knobs are the static profile authority. Full inverse "
+                "(shape) optimization is performed once at t0 for "
+                "inverse_dump.pkl / plots / forward replay; repeating it at every "
+                "sample time stalls under FreeGSNKE 3.0.1 for this MAST setup."
+            ),
+        },
+        indent=2,
+    ) + "\n")
     print(
         f"Saved synthetic/synthetic_fluxloops.csv ({len(fl_names)} loops) and "
-        f"synthetic/synthetic_pickups.csv ({len(pu_names)} pickups) at t0={t0:.6f}s"
+        f"synthetic/synthetic_pickups.csv ({len(pu_names)} pickups) at {len(times)} window sample times"
     )
 
 def set_machine_currents(tokamak, currents_dict):
@@ -298,9 +373,6 @@ def main():
         pickle.dump(dump, f)
     print("Saved inverse_dump.pkl")
 
-    # Synthetic probe diagnostics for the solved equilibrium (contract metrics input)
-    write_synthetic_probe_csvs(tokamak, eq, t0)
-
     fig, ax = plt.subplots(1,1, figsize=(6,10), dpi=140)
     tokamak.plot(axis=ax, show=False)
     eq.plot(axis=ax, show=False)
@@ -317,6 +389,25 @@ def main():
     fig.tight_layout()
     fig.savefig(HERE/"inverse_equilibrium.png", dpi=250, bbox_inches="tight")
     print("Saved inverse_equilibrium.png")
+
+    # Multi-time synthetic probe diagnostics (contract metrics input, v10.4.0).
+    # Runs LAST: it re-solves forward-GS at each window sample time,
+    # mutating eq; the dump/plots above stay bound to the t0 inverse solve.
+    write_synthetic_probe_csvs(
+        tokamak=tokamak,
+        eq=eq,
+        profiles_kwargs=dict(
+            paxis=float(prof["paxis_Pa"]),
+            fvac=float(prof["fvac"]),
+            alpha_m=float(prof["alpha_m"]),
+            alpha_n=float(prof["alpha_n"]),
+        ),
+        solver=solver,
+        solv=solv,
+        ea=ea,
+        ip_df=ip_df,
+        t0=t0,
+    )
 
 if __name__ == "__main__":
     main()

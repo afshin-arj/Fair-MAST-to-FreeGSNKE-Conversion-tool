@@ -127,20 +127,29 @@ def compare_from_contracts(run_dir: Path, contracts: List[DiagnosticContract]) -
     """
     Compute residual metrics for all contracts, writing residual CSVs and a summary JSON.
 
-    Deterministic rules (v10.3.0):
-      - Compare on the SYNTHETIC timebase: the FreeGSNKE equilibrium is solved at
-        the window time slice(s), so the experimental trace is linearly
-        interpolated onto the synthetic time(s). Comparing a full experimental
-        time series against a single-slice synthetic constant would mix times.
+    Deterministic rules (v10.4.0):
+      - Compare on the SYNTHETIC timebase: the FreeGSNKE equilibria are solved at
+        the deterministic window sample times, so the experimental trace is
+        linearly interpolated onto the synthetic time(s). Comparing a full
+        experimental time series against sparse synthetic samples would mix times.
+      - RMS/MAE/max_abs are computed over ALL synthetic sample times (multi-time
+        residual scoring when the runner emitted more than one solved time).
       - Synthetic times must lie inside the experimental time support
         (no extrapolation; out-of-range is a per-contract error).
       - Apply sign/scale per contract BEFORE comparison.
-      - Drop NaNs in experimental.
+      - Shot-scoped all-NaN skip: a contracted channel whose experimental trace
+        has fewer than 2 finite samples on THIS shot is marked
+        'skipped_all_nan' (not a failure, never a fabricated zero). Channels
+        with real data still score.
+      - If synthetic/synthetic_times.json exists (written by the inverse
+        runner), it is embedded in the summary so the manifest records which
+        times were scored and under which selection rule.
     """
     out_dir = run_dir / "metrics"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     per_contract: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, Any]] = []
     errors: List[str] = []
 
     for c in contracts:
@@ -162,10 +171,21 @@ def compare_from_contracts(run_dir: Path, contracts: List[DiagnosticContract]) -
             t_exp2 = t_exp[mask]
             y_exp2 = y_exp[mask]
             if t_exp2.size < 2:
-                raise ValueError(
-                    "insufficient finite experimental points to interpolate onto synthetic time "
-                    f"(n_finite={t_exp2.size}; channel may be entirely NaN in FAIR-MAST Level-2)"
-                )
+                # Shot-scoped skip (v10.4.0): the channel is validly contracted
+                # (geometry + identity mapping exist) but carries no measurable
+                # data on THIS shot. Never invent zeros; never block the run.
+                skipped.append({
+                    "name": c.name,
+                    "dtype": c.dtype,
+                    "units": c.units,
+                    "status": "skipped_all_nan",
+                    "n_finite_experimental": int(t_exp2.size),
+                    "reason": (
+                        "experimental trace is all-NaN (or has <2 finite samples) "
+                        "in FAIR-MAST Level-2 for this shot; shot-scoped skip"
+                    ),
+                })
+                continue
 
             mask_s = np.isfinite(t_syn) & np.isfinite(y_syn)
             t_syn2 = t_syn[mask_s]
@@ -180,6 +200,8 @@ def compare_from_contracts(run_dir: Path, contracts: List[DiagnosticContract]) -
 
             y_exp_i = _interp_to(t_syn2, t_exp2, y_exp2)
             r = y_exp_i - y_syn2
+            if not np.all(np.isfinite(r)):
+                raise ValueError("non-finite residuals after interpolation")
 
             met = ResidualMetric(
                 name=c.name,
@@ -202,7 +224,7 @@ def compare_from_contracts(run_dir: Path, contracts: List[DiagnosticContract]) -
                     # exp trace with synthetic value(s) at the solved time(s)
                     fig = plt.figure()
                     plt.plot(t_exp2, y_exp2, label="exp")
-                    plt.plot(t_syn2, y_syn2, "rx", ms=8, label="syn (solved slice)")
+                    plt.plot(t_syn2, y_syn2, "rx", ms=8, label="syn (solved times)")
                     plt.xlabel("time [s]")
                     plt.ylabel(f"{c.name} [{c.units}]")
                     plt.legend()
@@ -236,9 +258,21 @@ def compare_from_contracts(run_dir: Path, contracts: List[DiagnosticContract]) -
         "ok": len(errors) == 0,
         "n_contracts": len(contracts),
         "n_scored": len(per_contract),
+        "n_skipped_all_nan": len(skipped),
+        "skipped": skipped,
         "errors": errors,
         "per_contract": per_contract,
     }
+
+    # Record which times were scored and under which deterministic selection
+    # rule (written by the inverse runner alongside the synthetic CSVs).
+    times_path = run_dir / "synthetic" / "synthetic_times.json"
+    if times_path.exists():
+        try:
+            summary["synthetic_timebase"] = json.loads(times_path.read_text())
+        except Exception as e:
+            summary["synthetic_timebase"] = {"error": f"unreadable synthetic_times.json: {e}"}
+
     out_path = out_dir / "reconstruction_metrics.json"
     out_path.write_text(json.dumps(summary, indent=2, sort_keys=True))
     return summary

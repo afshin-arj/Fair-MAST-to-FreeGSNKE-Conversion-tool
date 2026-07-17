@@ -307,8 +307,8 @@ class ShotPipeline:
             # Execution-state authority (v9): eliminate hidden defaults in generated scripts
             # by exporting an explicit authority bundle under inputs/execution_authority/.
             try:
-                ea_root = write_execution_authority(inputs_dir)
-                _stage("execution_authority", True, root=str(ea_root))
+                ea_root = write_execution_authority(inputs_dir, metrics_n_times=int(self.cfg.metrics_n_times))
+                _stage("execution_authority", True, root=str(ea_root), metrics_n_times=int(self.cfg.metrics_n_times))
             except Exception as e:
                 _stage("execution_authority", False, error=str(e))
                 blocking_errors.append(f"execution_authority_write_failed:{e}")
@@ -481,6 +481,7 @@ class ShotPipeline:
                                     "residual_metrics_contracts",
                                     metrics_ok,
                                     n_scored=metrics_summary.get("n_scored"),
+                                    n_skipped_all_nan=metrics_summary.get("n_skipped_all_nan"),
                                     errors=metrics_summary.get("errors"),
                                 )
                                 if not metrics_ok:

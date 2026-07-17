@@ -220,7 +220,7 @@ def test_pipeline_all_cached_skips_network(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setattr(pl, "Extractor", FailingExtractor)
     monkeypatch.setattr(pl, "ScriptGenerator", FakeGenerator)
-    monkeypatch.setattr(pl, "write_execution_authority", lambda inputs_dir: inputs_dir / "execution_authority")
+    monkeypatch.setattr(pl, "write_execution_authority", lambda inputs_dir, **kw: inputs_dir / "execution_authority")
     monkeypatch.setattr(pl, "write_provenance", lambda **kw: {"ok": True})
     monkeypatch.setattr(pl, "write_manifest_v2", lambda **kw: None)
 

@@ -56,6 +56,9 @@ class AppConfig:
     allow_cache_reuse: bool
     # If True, a multi-shot batch stops at the first failing shot (remaining reported as skipped).
     batch_abort_on_failure: bool
+    # Number of deterministic window sample times for multi-time synthetic
+    # diagnostics / residual scoring (rule: linspace_window_inclusive).
+    metrics_n_times: int = 5
 
 
     @staticmethod
@@ -99,6 +102,9 @@ class AppConfig:
         provenance_hash_data = bool(obj.get("provenance_hash_data", False))
         allow_cache_reuse = bool(obj.get("allow_cache_reuse", True))
         batch_abort_on_failure = bool(obj.get("batch_abort_on_failure", False))
+        metrics_n_times = int(obj.get("metrics_n_times", 5))
+        if metrics_n_times < 1:
+            raise ValueError(f"metrics_n_times must be >= 1 (got {metrics_n_times})")
 
         s3_layout_patterns = list(obj.get("s3_layout_patterns", [
             "{prefix}/{group}/shot_{shot}.zarr",
@@ -131,6 +137,7 @@ class AppConfig:
             provenance_hash_data=provenance_hash_data,
             allow_cache_reuse=allow_cache_reuse,
             batch_abort_on_failure=batch_abort_on_failure,
+            metrics_n_times=metrics_n_times,
         )
 
 

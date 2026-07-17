@@ -17,6 +17,7 @@
   "diagnostic_contracts_path": "configs/diagnostic_contracts.json",
   "coil_map_path": "configs/coil_map.json",
   "enable_contract_metrics": true,
+  "metrics_n_times": 5,
   "machine_authority_dir": "machine_authority",
   "require_machine_authority": true,
   "provenance_hash_data": false,
