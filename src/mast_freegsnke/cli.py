@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import Optional
 
 from .availability import check_groups
-from .config import AppConfig
+from .batch import run_shot_batch
+from .config import AppConfig, run_dir_for_shot
+from .contracts_status import contract_metrics_status_line
 from .download import BulkDownloader
 from .mastapp import MastAppClient
 from .pipeline import ShotPipeline
@@ -184,8 +186,9 @@ def main(argv=None) -> int:
     rg.add_argument("--max-mfe-red-increase", type=int, default=0, help="Maximum allowed increase in MFE-RED tier count (default 0)")
     rg.add_argument("--max-mfe-median-worst-rel-deg-increase", type=float, default=0.0, help="Maximum allowed increase in median MFE worst-relative-degradation (default 0.0)")
 
-    r = sub.add_parser("run", help="Run pipeline for a shot")
-    r.add_argument("--shot", type=int, required=True)
+    r = sub.add_parser("run", help="Run pipeline for one shot (--shot) or a batch (--shots)")
+    r.add_argument("--shot", type=int, default=None, help="Single MAST shot number")
+    r.add_argument("--shots", type=int, nargs="+", default=None, help="Multiple MAST shot numbers (batch; worst exit code)")
     r.add_argument("--config", type=str, required=True)
     r.add_argument(
         "--machine",
@@ -368,7 +371,7 @@ def main(argv=None) -> int:
         from .util import write_json
         from .windowing import infer_time_window
 
-        run_inputs = Path(cfg.runs_dir) / str(args.shot) / "inputs"
+        run_inputs = run_dir_for_shot(cfg, args.shot) / "inputs"
         if not run_inputs.exists():
             print(f"[FAIL] Missing run inputs folder: {run_inputs}. Run pipeline first.")
             return 5
@@ -386,7 +389,7 @@ def main(argv=None) -> int:
         from .windowing import infer_time_window
         from .window_quality import evaluate_time_window, format_diagnostics
 
-        run_inputs = Path(cfg.runs_dir) / str(args.shot) / "inputs"
+        run_inputs = run_dir_for_shot(cfg, args.shot) / "inputs"
         if not run_inputs.exists():
             print(f"[FAIL] Missing run inputs folder: {run_inputs}. Run pipeline first.")
             return 7
@@ -538,7 +541,7 @@ def main(argv=None) -> int:
         from .util import write_json
         from .window_consensus import infer_consensus_window
 
-        run_inputs = Path(cfg.runs_dir) / str(args.shot) / "inputs"
+        run_inputs = run_dir_for_shot(cfg, args.shot) / "inputs"
         if not run_inputs.exists():
             print(f"[FAIL] Missing run inputs folder: {run_inputs}. Run pipeline first.")
             return 9
@@ -634,6 +637,10 @@ def main(argv=None) -> int:
         return 0 if rep.ok else 14
 
     if args.cmd == "run":
+        if (args.shot is None) == (args.shots is None):
+            print("[FAIL] Provide exactly one of --shot N or --shots N1 N2 ...")
+            return 2
+
         # CLI overrides (kept deterministic and explicit): these override config for this invocation only.
         if args.execute_freegsnke:
             object.__setattr__(cfg, "execute_freegsnke", True)
@@ -648,6 +655,10 @@ def main(argv=None) -> int:
             object.__setattr__(cfg, "coil_map_path", str(args.coil_map))
         if args.enable_contract_metrics:
             object.__setattr__(cfg, "enable_contract_metrics", True)
+
+        status_line = contract_metrics_status_line(cfg)
+        if status_line:
+            print(status_line)
 
         pipe = ShotPipeline(cfg=cfg, templates_dir=templates_dir)
         # Resolve machine dir: CLI --machine wins; else config.machine_authority_dir.
@@ -665,42 +676,52 @@ def main(argv=None) -> int:
         if not machine_dir.exists():
             print(f"[FAIL] Machine directory not found: {machine_dir}")
             return 2
-        try:
-            run_dir = pipe.run(
-                shot=args.shot,
-                machine_dir=machine_dir,
-                tstart=args.tstart,
-                tend=args.tend,
+
+        def _run_one(shot: int) -> int:
+            try:
+                run_dir = pipe.run(
+                    shot=shot,
+                    machine_dir=machine_dir,
+                    tstart=args.tstart,
+                    tend=args.tend,
+                )
+                print(f"[OK] Run folder: {run_dir}")
+                # Surface blocking errors as non-zero exit for shot-only automation.
+                try:
+                    man = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+                    if man.get("status") != "success" or man.get("blocking_errors"):
+                        print(f"[FAIL] Run completed with status={man.get('status')} blocking_errors={man.get('blocking_errors')}")
+                        return 11
+                except Exception:
+                    pass
+                return 0
+            except Exception as e:
+                # Print a full traceback to stdout/stderr (captured by launcher logs)
+                tb = traceback.format_exc()
+                print(f"[FAIL] run error: {e}")
+                print("[TRACEBACK] ------------------------------")
+                print(tb.rstrip())
+                print("[TRACEBACK] ------------------------------")
+                # Best-effort: if a run folder exists, also persist the traceback for sharing.
+                try:
+                    run_dir = run_dir_for_shot(cfg, shot)
+                    run_dir.mkdir(parents=True, exist_ok=True)
+                    out = run_dir / "EXCEPTION_TRACEBACK.txt"
+                    out.write_text(tb, encoding="utf-8")
+                    print(f"[INFO] Wrote traceback: {out}")
+                except Exception:
+                    pass
+                # manifest should exist in run folder
+                return 11
+
+        if args.shots is not None:
+            return run_shot_batch(
+                [int(s) for s in args.shots],
+                _run_one,
+                runs_dir=Path(cfg.runs_dir),
+                abort_on_failure=cfg.batch_abort_on_failure,
             )
-            print(f"[OK] Run folder: {run_dir}")
-            # Surface blocking errors as non-zero exit for shot-only automation.
-            try:
-                man = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
-                if man.get("status") != "success" or man.get("blocking_errors"):
-                    print(f"[FAIL] Run completed with status={man.get('status')} blocking_errors={man.get('blocking_errors')}")
-                    return 11
-            except Exception:
-                pass
-            return 0
-        except Exception as e:
-            # Print a full traceback to stdout/stderr (captured by launcher logs)
-            tb = traceback.format_exc()
-            print(f"[FAIL] run error: {e}")
-            print("[TRACEBACK] ------------------------------")
-            print(tb.rstrip())
-            print("[TRACEBACK] ------------------------------")
-            # Best-effort: if a run folder exists, also persist the traceback for sharing.
-            try:
-                runs_root = Path(cfg.runs_dir)
-                run_dir = runs_root / str(args.shot)
-                run_dir.mkdir(parents=True, exist_ok=True)
-                out = run_dir / "EXCEPTION_TRACEBACK.txt"
-                out.write_text(tb, encoding="utf-8")
-                print(f"[INFO] Wrote traceback: {out}")
-            except Exception:
-                pass
-            # manifest should exist in run folder
-            return 11
+        return _run_one(int(args.shot))
 
     return 1
 

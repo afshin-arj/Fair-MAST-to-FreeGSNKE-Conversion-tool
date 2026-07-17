@@ -1,6 +1,6 @@
 # Fair-MAST → FreeGSNKE Conversion Tool
 
-**Version 10.1.3** · Deterministic reconstruction pipeline for MAST experimental data
+**Version 10.2.0** · Deterministic reconstruction pipeline for MAST experimental data
 
 Enter one or more **MAST shot numbers**. The pipeline downloads FAIR-MAST Level-2 data, builds FreeGSNKE inputs under explicit authorities, runs inverse and forward reconstructions, and writes a fully auditable folder under `SHOTS/<shot>/`.
 
@@ -101,7 +101,7 @@ flowchart TB
 | `machine_authority/` | Probe/coil geometry + FreeGSNKE structural pickles | Built from FAIR-MAST Level-2 + FreeGSNKE MAST-U-like machine |
 | `configs/coil_map.json` | Maps Level-2 `current_channel` labels to FreeGSNKE circuits | FAIR-MAST channels (`SOL`, `P2IL FEED`, …) with explicit `sum` |
 | Execution authority | Grid, profile basis, solver tolerances | Generated per run under `inputs/execution_authority/` |
-| Diagnostic contracts | Experimental ↔ synthetic comparison | Optional (`enable_contract_metrics`) |
+| Diagnostic contracts | Experimental ↔ synthetic comparison | **Not shipped** — disabled until both experimental per-probe traces and synthetic probe CSVs exist with verifiable channel identity (the run prints why) |
 
 > Template or `CHANGE_ME` machine authority is **rejected**. Metrology must come from FAIR-MAST or an authoritative machine definition.
 
@@ -161,9 +161,20 @@ run_pipeline.cmd
 ```bash
 python -m mast_freegsnke.cli doctor --config configs/default.json
 python -m mast_freegsnke.cli run --shot 30201 --config configs/default.json
+# Batch (same summary/worst-exit-code semantics as the interactive launcher):
+python -m mast_freegsnke.cli run --shots 30201 30202 --config configs/default.json
 ```
 
 Doctor should report OK for s5cmd, machine authority, coil map, and FreeGSNKE before a full run.
+
+**Launcher environment variables:**
+
+| Variable | Effect |
+|----------|--------|
+| `RUN_PIPELINE_SKIP_INSTALL=1` | Skip pip upgrade/install entirely (fast start) |
+| `RUN_PIPELINE_NO_PAUSE=1` | Windows only: don't pause before the console closes |
+
+Without `RUN_PIPELINE_SKIP_INSTALL`, the launchers reinstall only when `pyproject.toml` changed since the last install (SHA256 marker at `.venv/.install_marker`).
 
 ---
 
@@ -230,6 +241,8 @@ Canonical config: [`configs/default.json`](configs/default.json)
 | `execute_freegsnke` | `true` / `false` |
 | `freegsnke_run_mode` | `inverse` · `forward` · `both` |
 | `freegsnke_python` | Path to FreeGSNKE Python 3.11 interpreter |
+| `allow_cache_reuse` | `true`: reuse non-empty `data_cache/shot_<N>/<group>.zarr` (skips network when all groups cached) |
+| `batch_abort_on_failure` | `true`: stop a multi-shot batch at the first failing shot |
 
 Rebuild machine authority from a cached shot (when refreshing geometry):
 
@@ -301,6 +314,6 @@ Cite this repository and include the run’s `manifest.json`, authorities, and c
 
 ## License & citation
 
-See repository license terms. Package version: **10.1.3**.
+See repository license terms. Package version: **10.2.0**.
 
 Full history: [`CHANGELOG.md`](CHANGELOG.md)

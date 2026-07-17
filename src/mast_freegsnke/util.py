@@ -25,6 +25,10 @@ def ensure_dir(p: Path) -> Path:
     p.mkdir(parents=True, exist_ok=True)
     return p
 
+def shot_cache_dir(cache_root: Path, shot: int) -> Path:
+    """Single source of truth for the per-shot download cache layout (data_cache/shot_<N>)."""
+    return Path(cache_root) / f"shot_{shot}"
+
 def run_cmd(cmd: List[str], timeout_s: int | None = 60) -> Tuple[int, str]:
     """Run a command and capture combined stdout/stderr.
 

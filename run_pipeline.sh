@@ -56,11 +56,30 @@ python -m pip -V
 python -m pip freeze > "logs/pip_freeze_${TS}.txt"
 echo "[INFO] Wrote: logs/pip_freeze_${TS}.txt"
 
-echo "[INFO] Upgrading pip..."
-python -m pip install --upgrade pip
+# Install hygiene:
+#   RUN_PIPELINE_SKIP_INSTALL=1  -> skip pip upgrade+install entirely
+#   otherwise reinstall only when pyproject.toml changed since the last
+#   install (marker file .venv/.install_marker holds its SHA256).
+if [[ "${RUN_PIPELINE_SKIP_INSTALL:-}" == "1" ]]; then
+  echo "[INFO] RUN_PIPELINE_SKIP_INSTALL=1: skipping pip upgrade/install."
+else
+  INSTALL_MARKER=".venv/.install_marker"
+  PYPROJECT_HASH="$(python -c 'import hashlib; print(hashlib.sha256(open("pyproject.toml","rb").read()).hexdigest())' 2>/dev/null || true)"
+  MARKER_HASH=""
+  [[ -f "$INSTALL_MARKER" ]] && MARKER_HASH="$(cat "$INSTALL_MARKER")"
+  if [[ -n "$PYPROJECT_HASH" && "$MARKER_HASH" == "$PYPROJECT_HASH" ]]; then
+    echo "[INFO] Install up to date (pyproject.toml unchanged); skipping reinstall."
+  else
+    echo "[INFO] Upgrading pip..."
+    python -m pip install --upgrade pip
 
-echo "[INFO] Installing package (editable) with extras: zarr,dev"
-python -m pip install -e ".[zarr,dev]"
+    echo "[INFO] Installing package (editable) with extras: zarr,dev"
+    python -m pip install -e ".[zarr,dev]"
+    if [[ -n "$PYPROJECT_HASH" ]]; then
+      printf '%s\n' "$PYPROJECT_HASH" > "$INSTALL_MARKER"
+    fi
+  fi
+fi
 
 # Shot-only happy path: interactive launcher prompts for one or more shot
 # numbers; every other knob comes from configs/default.json.

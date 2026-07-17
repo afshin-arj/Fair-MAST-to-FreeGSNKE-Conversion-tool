@@ -52,6 +52,10 @@ class AppConfig:
     require_machine_authority: bool
     # If True, also hash downloaded data cache tree (can be expensive).
     provenance_hash_data: bool
+    # If True, reuse non-empty data_cache/shot_<N>/<group>.zarr trees instead of re-syncing.
+    allow_cache_reuse: bool
+    # If True, a multi-shot batch stops at the first failing shot (remaining reported as skipped).
+    batch_abort_on_failure: bool
 
 
     @staticmethod
@@ -93,6 +97,8 @@ class AppConfig:
         machine_authority_dir = (str(obj["machine_authority_dir"]) if obj.get("machine_authority_dir") else None)
         require_machine_authority = bool(obj.get("require_machine_authority", False))
         provenance_hash_data = bool(obj.get("provenance_hash_data", False))
+        allow_cache_reuse = bool(obj.get("allow_cache_reuse", True))
+        batch_abort_on_failure = bool(obj.get("batch_abort_on_failure", False))
 
         s3_layout_patterns = list(obj.get("s3_layout_patterns", [
             "{prefix}/{group}/shot_{shot}.zarr",
@@ -123,4 +129,18 @@ class AppConfig:
             machine_authority_dir=machine_authority_dir,
             require_machine_authority=require_machine_authority,
             provenance_hash_data=provenance_hash_data,
+            allow_cache_reuse=allow_cache_reuse,
+            batch_abort_on_failure=batch_abort_on_failure,
         )
+
+
+def run_dir_for_shot(cfg: "AppConfig", shot: int) -> Path:
+    """Single source of truth for the user-facing run folder layout (SHOTS/<N>)."""
+    return Path(cfg.runs_dir) / str(int(shot))
+
+
+def cache_dir_for_shot(cfg: "AppConfig", shot: int) -> Path:
+    """Per-shot download cache folder (data_cache/shot_<N>); layout lives in util.shot_cache_dir."""
+    from .util import shot_cache_dir
+
+    return shot_cache_dir(Path(cfg.cache_dir), int(shot))

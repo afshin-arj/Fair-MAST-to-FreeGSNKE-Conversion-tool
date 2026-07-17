@@ -1,12 +1,62 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Dict
+from typing import Any, List, Dict, Optional, Tuple
 import shutil
 import subprocess
 import json
 
-from .util import run_cmd, looks_like_exists_s5cmd_ls, resolve_s5cmd_path
+from .util import run_cmd, looks_like_exists_s5cmd_ls, resolve_s5cmd_path, shot_cache_dir
+
+
+def group_cache_stats(shot_dir: Path, group: str) -> Tuple[int, int]:
+    """Cheap per-group cache stats: (n_files, total_bytes). No hashing."""
+    dst = Path(shot_dir) / f"{group}.zarr"
+    if not dst.is_dir():
+        return 0, 0
+    n = 0
+    total = 0
+    for p in dst.rglob("*"):
+        if p.is_file():
+            n += 1
+            total += p.stat().st_size
+    return n, total
+
+
+def group_cache_hit(shot_dir: Path, group: str) -> bool:
+    """True when data_cache/shot_<N>/<group>.zarr exists and contains at least one file."""
+    dst = Path(shot_dir) / f"{group}.zarr"
+    if not dst.is_dir():
+        return False
+    return any(p.is_file() for p in dst.rglob("*"))
+
+
+def load_prior_resolved_paths(shot_dir: Path) -> Dict[str, str]:
+    """Read resolved_s3_paths.json written by an earlier download (empty dict if absent/invalid)."""
+    p = Path(shot_dir) / "resolved_s3_paths.json"
+    if not p.exists():
+        return {}
+    try:
+        obj = json.loads(p.read_text())
+        return {str(k): str(v) for k, v in obj.items()} if isinstance(obj, dict) else {}
+    except Exception:
+        return {}
+
+
+def build_cache_report(shot_dir: Path, groups: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Per-group provenance for cached groups: resolved S3 path (if previously recorded),
+    cache_hit flag, and cheap file counts/bytes. Never hashes the Zarr tree."""
+    prior = load_prior_resolved_paths(shot_dir)
+    report: Dict[str, Dict[str, Any]] = {}
+    for g in groups:
+        n_files, total_bytes = group_cache_stats(shot_dir, g)
+        report[g] = {
+            "s3_path": prior.get(g),
+            "cache_hit": True,
+            "n_files": n_files,
+            "total_bytes": total_bytes,
+        }
+    return report
 
 @dataclass
 class BulkDownloader:
@@ -132,13 +182,40 @@ class BulkDownloader:
             msg += f"  - {t['candidate']} (rc={t['rc']})\n"
         raise FileNotFoundError(msg)
 
-    def download_groups(self, shot: int, groups: List[str], cache_dir: Path) -> Path:
-        self._check_s5cmd()
-        shot_dir = cache_dir / f"shot_{shot}"
+    def download_groups(
+        self,
+        shot: int,
+        groups: List[str],
+        cache_dir: Path,
+        allow_cache_reuse: bool = False,
+    ) -> Tuple[Path, Dict[str, Dict[str, Any]]]:
+        """Sync required groups into data_cache/shot_<N>/.
+
+        When allow_cache_reuse is True, a group whose <group>.zarr tree already
+        exists and is non-empty is not re-synced (cache hit). Every group is
+        reported deterministically: resolved S3 path (from discovery, or from
+        the prior resolved_s3_paths.json for cache hits), cache_hit flag, and
+        cheap file counts/bytes (no tree hashing).
+        """
+        shot_dir = shot_cache_dir(cache_dir, shot)
         shot_dir.mkdir(parents=True, exist_ok=True)
 
-        resolved: Dict[str, str] = {}
+        prior = load_prior_resolved_paths(shot_dir)
+        resolved: Dict[str, str] = dict(prior)
+        report: Dict[str, Dict[str, Any]] = {}
         for g in groups:
+            dst = shot_dir / f"{g}.zarr"
+            if allow_cache_reuse and group_cache_hit(shot_dir, g):
+                n_files, total_bytes = group_cache_stats(shot_dir, g)
+                report[g] = {
+                    "s3_path": prior.get(g),
+                    "cache_hit": True,
+                    "n_files": n_files,
+                    "total_bytes": total_bytes,
+                }
+                continue
+
+            self._check_s5cmd()
             src = self.discover_group_path(shot, g)
             # discover may return a pattern that already ends with /*; normalize to a directory URI.
             src_dir = src.rstrip("/")
@@ -147,7 +224,6 @@ class BulkDownloader:
             elif src_dir.endswith("*"):
                 src_dir = src_dir[:-1].rstrip("/")
             resolved[g] = src_dir
-            dst = shot_dir / f"{g}.zarr"
             dst.mkdir(parents=True, exist_ok=True)
             # s5cmd sync requires a wildcard source to copy object trees into a local directory.
             sync_src = src_dir.rstrip("/") + "/*"
@@ -157,6 +233,14 @@ class BulkDownloader:
             subprocess.run(cmd, check=True, timeout=sync_timeout)
             if not (dst / "zarr.json").exists() and not any(dst.iterdir()):
                 raise RuntimeError(f"s5cmd sync produced empty destination for {g}: {dst} (src={sync_src})")
+            n_files, total_bytes = group_cache_stats(shot_dir, g)
+            report[g] = {
+                "s3_path": src_dir,
+                "cache_hit": False,
+                "n_files": n_files,
+                "total_bytes": total_bytes,
+            }
 
-        (shot_dir / "resolved_s3_paths.json").write_text(json.dumps(resolved, indent=2) + "\n")
-        return shot_dir
+        (shot_dir / "resolved_s3_paths.json").write_text(json.dumps(resolved, indent=2, sort_keys=True) + "\n")
+        (shot_dir / "download_report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        return shot_dir, report

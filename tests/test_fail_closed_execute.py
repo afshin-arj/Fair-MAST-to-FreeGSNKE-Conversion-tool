@@ -39,6 +39,8 @@ def _cfg(tmp_path: Path) -> AppConfig:
         machine_authority_dir=None,
         require_machine_authority=False,
         provenance_hash_data=False,
+        allow_cache_reuse=False,
+        batch_abort_on_failure=False,
     )
 
 
@@ -62,10 +64,11 @@ def test_execute_skipped_when_blocking_errors(tmp_path: Path, monkeypatch) -> No
         def discover_group_path(self, shot, group):
             return f"s3://bucket/shots/{shot}.zarr/{group}"
 
-        def download_groups(self, shot, groups, cache_root):
+        def download_groups(self, shot, groups, cache_root, allow_cache_reuse=False):
             d = Path(cache_root) / f"shot_{shot}"
             d.mkdir(parents=True, exist_ok=True)
-            return d
+            report = {g: {"s3_path": None, "cache_hit": False, "n_files": 0, "total_bytes": 0} for g in groups}
+            return d, report
 
     @dataclass
     class FakeAvail:

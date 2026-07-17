@@ -21,6 +21,17 @@ Outputs land under:
 On Windows, run_pipeline.cmd always pauses at the end (success or failure)
 so you can read the console. Set RUN_PIPELINE_NO_PAUSE=1 to skip the pause.
 
+Launcher install hygiene:
+  Set RUN_PIPELINE_SKIP_INSTALL=1 to skip pip upgrade+install entirely.
+  Otherwise the launchers reinstall only when pyproject.toml changed since the
+  last install (SHA256 marker at .venv/.install_marker).
+
+Download cache reuse (allow_cache_reuse=true in configs/default.json):
+  Re-running a shot reuses non-empty data_cache/shot_<N>/<group>.zarr trees
+  instead of re-syncing. When every required group is cached the run skips the
+  network entirely; per-group cache hits, resolved S3 paths, and file
+  counts/bytes are recorded in the manifest ("download_report").
+
 Manual install + CLI:
 
 pip install -e .
@@ -29,6 +40,11 @@ pip install -e ".[zarr]"   # optional, enables extraction
 mast-freegsnke doctor --config configs/default.json
 mast-freegsnke check --shot 30201 --config configs/default.json
 mast-freegsnke run --shot 30201 --config configs/default.json
+
+Batch mode (worst exit code; summary at the end; set batch_abort_on_failure
+=true in config to stop at the first failing shot):
+
+mast-freegsnke run --shots 30201 30202 --config configs/default.json
 
 Optional: execute FreeGSNKE scripts after generation (requires freegsnke installed in the selected Python environment):
 
@@ -69,8 +85,16 @@ Do not invent metrology. When geometry resolves, the run writes:
 Diagnostic contract metrics (optional; not enabled by default)
 --------------------------------------------------------------
 Residual metrics require a real diagnostic contracts JSON (not the example alone).
-Until that authority exists, `enable_contract_metrics` stays false in
-configs/default.json so the pipeline does not fabricate scoring. To enable later:
+As of v10.2.0 this authority CANNOT be built honestly from repo data:
+  - the extractor exports only 1-D magnetics variables, so FAIR-MAST per-probe
+    experimental traces (e.g. flux_loop_flux, which is (channel, time)) are not
+    present as columns in inputs/magnetics_timeseries.csv, and
+  - the generated FreeGSNKE inverse/forward runners do not emit synthetic probe
+    CSVs under SHOTS/<N>/synthetic/.
+Until both sides exist with verifiable shared channel identity (same probe
+names, SI units, identity sign/scale), `enable_contract_metrics` stays false in
+configs/default.json so the pipeline does not fabricate scoring. The launcher
+and `run` print one status line explaining this. To enable later:
 
   mast-freegsnke contracts-validate --contracts <path/to/diagnostic_contracts.json> --require-files
   mast-freegsnke run --shot 30201 --config configs/default.json \

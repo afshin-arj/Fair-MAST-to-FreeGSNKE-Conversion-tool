@@ -98,6 +98,27 @@ echo [INFO] Capturing pip freeze
 python -m pip freeze > "%LOG_DIR%\pip_freeze_%TS%.txt"
 echo [INFO] Wrote: %LOG_DIR%\pip_freeze_%TS%.txt
 
+REM Install hygiene:
+REM   RUN_PIPELINE_SKIP_INSTALL=1  -> skip pip upgrade+install entirely
+REM   otherwise reinstall only when pyproject.toml changed since the last
+REM   install (marker file .venv\.install_marker holds its SHA256).
+if "%RUN_PIPELINE_SKIP_INSTALL%"=="1" (
+  echo [INFO] RUN_PIPELINE_SKIP_INSTALL=1: skipping pip upgrade/install.
+  goto :RUN_INTERACTIVE
+)
+
+set "INSTALL_MARKER=.venv\.install_marker"
+set "PYPROJECT_HASH="
+for /f %%i in ('powershell -NoProfile -Command "(Get-FileHash -Algorithm SHA256 pyproject.toml).Hash"') do set "PYPROJECT_HASH=%%i"
+set "MARKER_HASH="
+if exist "%INSTALL_MARKER%" (
+  for /f "usebackq delims=" %%i in ("%INSTALL_MARKER%") do set "MARKER_HASH=%%i"
+)
+if not "%PYPROJECT_HASH%"=="" if /i "%MARKER_HASH%"=="%PYPROJECT_HASH%" (
+  echo [INFO] Install up to date ^(pyproject.toml unchanged^); skipping reinstall.
+  goto :RUN_INTERACTIVE
+)
+
 echo [INFO] Upgrading pip/setuptools/wheel
 python -m pip install --upgrade pip setuptools wheel
 if errorlevel 1 (
@@ -114,6 +135,11 @@ if errorlevel 1 (
   goto :FINISH
 )
 
+if not "%PYPROJECT_HASH%"=="" (
+  >"%INSTALL_MARKER%" echo %PYPROJECT_HASH%
+)
+
+:RUN_INTERACTIVE
 echo.
 echo ===========================================================================
 echo Interactive Run

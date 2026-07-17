@@ -11,20 +11,20 @@ description: >-
 
 ## When
 
-After a successful `runs/shot_<N>/` exists with FreeGSNKE outputs (or after implementing certify CLI).
+After a successful `SHOTS/<N>/` exists with FreeGSNKE outputs (or after implementing certify CLI).
 
 ## Standard sequence
 
 ```bash
 # Optional sensitivity layers (when ready)
-mast-freegsnke robustness-run --run runs/shot_<N>
-mast-freegsnke physics-audit-run --run runs/shot_<N>
-mast-freegsnke model-form-run --run runs/shot_<N>
-mast-freegsnke consistency-pack --run runs/shot_<N>
+mast-freegsnke robustness-run --run SHOTS/<N>
+mast-freegsnke physics-audit-run --run SHOTS/<N>
+mast-freegsnke model-form-run --run SHOTS/<N>
+mast-freegsnke consistency-pack --run SHOTS/<N>
 
 # Always for publish
-mast-freegsnke reviewer-pack --run runs/shot_<N>
-mast-freegsnke replay-run --target runs/shot_<N> --mode strict
+mast-freegsnke reviewer-pack --run SHOTS/<N>
+mast-freegsnke replay-run --target SHOTS/<N> --mode strict
 ```
 
 ## Target product command (implement when finishing tool)

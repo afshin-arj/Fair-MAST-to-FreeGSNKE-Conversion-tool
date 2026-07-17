@@ -1,3 +1,12 @@
+## 10.2.0 — P1/P2 hardening: install hygiene, cache reuse, batch CLI, honest contracts status
+- Launcher install hygiene: `RUN_PIPELINE_SKIP_INSTALL=1` skips pip upgrade/install entirely; otherwise `run_pipeline.cmd`/`run_pipeline.sh` reinstall only when `pyproject.toml` changed (SHA256 marker at `.venv/.install_marker`).
+- Download cache reuse (`allow_cache_reuse`, default true): non-empty `data_cache/shot_<N>/<group>.zarr` trees are not re-synced; when every required group is cached the run skips MastApp REST, S3 preflight, availability, and sync entirely (no network). Per-group `download_report` (resolved S3 path, `cache_hit`, cheap file counts + bytes; no tree hashing) is recorded in the manifest and next to the cache.
+- CLI batch mode: `mast-freegsnke run --shots N1 N2 ...` shares the exact loop/summary/worst-exit-code semantics with the interactive launcher (new `batch.run_shot_batch`).
+- `batch_abort_on_failure` (default false): when true, a multi-shot batch stops at the first failing shot; remaining shots are reported as skipped in the summary.
+- Path helpers `run_dir_for_shot(cfg, shot)` / `cache_dir_for_shot(cfg, shot)` centralize the `SHOTS/<N>` and `data_cache/shot_<N>` conventions (pipeline/cli/download refactored onto them).
+- Diagnostic contracts decision (investigated, NOT wired): contract residual metrics stay disabled because channel identity cannot be established from repo data — the extractor exports only 1-D magnetics variables (FAIR-MAST per-probe traces such as `flux_loop_flux` are 2-D `(channel, time)` and are not extracted into named columns; shot 30201's `magnetics_timeseries.csv` contains only `time`), and the generated FreeGSNKE runners emit no synthetic probe CSVs under `SHOTS/<N>/synthetic/`. No scale/sign factors were fabricated. The launcher and `run` now print one clear line explaining the missing authority and how to provide it (`contracts_status.contract_metrics_status_line`).
+- Docs updated to `SHOTS/<N>` paths and current flags (skills, run-doctor agent, AGENTS.md, README, HOW_TO_RUN.txt, config.example.json).
+
 ## 10.1.3 — Multi-shot launcher + SHOTS/<N> outputs + window authority fixes
 - Interactive launcher accepts one or more shot numbers (space/comma separated); batch summary lists failed shots and exits with the worst code.
 - Run outputs write to `SHOTS/<shot>` (e.g. `SHOTS/30201`) via `runs_dir` in `configs/default.json`.

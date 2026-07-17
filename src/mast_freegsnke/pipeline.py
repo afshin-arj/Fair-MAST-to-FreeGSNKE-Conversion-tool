@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .availability import check_groups
-from .config import AppConfig
-from .download import BulkDownloader
+from .config import AppConfig, cache_dir_for_shot, run_dir_for_shot
+from .download import BulkDownloader, build_cache_report, group_cache_hit
 from .extract import Extractor
 from .generate import ScriptGenerator
 from .mastapp import MastAppClient
@@ -104,9 +104,9 @@ class ShotPipeline:
         blocking_errors: List[str] = []
         status = "started"
 
-        runs_root = ensure_dir(self.cfg.runs_dir)
+        ensure_dir(self.cfg.runs_dir)
         # User-facing layout: SHOTS/<shot> (e.g. SHOTS/30201), not runs/shot_<N>.
-        run_dir = ensure_dir(runs_root / str(shot))
+        run_dir = ensure_dir(run_dir_for_shot(self.cfg, shot))
         prior_run_archived_to = _archive_prior_run(run_dir)
         inputs_dir = ensure_dir(run_dir / "inputs")
 
@@ -187,38 +187,72 @@ class ShotPipeline:
         exec_summary: Dict[str, Any] = {}
         metrics_summary: Any = None
         contracts_report: Any = None
+        download_report: Dict[str, Any] = {}
 
         # Always attempt to write a manifest, even on failure.
         try:
-            client = MastAppClient(base_url=self.cfg.mastapp_base_url)
-            if not client.shot_exists(shot):
-                raise RuntimeError(f"Shot {shot} not available via MastApp REST at {self.cfg.mastapp_base_url}")
-            _stage("mastapp_shot_exists", True)
-
-            dl = BulkDownloader(
-                s5cmd_path=self.cfg.s5cmd_path,
-                level2_s3_prefix=self.cfg.level2_s3_prefix,
-                layout_patterns=self.cfg.s3_layout_patterns,
-                s3_endpoint_url=self.cfg.s3_endpoint_url,
-                s3_no_sign_request=self.cfg.s3_no_sign_request,
-                timeout_s=self.cfg.s5cmd_timeout_s,
+            shot_cache_candidate = cache_dir_for_shot(self.cfg, shot)
+            all_groups_cached = bool(self.cfg.allow_cache_reuse) and all(
+                group_cache_hit(shot_cache_candidate, g) for g in self.cfg.required_groups
             )
 
-            # Transport preflight (v10.0.7): prevent indefinite hangs / wrong endpoints
-            dl.preflight(shot)
-            _stage("s3_shot_preflight", True, endpoint=self.cfg.s3_endpoint_url, no_sign=bool(self.cfg.s3_no_sign_request), timeout_s=int(self.cfg.s5cmd_timeout_s))
+            if all_groups_cached:
+                # Every required group is already cached: skip all network stages
+                # (MastApp REST, S3 preflight, availability, sync) deterministically.
+                shot_cache = shot_cache_candidate
+                download_report = build_cache_report(shot_cache, self.cfg.required_groups)
+                write_json(shot_cache / "download_report.json", download_report)
+                _stage("mastapp_shot_exists", True, note="skipped_all_groups_cached")
+                _stage("s3_shot_preflight", True, note="skipped_all_groups_cached")
+                _stage("availability_check", True, note="skipped_all_groups_cached")
+                _stage(
+                    "download_groups",
+                    True,
+                    shot_cache=str(shot_cache),
+                    cache_hits=sorted(download_report.keys()),
+                    download_report=download_report,
+                )
+            else:
+                client = MastAppClient(base_url=self.cfg.mastapp_base_url)
+                if not client.shot_exists(shot):
+                    raise RuntimeError(f"Shot {shot} not available via MastApp REST at {self.cfg.mastapp_base_url}")
+                _stage("mastapp_shot_exists", True)
 
-            # Pre-check group availability (no downloads yet)
-            avail = check_groups(shot=shot, groups=self.cfg.required_groups, discover=dl.discover_group_path)
-            write_json(cache_root / f"shot_{shot}" / "availability.json", {k: v.__dict__ for k, v in avail.items()})
-            missing = [k for k, v in avail.items() if not v.exists]
-            if missing:
-                raise RuntimeError("Required Level-2 groups missing for shot {}: {}".format(shot, ", ".join(missing)))
-            _stage("availability_check", True, groups_ok=list(avail.keys()))
+                dl = BulkDownloader(
+                    s5cmd_path=self.cfg.s5cmd_path,
+                    level2_s3_prefix=self.cfg.level2_s3_prefix,
+                    layout_patterns=self.cfg.s3_layout_patterns,
+                    s3_endpoint_url=self.cfg.s3_endpoint_url,
+                    s3_no_sign_request=self.cfg.s3_no_sign_request,
+                    timeout_s=self.cfg.s5cmd_timeout_s,
+                )
 
-            # Download now that availability is confirmed
-            shot_cache = dl.download_groups(shot, self.cfg.required_groups, cache_root)
-            _stage("download_groups", True, shot_cache=str(shot_cache))
+                # Transport preflight (v10.0.7): prevent indefinite hangs / wrong endpoints
+                dl.preflight(shot)
+                _stage("s3_shot_preflight", True, endpoint=self.cfg.s3_endpoint_url, no_sign=bool(self.cfg.s3_no_sign_request), timeout_s=int(self.cfg.s5cmd_timeout_s))
+
+                # Pre-check group availability (no downloads yet)
+                avail = check_groups(shot=shot, groups=self.cfg.required_groups, discover=dl.discover_group_path)
+                write_json(shot_cache_candidate / "availability.json", {k: v.__dict__ for k, v in avail.items()})
+                missing = [k for k, v in avail.items() if not v.exists]
+                if missing:
+                    raise RuntimeError("Required Level-2 groups missing for shot {}: {}".format(shot, ", ".join(missing)))
+                _stage("availability_check", True, groups_ok=list(avail.keys()))
+
+                # Download now that availability is confirmed
+                shot_cache, download_report = dl.download_groups(
+                    shot,
+                    self.cfg.required_groups,
+                    cache_root,
+                    allow_cache_reuse=bool(self.cfg.allow_cache_reuse),
+                )
+                _stage(
+                    "download_groups",
+                    True,
+                    shot_cache=str(shot_cache),
+                    cache_hits=sorted(g for g, r in download_report.items() if r.get("cache_hit")),
+                    download_report=download_report,
+                )
 
             # Extract CSV inputs (optional stack)
             try:
@@ -455,6 +489,7 @@ class ShotPipeline:
             _write_manifest(
                 {
                     "cache_dir": str(shot_cache) if shot_cache is not None else None,
+                    "download_report": download_report,
                     "extract_meta": extract_meta,
                     "time_window": final_tw.__dict__ if final_tw is not None else None,
                     "time_window_qc": window_diag.__dict__ if window_diag is not None else None,
@@ -492,6 +527,7 @@ class ShotPipeline:
             _write_manifest(
                 {
                     "cache_dir": str(shot_cache) if shot_cache is not None else None,
+                    "download_report": download_report,
                     "extract_meta": extract_meta,
                     "exception": {"type": type(e).__name__, "message": str(e), "traceback": traceback.format_exc()},
                 }

@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import List, Optional
 
 from . import cli
+from .batch import run_shot_batch
 from .config import AppConfig
+from .contracts_status import contract_metrics_status_line
 
 
 _SHOT_TOKEN = re.compile(r"^[0-9]+$")
@@ -83,6 +85,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"[INFO] machine_authority_dir={cfg.machine_authority_dir}")
     print(f"[INFO] coil_map_path={cfg.coil_map_path}")
     print(f"[INFO] enable_contract_metrics={cfg.enable_contract_metrics}")
+    status_line = contract_metrics_status_line(cfg)
+    if status_line:
+        print(status_line)
     print("")
 
     shots = _prompt_shot_list(
@@ -90,38 +95,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     print(f"[INFO] Shots queued: {', '.join(str(s) for s in shots)}")
 
-    results: List[tuple[int, int]] = []  # (shot, exit_code)
-    for i, shot in enumerate(shots, start=1):
-        args = ["run", "--config", str(config_path), "--shot", str(shot)]
-        print("")
-        print("=" * 75)
-        print(f"[INFO] ({i}/{len(shots)}) Running shot {shot}")
-        print(f"[INFO] Output folder: {cfg.runs_dir / str(shot)}")
-        print("[INFO] Running: mast-freegsnke " + " ".join(args))
-        print("=" * 75)
-        print("")
-        rc = cli.main(args)
-        results.append((shot, rc))
-        if rc != 0:
-            print(f"[FAIL] Shot {shot} exited with code {rc}")
-        else:
-            print(f"[OK] Shot {shot} completed → {cfg.runs_dir / str(shot)}")
+    def _run_one(shot: int) -> int:
+        return cli.main(["run", "--config", str(config_path), "--shot", str(shot)])
 
-    worst_rc = max((rc for _, rc in results), default=0)
-    if len(shots) > 1:
-        print("")
-        print("=" * 75)
-        print("[INFO] Batch summary")
-        print("=" * 75)
-        for shot, rc in results:
-            mark = "OK  " if rc == 0 else "FAIL"
-            print(f"  [{mark}] shot {shot}  (exit {rc})  → {cfg.runs_dir / str(shot)}")
-        failed = [shot for shot, rc in results if rc != 0]
-        if not failed:
-            print(f"[OK] All {len(shots)} shots completed successfully.")
-        else:
-            print(f"[FAIL] {len(failed)}/{len(shots)} shots failed: {', '.join(str(s) for s in failed)}")
-    return worst_rc
+    return run_shot_batch(
+        shots,
+        _run_one,
+        runs_dir=cfg.runs_dir,
+        abort_on_failure=cfg.batch_abort_on_failure,
+        describe=lambda shot: f"mast-freegsnke run --config {config_path} --shot {shot}",
+    )
 
 
 if __name__ == "__main__":
