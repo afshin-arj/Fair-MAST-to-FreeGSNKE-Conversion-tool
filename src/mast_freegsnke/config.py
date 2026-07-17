@@ -59,6 +59,9 @@ class AppConfig:
     # Number of deterministic window sample times for multi-time synthetic
     # diagnostics / residual scoring (rule: linspace_window_inclusive).
     metrics_n_times: int = 5
+    # Hard wall-clock limit for each FreeGSNKE script (seconds). None disables.
+    # Protects the pipeline from FreeGSNKE's uncapped residual-resize hang.
+    freegsnke_script_timeout_s: Optional[float] = 1200.0
 
 
     @staticmethod
@@ -105,6 +108,15 @@ class AppConfig:
         metrics_n_times = int(obj.get("metrics_n_times", 5))
         if metrics_n_times < 1:
             raise ValueError(f"metrics_n_times must be >= 1 (got {metrics_n_times})")
+        raw_timeout = obj.get("freegsnke_script_timeout_s", 1200.0)
+        if raw_timeout is None:
+            freegsnke_script_timeout_s: Optional[float] = None
+        else:
+            freegsnke_script_timeout_s = float(raw_timeout)
+            if freegsnke_script_timeout_s <= 0.0:
+                raise ValueError(
+                    f"freegsnke_script_timeout_s must be > 0 or null (got {freegsnke_script_timeout_s})"
+                )
 
         s3_layout_patterns = list(obj.get("s3_layout_patterns", [
             "{prefix}/{group}/shot_{shot}.zarr",
@@ -138,6 +150,7 @@ class AppConfig:
             allow_cache_reuse=allow_cache_reuse,
             batch_abort_on_failure=batch_abort_on_failure,
             metrics_n_times=metrics_n_times,
+            freegsnke_script_timeout_s=freegsnke_script_timeout_s,
         )
 
 

@@ -1,6 +1,6 @@
 """Honest, single-line status for contract residual metrics.
 
-As of v10.4.0 the shot-only happy path ships a real diagnostic contracts
+As of v10.5.0 the shot-only happy path ships a real diagnostic contracts
 authority (configs/diagnostic_contracts.json) and enables metrics by default:
 
 - Extractor writes inputs/flux_loops.csv and inputs/pickups.csv with FAIR-MAST
@@ -8,13 +8,14 @@ authority (configs/diagnostic_contracts.json) and enables metrics by default:
   other timebases (mirnov/saddle/omaha) are extracted verbatim for audit under
   inputs/audit_other_timebase/ with evidence-based exclusion reasons.
 - Inverse FreeGSNKE runner solves one inverse equilibrium at the formed-plasma
-  t0 (for dump/plots/forward replay), then solves one forward-style Grad-
-  Shafranov equilibrium per deterministic window sample time
-  (metrics_timebase authority, rule linspace_window_inclusive, config key
-  metrics_n_times; solve_mode=forward_gs_at_measured_pf_ip) and emits multi-row
-  synthetic/synthetic_fluxloops.csv and synthetic/synthetic_pickups.csv via
-  freegsnke.magnetic_probes.Probes (calculate_fluxloop_value /
-  calculate_pickup_value), plus synthetic/synthetic_times.json.
+  t0 (for dump/plots/forward replay), then prefers a full FreeGSNKE inverse at
+  each deterministic window sample time (metrics_timebase + solver.multitime
+  authorities; solve_mode=full_inverse; fresh Inverse_optimizer per time,
+  continuation, declared max_solving_iterations + per_time_timeout_s).
+  forward_gs_at_measured_pf_ip remains an explicit per-time fallback. Emits
+  multi-row synthetic/synthetic_fluxloops.csv and synthetic/synthetic_pickups.csv
+  via freegsnke.magnetic_probes.Probes, plus synthetic/synthetic_times.json with
+  per-time solve status.
 - Metrics interpolate experimental traces onto the solved synthetic times and
   score RMS/MAE/max_abs across all sample times. ALL identity-mapped channels
   are contracted; channels that are all-NaN on the current shot are skipped

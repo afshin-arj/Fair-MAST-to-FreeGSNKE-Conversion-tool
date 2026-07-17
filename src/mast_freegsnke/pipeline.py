@@ -416,7 +416,10 @@ class ShotPipeline:
                     blocking_errors.append(f"invalid_freegsnke_run_mode: {mode}")
                     _stage("freegsnke_execute", False, error=f"invalid mode '{mode}'")
                 else:
-                    runner = FreeGSNKERunner(python_exe=self.cfg.freegsnke_python)
+                    runner = FreeGSNKERunner(
+                        python_exe=self.cfg.freegsnke_python,
+                        timeout_s=self.cfg.freegsnke_script_timeout_s,
+                    )
                     results: List[Dict[str, Any]] = []
                     if mode in {"inverse", "both"}:
                         inv = run_dir / "inverse_run.py"

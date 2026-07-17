@@ -7,7 +7,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,8 @@ class ScriptRunResult:
     stderr_path: str
     python_exe: str
     error_hint: Optional[str] = None
+    timed_out: bool = False
+    timeout_s: Optional[float] = None
 
 
 def _default_python() -> str:
@@ -70,13 +72,23 @@ class FreeGSNKERunner:
 
     This runner does not assume FreeGSNKE is installed. If it is missing, execution
     is recorded deterministically with an actionable hint.
+
+    A hard wall-clock ``timeout_s`` (v10.5.0) prevents indefinite hangs when the
+    FreeGSNKE inverse residual-resize loop never returns (known failure mode when
+    Inverse_optimizer state is reused across times).
     """
 
-    def __init__(self, python_exe: Optional[str] = None, env: Optional[Dict[str, str]] = None):
+    def __init__(
+        self,
+        python_exe: Optional[str] = None,
+        env: Optional[Dict[str, str]] = None,
+        timeout_s: Optional[float] = None,
+    ):
         self.python_exe = resolve_freegsnke_python(python_exe)
         self.env = dict(os.environ)
         if env:
             self.env.update({str(k): str(v) for k, v in env.items()})
+        self.timeout_s = float(timeout_s) if timeout_s is not None else None
 
     def run_script(self, script_path: Path, run_dir: Path, label: str) -> ScriptRunResult:
         script_path = script_path.resolve()
@@ -88,30 +100,49 @@ class FreeGSNKERunner:
         stderr_path = logs_dir / f"{label}.stderr.txt"
 
         t0 = time.time()
-        proc = subprocess.run(
-            [self.python_exe, str(script_path)],
-            cwd=str(run_dir),
-            env=self.env,
-            text=True,
-            capture_output=True,
-        )
+        timed_out = False
+        try:
+            proc = subprocess.run(
+                [self.python_exe, str(script_path)],
+                cwd=str(run_dir),
+                env=self.env,
+                text=True,
+                capture_output=True,
+                timeout=self.timeout_s,
+            )
+            returncode = int(proc.returncode)
+            stdout_text = proc.stdout or ""
+            stderr_text = proc.stderr or ""
+        except subprocess.TimeoutExpired as e:
+            timed_out = True
+            returncode = 124
+            stdout_text = (e.stdout.decode("utf-8", errors="replace") if isinstance(e.stdout, (bytes, bytearray)) else (e.stdout or ""))
+            stderr_text = (e.stderr.decode("utf-8", errors="replace") if isinstance(e.stderr, (bytes, bytearray)) else (e.stderr or ""))
+            stderr_text += (
+                f"\n[TIMEOUT] FreeGSNKE script exceeded wall-clock limit "
+                f"of {self.timeout_s}s (label={label}); process killed.\n"
+            )
         dt = float(time.time() - t0)
 
-        stdout_path.write_text(proc.stdout or "")
-        stderr_path.write_text(proc.stderr or "")
+        stdout_path.write_text(stdout_text)
+        stderr_path.write_text(stderr_text)
 
-        hint = _detect_import_error(proc.stderr or "")
-        ok = proc.returncode == 0
+        hint = _detect_import_error(stderr_text)
+        if timed_out:
+            hint = "freegsnke_script_timeout"
+        ok = (returncode == 0) and (not timed_out)
 
         return ScriptRunResult(
             script=str(script_path.name),
             ok=ok,
-            returncode=int(proc.returncode),
+            returncode=returncode,
             duration_s=dt,
             stdout_path=str(stdout_path.relative_to(run_dir)),
             stderr_path=str(stderr_path.relative_to(run_dir)),
             python_exe=str(self.python_exe),
             error_hint=hint,
+            timed_out=timed_out,
+            timeout_s=self.timeout_s,
         )
 
 

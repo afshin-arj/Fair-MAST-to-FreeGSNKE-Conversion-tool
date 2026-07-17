@@ -101,12 +101,14 @@ contracts authority:
     Sample times: metrics_timebase execution authority, rule
     linspace_window_inclusive with n_times (config key metrics_n_times,
     default 5) equally spaced samples in the finalized window
-    [t_start, t_end]. Each row is an independent forward-style Grad-
-    Shafranov solve (constrain=None) with measured PF currents and Ip
-    interpolated at that time (solve_mode=forward_gs_at_measured_pf_ip).
-    The times and rule are recorded in synthetic/synthetic_times.json
-    and in the manifest. The single t0 inverse solve remains the source
-    of inverse_dump.pkl / plots / forward replay.
+    [t_start, t_end]. Preferred path (v10.5.0): full FreeGSNKE inverse
+    at each sample (fresh Inverse_optimizer, continuation seeding,
+    declared max_solving_iterations + per_time_timeout_s). solve_mode
+    is typically full_inverse; forward_gs_at_measured_pf_ip is only an
+    explicit per-time fallback. Per-time status is recorded in
+    synthetic/synthetic_times.json and in the manifest. The single t0
+    inverse solve remains the source of inverse_dump.pkl / plots /
+    forward replay.
 
   Authority:
     configs/diagnostic_contracts.json

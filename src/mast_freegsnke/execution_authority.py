@@ -11,6 +11,8 @@ Authority scope (v10.0.0):
   - Passive structure placeholder (reserved for future wiring)
   - Metrics timebase spec (v10.4.0): deterministic window sample times for
     multi-time synthetic diagnostics / residual scoring
+  - Multi-time inverse solve policy (v10.5.0): preferred_mode, iteration /
+    timeout caps, continuation, fresh Inverse_optimizer per sample time
 
 Design laws:
   - Deterministic, audit-ready JSONs
@@ -137,11 +139,68 @@ class L2RegSpec:
 
 
 @dataclass(frozen=True)
+class MultiTimeSolveSpec:
+    """Per-window-sample solve policy for multi-time synthetic diagnostics (v10.5.0).
+
+    Preferred path is a full FreeGSNKE inverse (shape/profile optimisation) at
+    each metrics_timebase sample, with:
+
+      - a FRESH Inverse_optimizer per sample time (reusing one across times
+        stalls inside FreeGSNKE 3.0.1's uncapped residual-resize loop in
+        ``GSstaticsolver.forward_solve`` / ``freegs4e.critical.fastcrit``)
+      - continuation seeding from the previous converged ``plasma_psi``
+      - declared ``max_solving_iterations`` (FreeGSNKE ``inverse_solve`` knob)
+      - declared wall-clock ``per_time_timeout_s`` (hard kill via child process)
+
+    When inverse fails/times out, ``fallback_mode`` selects an honest next
+    step: ``forward_gs`` (constrain=None Grad-Shafranov at measured PF/Ip) or
+    ``skip`` (omit that time from synthetic CSVs; never fabricate values).
+    """
+
+    preferred_mode: str = "full_inverse"
+    max_solving_iterations: int = 50
+    per_time_timeout_s: float = 180.0
+    continuation: bool = True
+    fresh_constrain_per_time: bool = True
+    fallback_mode: str = "forward_gs"
+
+    def validate(self) -> None:
+        _require(
+            self.preferred_mode in {"full_inverse", "forward_gs"},
+            "MultiTimeSolveSpec: preferred_mode must be 'full_inverse' or 'forward_gs'",
+        )
+        _require(
+            isinstance(self.max_solving_iterations, int) and 1 <= self.max_solving_iterations <= 500,
+            "MultiTimeSolveSpec: max_solving_iterations must be int in [1, 500]",
+        )
+        _require(
+            _is_number(self.per_time_timeout_s) and float(self.per_time_timeout_s) > 0.0,
+            "MultiTimeSolveSpec: per_time_timeout_s must be > 0",
+        )
+        _require(isinstance(self.continuation, bool), "MultiTimeSolveSpec: continuation must be bool")
+        _require(
+            isinstance(self.fresh_constrain_per_time, bool),
+            "MultiTimeSolveSpec: fresh_constrain_per_time must be bool",
+        )
+        # Fail closed: reusing Inverse_optimizer across times is the stall mode.
+        _require(
+            self.fresh_constrain_per_time is True,
+            "MultiTimeSolveSpec: fresh_constrain_per_time must be True "
+            "(reusing Inverse_optimizer across times stalls under FreeGSNKE 3.0.1)",
+        )
+        _require(
+            self.fallback_mode in {"forward_gs", "skip"},
+            "MultiTimeSolveSpec: fallback_mode must be 'forward_gs' or 'skip'",
+        )
+
+
+@dataclass(frozen=True)
 class SolverSpec:
     inverse_target_relative_tolerance: float
     inverse_target_relative_psit_update: float
     forward_target_relative_tolerance: float
     l2_reg: L2RegSpec
+    multitime: MultiTimeSolveSpec = field(default_factory=MultiTimeSolveSpec)
 
     def validate(self) -> None:
         for name, val in [
@@ -151,6 +210,7 @@ class SolverSpec:
         ]:
             _require(_is_number(val) and 0.0 < float(val) < 1.0, f"SolverSpec: {name} must be in (0,1)")
         self.l2_reg.validate()
+        self.multitime.validate()
 
 
 @dataclass(frozen=True)
@@ -224,7 +284,7 @@ class ExecutionAuthorityBundle:
 
 
 def default_execution_authority_bundle(metrics_n_times: int = 5) -> ExecutionAuthorityBundle:
-    """Defaults that reproduce v8.0.0 template behavior (+ v10.4.0 metrics timebase)."""
+    """Defaults that reproduce v8.0.0 template behavior (+ v10.5.0 multi-time inverse)."""
 
     grid = GridSpec(Rmin=0.1, Rmax=2.0, Zmin=-2.2, Zmax=2.2, nx=65, ny=129)
 
@@ -253,11 +313,19 @@ def default_execution_authority_bundle(metrics_n_times: int = 5) -> ExecutionAut
         inverse_target_relative_psit_update=1e-3,
         forward_target_relative_tolerance=1e-6,
         l2_reg=L2RegSpec(default=1e-8, per_coil_override={"P6": 1e-5}),
+        multitime=MultiTimeSolveSpec(
+            preferred_mode="full_inverse",
+            max_solving_iterations=50,
+            per_time_timeout_s=180.0,
+            continuation=True,
+            fresh_constrain_per_time=True,
+            fallback_mode="forward_gs",
+        ),
     )
 
     return ExecutionAuthorityBundle(
         authority_name="freegsnke_execution_authority",
-        authority_version="10.4.0",
+        authority_version="10.5.0",
         grid=grid,
         profile=profile,
         profile_basis=profile_basis,
@@ -315,11 +383,16 @@ def load_execution_authority_bundle(bundle_path: Path) -> ExecutionAuthorityBund
     profile_basis = ProfileBasisSpec(**obj.get("profile_basis", {}))
     boundary = BoundarySpec(**obj["boundary"])
     l2_reg = L2RegSpec(**obj["solver"]["l2_reg"])
+    multitime_obj = obj["solver"].get("multitime", {})
+    if not isinstance(multitime_obj, dict):
+        raise ValueError("SolverSpec.multitime must be a JSON object")
+    multitime = MultiTimeSolveSpec(**multitime_obj) if multitime_obj else MultiTimeSolveSpec()
     solver = SolverSpec(
         inverse_target_relative_tolerance=obj["solver"]["inverse_target_relative_tolerance"],
         inverse_target_relative_psit_update=obj["solver"]["inverse_target_relative_psit_update"],
         forward_target_relative_tolerance=obj["solver"]["forward_target_relative_tolerance"],
         l2_reg=l2_reg,
+        multitime=multitime,
     )
     passive = PassiveStructureSpec(**obj.get("passive_structure", {}))
     metrics_timebase = MetricsTimebaseSpec(**obj.get("metrics_timebase", {}))

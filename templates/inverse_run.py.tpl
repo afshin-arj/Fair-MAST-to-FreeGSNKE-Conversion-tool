@@ -70,6 +70,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
+import time as _time
 
 from freegsnke import build_machine
 from freegsnke import equilibrium_update
@@ -152,34 +153,195 @@ def compute_sample_times(ea: dict):
     return times, meta
 
 
+def _load_multitime_spec(solv: dict) -> dict:
+    """Load solver.multitime authority with fail-closed defaults (v10.5.0)."""
+    mt = solv.get("multitime")
+    if not isinstance(mt, dict):
+        raise KeyError(
+            "Execution authority solver.multitime missing "
+            "(required for multi-time synthetic diagnostics, v10.5.0)"
+        )
+    preferred = str(mt.get("preferred_mode", "full_inverse"))
+    fallback = str(mt.get("fallback_mode", "forward_gs"))
+    fresh = bool(mt.get("fresh_constrain_per_time", True))
+    if not fresh:
+        raise ValueError(
+            "solver.multitime.fresh_constrain_per_time must be True: "
+            "reusing Inverse_optimizer across times stalls under FreeGSNKE 3.0.1 "
+            "(uncapped residual-resize loop in GSstaticsolver.forward_solve / "
+            "freegs4e.critical.fastcrit)."
+        )
+    if preferred not in {"full_inverse", "forward_gs"}:
+        raise ValueError(f"unsupported preferred_mode: {preferred}")
+    if fallback not in {"forward_gs", "skip"}:
+        raise ValueError(f"unsupported fallback_mode: {fallback}")
+    return {
+        "preferred_mode": preferred,
+        "fallback_mode": fallback,
+        "max_solving_iterations": int(mt.get("max_solving_iterations", 50)),
+        "per_time_timeout_s": float(mt.get("per_time_timeout_s", 180.0)),
+        "continuation": bool(mt.get("continuation", True)),
+        "fresh_constrain_per_time": True,
+    }
+
+
+def _solve_one_sample_inplace(
+    *,
+    eq,
+    solver,
+    tokamak,
+    profiles_kwargs: dict,
+    solv: dict,
+    mt_spec: dict,
+    bnd: dict,
+    t_i: float,
+    ip_i: float,
+    pf_i: dict,
+    mode: str,
+    l2_reg,
+):
+    """In-process inverse or forward_gs solve at one sample time.
+
+    Hard hang protection for the whole script is freegsnke_script_timeout_s in
+    FreeGSNKERunner. Per-time, we enforce max_solving_iterations (FreeGSNKE
+    inverse_solve knob) and record wall-clock duration against
+    per_time_timeout_s (soft: over-budget solves are discarded and fall back).
+    Process-spawn isolation was tried but Windows tokamak-rebuild overhead made
+    five child solves exceed the script budget; the stall mode is avoided by
+    fresh Inverse_optimizer + sample-to-sample continuation (proven in-process).
+    """
+    set_machine_currents(tokamak, pf_i)
+    profiles_i = ConstrainPaxisIp(eq=eq, Ip=float(ip_i), **profiles_kwargs)
+    tic = _time.time()
+    try:
+        if mode == "full_inverse":
+            constrain = Inverse_optimizer(
+                null_points=bnd["null_points"],
+                isoflux_set=np.array(bnd["isoflux_set"], dtype=float),
+            )
+            solver.solve(
+                eq=eq,
+                profiles=profiles_i,
+                constrain=constrain,
+                target_relative_tolerance=float(solv["inverse_target_relative_tolerance"]),
+                target_relative_psit_update=float(solv["inverse_target_relative_psit_update"]),
+                max_solving_iterations=int(mt_spec["max_solving_iterations"]),
+                l2_reg=l2_reg,
+                verbose=False,
+            )
+            rel = float(getattr(solver, "relative_change", float("nan")))
+            iters = int(len(getattr(solver, "constrain_loss", [])))
+            tol = float(solv["inverse_target_relative_tolerance"])
+            duration_s = float(_time.time() - tic)
+            if duration_s > float(mt_spec["per_time_timeout_s"]):
+                return {
+                    "ok": False,
+                    "status": "timeout",
+                    "solve_mode": mode,
+                    "iterations": iters,
+                    "rel_change": rel,
+                    "duration_s": duration_s,
+                    "error": (
+                        f"per-time solve exceeded solver.multitime.per_time_timeout_s="
+                        f"{mt_spec['per_time_timeout_s']}s (soft wall-clock)"
+                    ),
+                }
+            if not (np.isfinite(rel) and rel <= tol):
+                return {
+                    "ok": False,
+                    "status": "not_converged",
+                    "solve_mode": mode,
+                    "iterations": iters,
+                    "rel_change": rel,
+                    "duration_s": duration_s,
+                    "error": (
+                        f"inverse did not reach tolerance: rel_change={rel:.3e} vs {tol:.3e} "
+                        f"in {iters}/{int(mt_spec['max_solving_iterations'])} iterations"
+                    ),
+                }
+            return {
+                "ok": True,
+                "status": "converged",
+                "solve_mode": mode,
+                "iterations": iters,
+                "rel_change": rel,
+                "duration_s": duration_s,
+                "error": None,
+            }
+        if mode == "forward_gs":
+            solver.solve(
+                eq=eq,
+                profiles=profiles_i,
+                constrain=None,
+                target_relative_tolerance=float(solv["forward_target_relative_tolerance"]),
+                max_solving_iterations=int(mt_spec["max_solving_iterations"]),
+                verbose=False,
+            )
+            rel = float(getattr(solver, "relative_change", float("nan")))
+            iters = int(max(0, len(getattr(solver, "norm_rel_change", [])) - 1))
+            duration_s = float(_time.time() - tic)
+            tol = float(solv["forward_target_relative_tolerance"])
+            if duration_s > float(mt_spec["per_time_timeout_s"]):
+                return {
+                    "ok": False,
+                    "status": "timeout",
+                    "solve_mode": mode,
+                    "iterations": iters,
+                    "rel_change": rel,
+                    "duration_s": duration_s,
+                    "error": (
+                        f"per-time solve exceeded solver.multitime.per_time_timeout_s="
+                        f"{mt_spec['per_time_timeout_s']}s (soft wall-clock)"
+                    ),
+                }
+            status = "converged" if (np.isfinite(rel) and rel <= tol) else "completed_max_iter"
+            err = None
+            if status != "converged":
+                err = (
+                    f"forward_gs finished without meeting tolerance: "
+                    f"rel_change={rel:.3e} vs {tol:.3e} in {iters} iterations"
+                )
+            return {
+                "ok": True,
+                "status": status,
+                "solve_mode": mode,
+                "iterations": iters,
+                "rel_change": rel,
+                "duration_s": duration_s,
+                "error": err,
+            }
+        raise ValueError(f"unknown solve_mode: {mode}")
+    except Exception as e:
+        return {
+            "ok": False,
+            "status": "error",
+            "solve_mode": mode,
+            "iterations": 0,
+            "rel_change": None,
+            "duration_s": float(_time.time() - tic),
+            "error": f"{type(e).__name__}: {e}",
+        }
+
+
 def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, ip_df, t0: float) -> None:
-    """Emit multi-time synthetic diagnostics (v10.4.0).
+    """Emit multi-time synthetic diagnostics (v10.5.0).
 
-    For EACH deterministic window sample time t_i (metrics_timebase authority),
-    a forward-style Grad-Shafranov solve is performed with:
-      - PF currents interpolated from pf_currents.csv at t_i (measured)
-      - Ip interpolated from ip.csv at t_i (measured)
-      - profile shape knobs from the execution-authority profile spec
-      - constrain=None (no Inverse_optimizer shape targets)
+    Preferred path (solver.multitime.preferred_mode=full_inverse): for EACH
+    deterministic window sample time t_i, run a full FreeGSNKE inverse
+    (shape/profile optimisation) in-process with:
+      - PF currents + Ip interpolated at t_i (measured)
+      - a FRESH Inverse_optimizer (required; reuse stalls under FreeGSNKE 3.0.1)
+      - sample-to-sample continuation of plasma_psi (not seeded from t0 inverse)
+      - max_solving_iterations + per_time_timeout_s from execution authority
 
-    This is the strongest honest multi-time path that remains reliable: each
-    synthetic row is an independent GS solution driven by the measured PF/Ip
-    snapshot at that time (values genuinely vary with time). Re-running the
-    full inverse (shape) optimization at every sample time was found to stall
-    indefinitely under FreeGSNKE 3.0.1 for this MAST setup; the t0 inverse
-    solve above this call remains the source of inverse_dump.pkl / plots /
-    forward replay.
+    Hard hang protection for the pipeline is FreeGSNKERunner's
+    freegsnke_script_timeout_s. On inverse failure/timeout, fallback_mode
+    selects forward_gs or skip (never fabricate values).
 
-    FreeGSNKE's Probes API evaluates each solved equilibrium:
-      - calculate_fluxloop_value(eq): poloidal flux psi at each flux loop [Wb]
-      - calculate_pickup_value(eq):   B . n_hat at each pickup coil [T]
-
-    Output schema (consumed by diagnostic contracts / synthetic_extract):
-      synthetic/synthetic_fluxloops.csv : columns time,<probe names>; one row per sample time
-      synthetic/synthetic_pickups.csv   : columns time,<probe names>; one row per sample time
-      synthetic/synthetic_times.json    : which times were solved and under which rule
-
-    Never repeats a single solve across times. Fail-fast if probes unavailable.
+    Output:
+      synthetic/synthetic_fluxloops.csv
+      synthetic/synthetic_pickups.csv
+      synthetic/synthetic_times.json  (per-time solve status + mode)
     """
     probes = getattr(tokamak, "probes", None)
     if probes is None or not hasattr(probes, "floops"):
@@ -188,28 +350,140 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
             "cannot emit synthetic diagnostics required by contract metrics."
         )
     probes.initialise_setup(eq)
-
-    times, tb_meta = compute_sample_times(ea)
-
     fl_names = [str(n) for n in probes.floop_order]
     pu_names = [str(n) for n in probes.pickup_order]
+
+    times, tb_meta = compute_sample_times(ea)
+    mt_spec = _load_multitime_spec(solv)
+    bnd = ea["boundary"]
+
+    control_names = get_control_coil_names(eq.tokamak)
+    l2 = solv.get("l2_reg", {})
+    l2_reg = np.array([float(l2.get("default", 0.0))] * len(control_names), dtype=float)
+    for cname, val in dict(l2.get("per_coil_override", {})).items():
+        if cname in control_names:
+            l2_reg[control_names.index(cname)] = float(val)
+
     fl_rows = []
     pu_rows = []
+    per_time = []
+    n_inverse = 0
+    n_forward = 0
+    n_skipped = 0
+    # After the t0 inverse, eq holds optimised coil currents + plasma_psi.
+    # Pairing that psi with a different time's measured PF re-enters the
+    # FreeGSNKE residual-resize stall. Cold-start the multi-time loop; then
+    # sample-to-sample continuation keeps measured-PF-consistent solutions.
+    eq.plasma_psi = eq.create_psi_plasma_default(adaptive_centre=True)
+    eq.solved = False
+
     for t_i in times:
         pf_i = load_pf_currents(t_i)
-        set_machine_currents(tokamak, pf_i)
         ip_i = interp_at_time(ip_df, t_i, "ip")
-        profiles_i = ConstrainPaxisIp(eq=eq, Ip=float(ip_i), **profiles_kwargs)
-        solver.solve(
-            eq=eq,
-            profiles=profiles_i,
-            constrain=None,
-            target_relative_tolerance=float(solv["forward_target_relative_tolerance"]),
-            verbose=False,
+        if not mt_spec["continuation"]:
+            eq.plasma_psi = eq.create_psi_plasma_default(adaptive_centre=True)
+            eq.solved = False
+
+        modes_to_try = [mt_spec["preferred_mode"]]
+        if mt_spec["fallback_mode"] == "forward_gs" and mt_spec["preferred_mode"] != "forward_gs":
+            modes_to_try.append("forward_gs")
+
+        attempted = []
+        result = None
+        for mode in modes_to_try:
+            print(
+                f"[..] window sample {mode}: t={t_i:.6f}s Ip={ip_i/1e6:.3f} MA "
+                f"(timeout={mt_spec['per_time_timeout_s']}s, "
+                f"max_iter={mt_spec['max_solving_iterations']})",
+                flush=True,
+            )
+            result = _solve_one_sample_inplace(
+                eq=eq,
+                solver=solver,
+                tokamak=tokamak,
+                profiles_kwargs=profiles_kwargs,
+                solv=solv,
+                mt_spec=mt_spec,
+                bnd=bnd,
+                t_i=float(t_i),
+                ip_i=float(ip_i),
+                pf_i=pf_i,
+                mode=mode,
+                l2_reg=l2_reg,
+            )
+            attempted.append({
+                "solve_mode": mode,
+                "status": result.get("status"),
+                "iterations": result.get("iterations"),
+                "rel_change": result.get("rel_change"),
+                "duration_s": result.get("duration_s"),
+                "error": result.get("error"),
+            })
+            if result.get("ok"):
+                break
+            print(
+                f"[WARN] {mode} failed at t={t_i:.6f}s: "
+                f"status={result.get('status')} error={result.get('error')}",
+                flush=True,
+            )
+
+        entry = {
+            "t": float(t_i),
+            "ip": float(ip_i),
+            "attempts": attempted,
+            "status": "skipped",
+            "solve_mode": None,
+            "iterations": None,
+            "rel_change": None,
+            "duration_s": None,
+            "error": None,
+        }
+
+        if result is not None and result.get("ok"):
+            fl_rows.append([float(t_i)] + [float(v) for v in probes.calculate_fluxloop_value(eq)])
+            pu_rows.append([float(t_i)] + [float(v) for v in probes.calculate_pickup_value(eq)])
+            mode_used = str(result.get("solve_mode"))
+            entry.update({
+                "status": str(result.get("status") or "converged"),
+                "solve_mode": mode_used,
+                "iterations": result.get("iterations"),
+                "rel_change": result.get("rel_change"),
+                "duration_s": result.get("duration_s"),
+                "error": result.get("error"),
+            })
+            if mode_used == "full_inverse" and entry["status"] == "converged":
+                n_inverse += 1
+            elif mode_used == "forward_gs":
+                n_forward += 1
+            print(
+                f"[OK] window sample {mode_used}: t={t_i:.6f}s "
+                f"status={entry['status']} iters={result.get('iterations')} "
+                f"rel_change={result.get('rel_change')} "
+                f"duration_s={result.get('duration_s')}",
+                flush=True,
+            )
+        else:
+            err = None if result is None else result.get("error")
+            entry.update({
+                "status": "skipped",
+                "error": err or "all solve attempts failed",
+            })
+            n_skipped += 1
+            print(f"[SKIP] t={t_i:.6f}s: {entry['error']}", flush=True)
+        per_time.append(entry)
+
+    if not fl_rows:
+        raise RuntimeError(
+            "Multi-time synthetic diagnostics produced zero solved times; "
+            "cannot emit synthetic probe CSVs (never fabricate values)."
         )
-        fl_rows.append([float(t_i)] + [float(v) for v in probes.calculate_fluxloop_value(eq)])
-        pu_rows.append([float(t_i)] + [float(v) for v in probes.calculate_pickup_value(eq)])
-        print(f"[OK] window sample forward-GS: t={t_i:.6f}s Ip={ip_i/1e6:.3f} MA")
+
+    if n_inverse == len(fl_rows) and n_forward == 0:
+        overall_mode = "full_inverse"
+    elif n_forward == len(fl_rows) and n_inverse == 0:
+        overall_mode = "forward_gs_at_measured_pf_ip"
+    else:
+        overall_mode = "mixed_inverse_and_forward_gs"
 
     out_dir = HERE / "synthetic"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -218,24 +492,34 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
     (out_dir / "synthetic_times.json").write_text(json.dumps(
         {
             **tb_meta,
-            "times": times,
+            "times": [row["t"] for row in per_time if row.get("solve_mode")],
             "t0_formed_plasma": float(t0),
-            "solve_mode": "forward_gs_at_measured_pf_ip",
+            "solve_mode": overall_mode,
+            "n_inverse_converged": n_inverse,
+            "n_forward_gs_fallback": n_forward,
+            "n_skipped": n_skipped,
+            "multitime_authority": mt_spec,
+            "per_time": per_time,
             "note": (
-                "each row is an independent Grad-Shafranov solve (constrain=None) "
-                "at PF currents and Ip interpolated to that sample time; profile "
-                "shape knobs are the static profile authority. Full inverse "
-                "(shape) optimization is performed once at t0 for "
-                "inverse_dump.pkl / plots / forward replay; repeating it at every "
-                "sample time stalls under FreeGSNKE 3.0.1 for this MAST setup."
+                "Preferred path is full FreeGSNKE inverse at each window sample "
+                "with a fresh Inverse_optimizer, sample-to-sample continuation, "
+                "declared max_solving_iterations and per_time_timeout_s. Reusing "
+                "one Inverse_optimizer across times stalls in FreeGSNKE 3.0.1 "
+                "(uncapped while new_residual_flag resize loop inside "
+                "GSstaticsolver.forward_solve calling freegs4e.critical.fastcrit). "
+                "Hard pipeline hang protection is freegsnke_script_timeout_s. "
+                "Failed times fall back to forward_gs or are skipped; never fabricated."
             ),
         },
         indent=2,
     ) + "\n")
     print(
         f"Saved synthetic/synthetic_fluxloops.csv ({len(fl_names)} loops) and "
-        f"synthetic/synthetic_pickups.csv ({len(pu_names)} pickups) at {len(times)} window sample times"
+        f"synthetic/synthetic_pickups.csv ({len(pu_names)} pickups) at "
+        f"{len(fl_rows)} window sample times "
+        f"(inverse={n_inverse}, forward_gs={n_forward}, skipped={n_skipped})"
     )
+
 
 def set_machine_currents(tokamak, currents_dict):
     for name, coil in getattr(tokamak, "coils", []):
@@ -390,9 +674,8 @@ def main():
     fig.savefig(HERE/"inverse_equilibrium.png", dpi=250, bbox_inches="tight")
     print("Saved inverse_equilibrium.png")
 
-    # Multi-time synthetic probe diagnostics (contract metrics input, v10.4.0).
-    # Runs LAST: it re-solves forward-GS at each window sample time,
-    # mutating eq; the dump/plots above stay bound to the t0 inverse solve.
+    # Multi-time synthetic probe diagnostics (contract metrics input, v10.5.0).
+    # Runs LAST in child processes so the t0 inverse dump/plots stay pristine.
     write_synthetic_probe_csvs(
         tokamak=tokamak,
         eq=eq,

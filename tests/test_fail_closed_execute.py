@@ -89,7 +89,7 @@ def test_execute_skipped_when_blocking_errors(tmp_path: Path, monkeypatch) -> No
             return None
 
     class FakeRunner:
-        def __init__(self, python_exe=None):
+        def __init__(self, python_exe=None, timeout_s=None, **kwargs):
             pass
 
         def run_script(self, script, run_dir, label):
