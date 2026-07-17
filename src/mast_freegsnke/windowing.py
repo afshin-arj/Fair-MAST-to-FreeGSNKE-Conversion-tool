@@ -40,6 +40,11 @@ def _find_time_column(cols: List[str]) -> str:
     return cols[0]
 
 
+def _is_ip_source(label: str) -> bool:
+    """Labels whose columns may contain a plasma-current (Ip) signal."""
+    return "magnetics" in label or label == "ip.csv"
+
+
 def _pick_ip_column(cols: List[str]) -> Optional[str]:
     # Heuristic patterns for plasma current
     pats = [
@@ -78,14 +83,16 @@ def infer_time_window(inputs_dir: Path, formed_frac: float) -> TimeWindow:
     """Infer a reasonable formed-plasma time window from extracted CSV inputs.
 
     Priority:
-      1) magnetics_raw.csv with a recognizable plasma current column (Ip)
-      2) magnetics.csv (if present)
+      1) ip.csv (dedicated plasma-current export from extract)
+      2) magnetics_timeseries.csv / legacy magnetics_raw.csv / magnetics.csv with an Ip-like column
       3) pf_active_raw.csv (fallback: uses largest-magnitude column as proxy)
       4) fallback to full time extent of any available CSV
     """
     _require_pandas()
 
     candidates = [
+        (inputs_dir / "ip.csv", "ip.csv"),
+        (inputs_dir / "magnetics_timeseries.csv", "magnetics_timeseries.csv"),
         (inputs_dir / "magnetics_raw.csv", "magnetics_raw.csv"),
         (inputs_dir / "magnetics.csv", "magnetics.csv"),
         (inputs_dir / "pf_active_raw.csv", "pf_active_raw.csv"),
@@ -105,7 +112,7 @@ def infer_time_window(inputs_dir: Path, formed_frac: float) -> TimeWindow:
         if not cols:
             continue
 
-        ipcol = _pick_ip_column(cols) if "magnetics" in label else None
+        ipcol = _pick_ip_column(cols) if _is_ip_source(label) else None
         if ipcol is not None:
             t = df[tcol].astype(float).to_list()
             y = df[ipcol].astype(float).to_list()

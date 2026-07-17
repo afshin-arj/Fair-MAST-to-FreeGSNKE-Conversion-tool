@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import platform
+import shutil
 import time
 import traceback
 from dataclasses import dataclass
@@ -44,6 +45,32 @@ def _resolve_config_path(raw: Optional[str], repo_root: Path) -> Optional[Path]:
     return p
 
 
+def _archive_prior_run(run_dir: Path) -> Optional[str]:
+    """Archive a previous run of the same shot into <run_dir>/history/<ts>/.
+
+    Reruns must not mix stale artifacts (old logs, pickles, metrics,
+    EXCEPTION_TRACEBACK.txt) with fresh outputs: the top level of the run
+    folder is always a single clean, auditable run. Prior runs are preserved,
+    never deleted.
+
+    Returns the history subpath (relative to run_dir) if archiving happened.
+    """
+    if not (run_dir / "manifest.json").exists():
+        return None
+    ts = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
+    hist = run_dir / "history" / ts
+    n = 0
+    while hist.exists():
+        n += 1
+        hist = run_dir / "history" / f"{ts}_{n}"
+    hist.mkdir(parents=True)
+    for child in sorted(run_dir.iterdir(), key=lambda p: p.name):
+        if child.name == "history":
+            continue
+        shutil.move(str(child), str(hist / child.name))
+    return str(hist.relative_to(run_dir))
+
+
 @dataclass
 class ShotPipeline:
     cfg: AppConfig
@@ -78,12 +105,17 @@ class ShotPipeline:
         status = "started"
 
         runs_root = ensure_dir(self.cfg.runs_dir)
-        run_dir = ensure_dir(runs_root / f"shot_{shot}")
+        # User-facing layout: SHOTS/<shot> (e.g. SHOTS/30201), not runs/shot_<N>.
+        run_dir = ensure_dir(runs_root / str(shot))
+        prior_run_archived_to = _archive_prior_run(run_dir)
         inputs_dir = ensure_dir(run_dir / "inputs")
 
 
         def _stage(name: str, ok: bool, **kw: Any) -> None:
             stage_log.append({"stage": name, "ok": bool(ok), **kw})
+
+        if prior_run_archived_to is not None:
+            _stage("prior_run_archived", True, dest=prior_run_archived_to)
 
         repo_root = self.templates_dir.parent
 
@@ -144,6 +176,7 @@ class ShotPipeline:
                 "cache_root": str(self.cfg.cache_dir),
                 "machine_dir": str(machine_dir),
                 "formed_plasma_frac": float(self.cfg.formed_plasma_frac),
+                "prior_run_archived_to": prior_run_archived_to,
             }
             manifest.update(extra)
             write_json(run_dir / "manifest.json", manifest)
@@ -332,7 +365,18 @@ class ShotPipeline:
             # Optional: execute FreeGSNKE scripts (inverse/forward) and compute residual metrics.
             exec_summary: Dict[str, Any] = {"enabled": bool(self.cfg.execute_freegsnke), "mode": self.cfg.freegsnke_run_mode}
             metrics_summary: Optional[Dict[str, Any]] = None
-            if self.cfg.execute_freegsnke:
+            if self.cfg.execute_freegsnke and blocking_errors:
+                # Fail closed: never burn FreeGSNKE compute on a run whose
+                # inputs/authorities are already known to be invalid.
+                exec_summary.update({"skipped": "blocking_errors_present", "results": []})
+                write_execution_report(run_dir, exec_summary)
+                _stage(
+                    "freegsnke_execute",
+                    False,
+                    note="skipped_fail_closed_due_to_blocking_errors",
+                    blocking_errors=list(blocking_errors),
+                )
+            elif self.cfg.execute_freegsnke:
                 mode = (self.cfg.freegsnke_run_mode or "none").lower()
                 if mode not in {"none", "inverse", "forward", "both"}:
                     blocking_errors.append(f"invalid_freegsnke_run_mode: {mode}")

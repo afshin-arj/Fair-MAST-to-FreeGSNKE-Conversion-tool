@@ -12,7 +12,7 @@ try:
 except Exception:  # pragma: no cover
     pd = None  # type: ignore
 
-from .windowing import TimeWindow, _find_time_column, _pick_ip_column
+from .windowing import TimeWindow, _find_time_column, _is_ip_source, _pick_ip_column
 
 
 @dataclass(frozen=True)
@@ -54,8 +54,10 @@ def _infer_window_for_file(csv_path: Path, label: str, formed_frac: float) -> Op
 
     # Choose signal column
     sig_col: Optional[str] = None
-    if "magnetics" in label:
+    is_ip_signal = False
+    if _is_ip_source(label):
         sig_col = _pick_ip_column(cols)
+        is_ip_signal = sig_col is not None
     if sig_col is None:
         # largest abs-span proxy
         best_c = None
@@ -95,7 +97,14 @@ def _infer_window_for_file(csv_path: Path, label: str, formed_frac: float) -> Op
             note="consensus_fallback_full_extent_no_samples_above_threshold",
         )
     i0, i1 = idx[0], idx[-1]
-    return TimeWindow(t_start=float(t[i0]), t_end=float(t[i1]), source=label, signal_column=sig_col, threshold=float(thr))
+    return TimeWindow(
+        t_start=float(t[i0]),
+        t_end=float(t[i1]),
+        source=label,
+        signal_column=sig_col,
+        threshold=float(thr),
+        note="ip_signal" if is_ip_signal else "proxy_signal",
+    )
 
 
 def _best_covered_segment(intervals: List[Tuple[float, float]]) -> Tuple[float, float, int]:
@@ -135,8 +144,9 @@ def infer_consensus_window(inputs_dir: Path, formed_frac: float) -> ConsensusWin
     """Compute a formed-plasma window consensus from multiple extracted signals.
 
     Sources attempted (in deterministic order):
-      - magnetics_raw.csv
-      - magnetics.csv
+      - ip.csv (dedicated plasma-current export)
+      - magnetics_timeseries.csv (current extract output)
+      - magnetics_raw.csv / magnetics.csv (legacy names)
       - pf_active_raw.csv
       - pf_currents.csv
 
@@ -145,6 +155,8 @@ def infer_consensus_window(inputs_dir: Path, formed_frac: float) -> ConsensusWin
     _require_pandas()
 
     candidates = [
+        ("ip.csv", inputs_dir / "ip.csv"),
+        ("magnetics_timeseries.csv", inputs_dir / "magnetics_timeseries.csv"),
         ("magnetics_raw.csv", inputs_dir / "magnetics_raw.csv"),
         ("magnetics.csv", inputs_dir / "magnetics.csv"),
         ("pf_active_raw.csv", inputs_dir / "pf_active_raw.csv"),
@@ -152,8 +164,10 @@ def infer_consensus_window(inputs_dir: Path, formed_frac: float) -> ConsensusWin
     ]
 
     per: Dict[str, Dict[str, object]] = {}
-    intervals: List[Tuple[float, float]] = []
-    used_labels: List[str] = []
+    ip_intervals: List[Tuple[float, float]] = []
+    ip_labels: List[str] = []
+    proxy_intervals: List[Tuple[float, float]] = []
+    proxy_labels: List[str] = []
 
     for label, path in candidates:
         tw = _infer_window_for_file(path, label=label, formed_frac=formed_frac)
@@ -162,14 +176,33 @@ def infer_consensus_window(inputs_dir: Path, formed_frac: float) -> ConsensusWin
         per[label] = tw.__dict__
         # sanitize ordering
         t0, t1 = float(min(tw.t_start, tw.t_end)), float(max(tw.t_start, tw.t_end))
-        intervals.append((t0, t1))
-        used_labels.append(label)
+        if tw.note == "ip_signal":
+            ip_intervals.append((t0, t1))
+            ip_labels.append(label)
+        else:
+            proxy_intervals.append((t0, t1))
+            proxy_labels.append(label)
+
+    notes: List[str] = []
+    # Formed-plasma physics: plasma-current (Ip) sources are authoritative for
+    # the formed window. PF/proxy signals flow before plasma exists, so they
+    # only vote when no Ip source is available. All per-source windows are
+    # still recorded above for audit.
+    if ip_intervals:
+        intervals = ip_intervals
+        used_labels = ip_labels
+        if proxy_labels:
+            notes.append("proxy_sources_excluded_ip_available:" + ",".join(proxy_labels))
+    else:
+        intervals = proxy_intervals
+        used_labels = proxy_labels
+        if intervals:
+            notes.append("no_ip_source_available_proxy_consensus")
 
     if not intervals:
         raise FileNotFoundError(f"No usable CSVs found for consensus in {inputs_dir}")
 
     seg0, seg1, count = _best_covered_segment(intervals)
-    notes: List[str] = []
     method = "endpoint_grid_max_coverage"
 
     if count <= 0:

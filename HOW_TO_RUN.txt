@@ -10,9 +10,16 @@ Windows:
 Linux/macOS:
   ./run_pipeline.sh
 
-Both launchers prompt for the shot number ONLY. Everything else (download,
+Both launchers prompt for one or more shot numbers ONLY (space/comma
+separated, e.g. 30201 or 30201 30202). Everything else (download,
 extraction, coil map, machine authority, FreeGSNKE inverse+forward execution)
 comes from the shipped configs/default.json.
+
+Outputs land under:
+  SHOTS/<shot_number>/     e.g. SHOTS/30201/
+
+On Windows, run_pipeline.cmd always pauses at the end (success or failure)
+so you can read the console. Set RUN_PIPELINE_NO_PAUSE=1 to skip the pause.
 
 Manual install + CLI:
 
@@ -56,8 +63,8 @@ Machine / probe geometry authority
 Production defaults use the shipped `machine_authority/` directory (FAIR-MAST Level-2
 geometry + coil map). Templates with CHANGE_ME / TEMPLATE markers are refused.
 Do not invent metrology. When geometry resolves, the run writes:
-  runs/shot_<N>/magnetic_probes.pickle
-  runs/shot_<N>/magnetic_probes.json
+  SHOTS/<N>/magnetic_probes.pickle
+  SHOTS/<N>/magnetic_probes.json
 
 Diagnostic contract metrics (optional; not enabled by default)
 --------------------------------------------------------------
@@ -70,6 +77,12 @@ configs/default.json so the pipeline does not fabricate scoring. To enable later
     --enable-contract-metrics --contracts <path/to/diagnostic_contracts.json>
 
 Outputs (when enabled with a valid authority):
-  runs/shot_<N>/contracts/*.resolved.json
-  runs/shot_<N>/synthetic/synthetic_<dtype>.csv
-  runs/shot_<N>/metrics/reconstruction_metrics.json and residual_*.csv
+  SHOTS/<N>/contracts/*.resolved.json
+  SHOTS/<N>/synthetic/synthetic_<dtype>.csv
+  SHOTS/<N>/metrics/reconstruction_metrics.json and residual_*.csv
+
+Reruns of the same shot
+-----------------------
+Rerunning a shot archives the previous run into SHOTS/<N>/history/<timestamp>/
+before writing fresh outputs, so the top level of SHOTS/<N>/ is always one
+clean, auditable run. Nothing is deleted.

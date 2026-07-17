@@ -62,11 +62,13 @@ python -m pip install --upgrade pip
 echo "[INFO] Installing package (editable) with extras: zarr,dev"
 python -m pip install -e ".[zarr,dev]"
 
-# Shot-only happy path: the interactive launcher prompts for the shot number
-# only; every other knob comes from configs/default.json.
+# Shot-only happy path: interactive launcher prompts for one or more shot
+# numbers; every other knob comes from configs/default.json.
+# Outputs land under SHOTS/<shot> (e.g. SHOTS/30201).
 RC=0
 python -m mast_freegsnke.interactive_run --default-config "configs/default.json" || RC=$?
 
 echo
 echo "[INFO] Completed with exit code ${RC}"
+echo "[INFO] Shot outputs: ${REPO_ROOT}/SHOTS/<shot_number>"
 exit ${RC}

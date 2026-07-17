@@ -76,7 +76,7 @@ class AppConfig:
         s3_endpoint_url = (str(obj["s3_endpoint_url"]) if obj.get("s3_endpoint_url") else None)
         s3_no_sign_request = bool(obj.get("s3_no_sign_request", False))
         s5cmd_timeout_s = int(obj.get("s5cmd_timeout_s", 60))
-        runs_dir = Path(obj.get("runs_dir", "runs"))
+        runs_dir = Path(obj.get("runs_dir", "SHOTS"))
         cache_dir = Path(obj.get("cache_dir", "data_cache"))
         formed_plasma_frac = float(obj.get("formed_plasma_frac", 0.80))
         allow_missing_geometry = bool(obj.get("allow_missing_geometry", False))

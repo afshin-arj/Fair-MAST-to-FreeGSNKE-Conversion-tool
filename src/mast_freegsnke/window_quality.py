@@ -13,7 +13,18 @@ except Exception:  # pragma: no cover
     pd = None  # type: ignore
     np = None  # type: ignore
 
-from .windowing import TimeWindow, _find_time_column, _pick_ip_column
+from .windowing import TimeWindow, _find_time_column, _is_ip_source, _pick_ip_column
+
+# Deterministic QC source preference: dedicated Ip export first, then the
+# current extract output, then legacy names, then PF fallbacks.
+QC_SOURCE_FILES = [
+    "ip.csv",
+    "magnetics_timeseries.csv",
+    "magnetics_raw.csv",
+    "magnetics.csv",
+    "pf_active_raw.csv",
+    "pf_currents.csv",
+]
 
 
 @dataclass(frozen=True)
@@ -67,8 +78,8 @@ def _extract_signal(inputs_dir: Path, preferred_file: str) -> Tuple[str, str, Li
     cols = [c for c in df.columns if c != tcol]
     if not cols:
         raise ValueError(f"no signals in {preferred_file}")
-    # pick Ip-like if magnetics file
-    sig = _pick_ip_column(cols) if "magnetics" in preferred_file else None
+    # pick Ip-like if this source can carry a plasma-current signal
+    sig = _pick_ip_column(cols) if _is_ip_source(preferred_file) else None
     if sig is None:
         # fallback: choose largest dynamic range in abs
         best_c = None
@@ -128,14 +139,16 @@ def evaluate_time_window(inputs_dir: Path, tw: TimeWindow) -> WindowDiagnostics:
     # compute on the source file if possible
     try:
         file_label = tw.source
-        # map label to filename
-        label_to_file = {
-            "magnetics_raw.csv": "magnetics_raw.csv",
-            "magnetics.csv": "magnetics.csv",
-            "pf_active_raw.csv": "pf_active_raw.csv",
-            "pf_currents.csv": "pf_currents.csv",
-        }
-        preferred = label_to_file.get(file_label, label_to_file.get("magnetics_raw.csv", "magnetics_raw.csv"))
+        # Use the window's source file when it is a known input CSV; otherwise
+        # (e.g. source="override" or "consensus:*") fall back to the first
+        # existing QC source in deterministic preference order.
+        if file_label in QC_SOURCE_FILES and (inputs_dir / file_label).exists():
+            preferred = file_label
+        else:
+            preferred = next(
+                (f for f in QC_SOURCE_FILES if (inputs_dir / f).exists()),
+                QC_SOURCE_FILES[0],
+            )
         fname, sig, t, y = _extract_signal(inputs_dir, preferred)
         # window mask
         tt = np.asarray(t, dtype=float)
@@ -167,7 +180,7 @@ def evaluate_time_window(inputs_dir: Path, tw: TimeWindow) -> WindowDiagnostics:
 
     # Cross-check: compare inferred window using an alternate file
     try:
-        alt_files = ["magnetics_raw.csv", "magnetics.csv", "pf_active_raw.csv"]
+        alt_files = QC_SOURCE_FILES
         # pick an alternative different from source if possible
         src_file = tw.source
         src_guess = src_file if src_file in alt_files else None

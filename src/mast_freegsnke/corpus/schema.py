@@ -30,8 +30,13 @@ class CorpusEntry:
 
     @staticmethod
     def infer_shot(run_dir: Path) -> Optional[int]:
+        # Legacy: runs/shot_30201  ·  Current: SHOTS/30201
         m = re.search(r"shot_(\d+)", str(run_dir))
-        return int(m.group(1)) if m else None
+        if m:
+            return int(m.group(1))
+        if run_dir.name.isdigit():
+            return int(run_dir.name)
+        return None
 
     @classmethod
     def from_run_dir(cls, run_dir: Path, robustness_subdir: str = "robustness_v4") -> "CorpusEntry":

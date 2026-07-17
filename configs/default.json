@@ -6,7 +6,7 @@
   ],
   "level2_s3_prefix": "s3://mast/level2/shots",
   "s5cmd_path": "s5cmd",
-  "runs_dir": "runs",
+  "runs_dir": "SHOTS",
   "cache_dir": "data_cache",
   "formed_plasma_frac": 0.8,
   "allow_missing_geometry": false,

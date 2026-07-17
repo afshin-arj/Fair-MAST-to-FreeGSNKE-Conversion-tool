@@ -1,3 +1,12 @@
+## 10.1.3 — Multi-shot launcher + SHOTS/<N> outputs + window authority fixes
+- Interactive launcher accepts one or more shot numbers (space/comma separated); batch summary lists failed shots and exits with the worst code.
+- Run outputs write to `SHOTS/<shot>` (e.g. `SHOTS/30201`) via `runs_dir` in `configs/default.json`.
+- `run_pipeline.cmd` always pauses on exit (success or failure); set `RUN_PIPELINE_NO_PAUSE=1` to disable.
+- Rerun hygiene: rerunning a shot archives the prior run into `SHOTS/<N>/history/<timestamp>/` (recorded in manifest as `prior_run_archived_to`); nothing is deleted.
+- Fail-closed execution: FreeGSNKE inverse/forward are skipped when blocking errors already exist (extract/coil-map/geometry), recorded as `skipped_fail_closed_due_to_blocking_errors`.
+- Window inference/QC/consensus now read the files extract actually writes (`ip.csv`, `magnetics_timeseries.csv`; legacy names still accepted).
+- Consensus physics fix: Ip sources are authoritative for the formed-plasma window; PF proxy windows are audited but no longer vote when an Ip source exists (shot 30201 window corrected from pre-plasma −0.003..0.001 s to 0.201..0.378 s; QC confidence 0.0 → 0.65).
+
 ## 10.1.2 — Shot-only launcher hardening + FAIR-MAST Zarr stack
 - `run_pipeline.cmd` / `run_pipeline.sh` are shot-only (no stale machine-authority flag; no y/n prompts).
 - Prefer Python 3.11 when creating the pipeline venv; FreeGSNKE python path resolves across Windows/`bin` layouts.

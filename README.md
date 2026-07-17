@@ -1,11 +1,11 @@
 # Fair-MAST → FreeGSNKE Conversion Tool
 
-**Version 10.1.2** · Deterministic reconstruction pipeline for MAST experimental data
+**Version 10.1.3** · Deterministic reconstruction pipeline for MAST experimental data
 
-Enter a **MAST shot number**. The pipeline downloads FAIR-MAST Level-2 data, builds FreeGSNKE inputs under explicit authorities, runs inverse and forward reconstructions, and writes a fully auditable run folder.
+Enter one or more **MAST shot numbers**. The pipeline downloads FAIR-MAST Level-2 data, builds FreeGSNKE inputs under explicit authorities, runs inverse and forward reconstructions, and writes a fully auditable folder under `SHOTS/<shot>/`.
 
 ```text
-  shot number  →  FAIR-MAST Level-2  →  FreeGSNKE inverse/forward  →  runs/shot_<N>/
+  shot number(s)  →  FAIR-MAST Level-2  →  FreeGSNKE inverse/forward  →  SHOTS/<N>/
 ```
 
 **Author:** © 2026 Afshin Arjhangmehr
@@ -46,7 +46,7 @@ flowchart LR
   E --> F["Authorities<br/>machine · coil · exec"]
   F --> G["Generate<br/>FreeGSNKE scripts"]
   G --> H["Inverse + Forward<br/>FreeGSNKE"]
-  H --> I["runs/shot_N/<br/>manifest · provenance"]
+  H --> I["SHOTS/N/<br/>manifest · provenance"]
 
   style A fill:#1a365d,stroke:#90cdf4,color:#fff
   style I fill:#22543d,stroke:#9ae6b4,color:#fff
@@ -80,7 +80,7 @@ flowchart TB
   end
 
   subgraph Output["Auditable run folder"]
-    RF["runs/shot_N/"]
+    RF["SHOTS/N/"]
     MAN["manifest.json"]
     PROV["provenance/ hashes"]
   end
@@ -186,7 +186,7 @@ sequenceDiagram
   CLI->>FG: inverse_run.py
   CLI->>FG: forward_run.py
   CLI->>CLI: provenance + manifest.json
-  CLI-->>User: runs/shot_30201/ (status: success)
+  CLI-->>User: SHOTS/30201/ (status: success)
 ```
 
 ---
@@ -194,7 +194,7 @@ sequenceDiagram
 ## Run folder layout
 
 ```text
-runs/shot_30201/
+SHOTS/30201/
 ├── inputs/                      # CSVs, window, execution authority
 ├── machine_authority_snapshot/  # hashed copy of machine authority
 ├── magnetic_probes.pickle       # FreeGSNKE-native probe dict
@@ -211,7 +211,7 @@ runs/shot_30201/
 Export a self-contained reviewer bundle:
 
 ```bash
-mast-freegsnke reviewer-pack --run runs/shot_30201
+mast-freegsnke reviewer-pack --run SHOTS/30201
 ```
 
 ---
@@ -282,7 +282,7 @@ Advanced workflows (robustness DOE, physics audit, atlas compare, forensics) are
 | FreeGSNKE import / SciPy build fails | Use a **Python 3.11** venv; point `freegsnke_python` at it |
 | Machine authority rejected | Rebuild from FAIR-MAST; templates with `CHANGE_ME` are fail-closed |
 | Empty download | Confirm endpoint/prefix; doctor runs shot-scoped S3 preflight |
-| Run failure | Attach `runs/shot_<N>/EXCEPTION_TRACEBACK.txt` and `logs/run_*.log` |
+| Run failure | Attach `SHOTS/<N>/EXCEPTION_TRACEBACK.txt` and `logs/run_*.log` |
 
 ---
 
@@ -301,6 +301,6 @@ Cite this repository and include the run’s `manifest.json`, authorities, and c
 
 ## License & citation
 
-See repository license terms. Package version: **10.1.2**.
+See repository license terms. Package version: **10.1.3**.
 
 Full history: [`CHANGELOG.md`](CHANGELOG.md)

@@ -103,26 +103,26 @@ def main(argv=None) -> int:
     rp = sub.add_parser("reviewer-pack", help="Build a self-contained reviewer pack for a completed run")
 
     rr = sub.add_parser("robustness-run", help="Run v4 multi-window robustness (DOE + stability) inside an existing run directory")
-    rr.add_argument("--run", type=str, required=True, help="Run directory, e.g. runs/shot_30201")
+    rr.add_argument("--run", type=str, required=True, help="Run directory, e.g. SHOTS/30201")
     rr.add_argument("--policy", type=str, default="maximin", help="Robust selection policy: maximin|quantile75")
     rr.add_argument("--green", type=float, default=0.05, help="GREEN relative degradation threshold")
     rr.add_argument("--yellow", type=float, default=0.15, help="YELLOW relative degradation threshold")
     rr.add_argument("--allow-sign-toggle", action="store_true", help="Enable explicit sign-toggle perturbation scenarios (default off)")
 
     rp2 = sub.add_parser("robustness-pack", help="Build robustness reviewer pack (requires prior robustness-run)")
-    rp2.add_argument("--run", type=str, required=True, help="Run directory, e.g. runs/shot_30201")
+    rp2.add_argument("--run", type=str, required=True, help="Run directory, e.g. SHOTS/30201")
     rp2.add_argument("--out", type=str, default=None, help="Optional output directory (defaults to <run>/robustness_v4/ROBUSTNESS_REVIEWER_PACK)")
 
 
     pa = sub.add_parser("physics-audit-run", help="Run v6 physics-consistency audit inside an existing run directory (requires robustness_v4)")
-    pa.add_argument("--run", type=str, required=True, help="Run directory, e.g. runs/shot_30201")
+    pa.add_argument("--run", type=str, required=True, help="Run directory, e.g. SHOTS/30201")
     pa.add_argument("--primary-metric", type=str, default="score_total", help="Primary metric key from robust choice (default score_total)")
     pa.add_argument("--green", type=float, default=0.05, help="PHYSICS-GREEN threshold for normalized violation")
     pa.add_argument("--yellow", type=float, default=0.15, help="PHYSICS-YELLOW threshold for normalized violation")
     pa.add_argument("--plots", action="store_true", help="Generate deterministic physics-audit plots + hashed manifest")
 
     pp = sub.add_parser("physics-audit-pack", help="Build physics-audit reviewer pack (requires prior physics-audit-run)")
-    pp.add_argument("--run", type=str, required=True, help="Run directory, e.g. runs/shot_30201")
+    pp.add_argument("--run", type=str, required=True, help="Run directory, e.g. SHOTS/30201")
 
     ca = sub.add_parser("closure-atlas-build", help="Build a corpus-level closure atlas from physics-audit outputs (v6)")
     ca.add_argument("--corpus", type=str, required=True, help="Corpus directory produced by corpus-build")
@@ -130,18 +130,18 @@ def main(argv=None) -> int:
 
 
     fc = sub.add_parser("forward-check-run", help="Run deterministic forward checks (v7) using existing scenario outputs")
-    fc.add_argument("--run", type=str, required=True, help="Run directory, e.g. runs/shot_30201")
+    fc.add_argument("--run", type=str, required=True, help="Run directory, e.g. SHOTS/30201")
     fc.add_argument("--primary-metric", type=str, default="score_total", help="Metric key to evaluate (default score_total)")
 
     mf = sub.add_parser("model-form-run", help="Run model-form audit: deterministic CV splits + forward checks + MFE tier (v7)")
-    mf.add_argument("--run", type=str, required=True, help="Run directory, e.g. runs/shot_30201")
+    mf.add_argument("--run", type=str, required=True, help="Run directory, e.g. SHOTS/30201")
     mf.add_argument("--primary-metric", type=str, default="score_total", help="Metric key to evaluate (default score_total)")
     mf.add_argument("--green", type=float, default=0.05, help="MFE-GREEN threshold for worst relative degradation")
     mf.add_argument("--yellow", type=float, default=0.15, help="MFE-YELLOW threshold for worst relative degradation")
     mf.add_argument("--max-splits", type=int, default=64, help="Maximum number of deterministic CV splits")
 
     cp = sub.add_parser("consistency-pack", help="Build Consistency Triangle reviewer pack (robustness + physics + model-form)")
-    cp.add_argument("--run", type=str, required=True, help="Run directory, e.g. runs/shot_30201")
+    cp.add_argument("--run", type=str, required=True, help="Run directory, e.g. SHOTS/30201")
 
 
     rr = sub.add_parser("replay-run", help="Verify run/pack artifacts against their declared hashes (v8)")
@@ -156,12 +156,12 @@ def main(argv=None) -> int:
     nd = sub.add_parser("nondeterminism-check", help="Check replay hashing stability N times (v8)")
     nd.add_argument("--target", type=str, required=True, help="Run directory or pack directory")
     nd.add_argument("--n", type=int, default=3, help="Number of repeats (>=2)")
-    rp.add_argument("--run", type=str, required=True, help="Run directory, e.g. runs/shot_30201")
+    rp.add_argument("--run", type=str, required=True, help="Run directory, e.g. SHOTS/30201")
     rp.add_argument("--out", type=str, default=None, help="Optional output directory (defaults to <run>/REVIEWER_PACK)")
 
     
     cb = sub.add_parser("corpus-build", help="Build a deterministic corpus index from completed run directories (v5)")
-    cb.add_argument("--runs", type=str, nargs="+", required=True, help="One or more run directories, e.g. runs/shot_30201")
+    cb.add_argument("--runs", type=str, nargs="+", required=True, help="One or more run directories, e.g. SHOTS/30201")
     cb.add_argument("--out", type=str, required=True, help="Output directory for corpus artifacts")
     cb.add_argument("--robustness-subdir", type=str, default="robustness_v4", help="Robustness artifact directory name inside each run (default robustness_v4)")
 
@@ -368,7 +368,7 @@ def main(argv=None) -> int:
         from .util import write_json
         from .windowing import infer_time_window
 
-        run_inputs = Path(cfg.runs_dir) / f"shot_{args.shot}" / "inputs"
+        run_inputs = Path(cfg.runs_dir) / str(args.shot) / "inputs"
         if not run_inputs.exists():
             print(f"[FAIL] Missing run inputs folder: {run_inputs}. Run pipeline first.")
             return 5
@@ -386,7 +386,7 @@ def main(argv=None) -> int:
         from .windowing import infer_time_window
         from .window_quality import evaluate_time_window, format_diagnostics
 
-        run_inputs = Path(cfg.runs_dir) / f"shot_{args.shot}" / "inputs"
+        run_inputs = Path(cfg.runs_dir) / str(args.shot) / "inputs"
         if not run_inputs.exists():
             print(f"[FAIL] Missing run inputs folder: {run_inputs}. Run pipeline first.")
             return 7
@@ -538,7 +538,7 @@ def main(argv=None) -> int:
         from .util import write_json
         from .window_consensus import infer_consensus_window
 
-        run_inputs = Path(cfg.runs_dir) / f"shot_{args.shot}" / "inputs"
+        run_inputs = Path(cfg.runs_dir) / str(args.shot) / "inputs"
         if not run_inputs.exists():
             print(f"[FAIL] Missing run inputs folder: {run_inputs}. Run pipeline first.")
             return 9
@@ -692,7 +692,7 @@ def main(argv=None) -> int:
             # Best-effort: if a run folder exists, also persist the traceback for sharing.
             try:
                 runs_root = Path(cfg.runs_dir)
-                run_dir = runs_root / f"shot_{args.shot}"
+                run_dir = runs_root / str(args.shot)
                 run_dir.mkdir(parents=True, exist_ok=True)
                 out = run_dir / "EXCEPTION_TRACEBACK.txt"
                 out.write_text(tb, encoding="utf-8")

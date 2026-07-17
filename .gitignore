@@ -18,6 +18,7 @@ dist/
 
 # Local run outputs
 runs/
+SHOTS/
 cache/
 data_cache/
 tools/
@@ -32,3 +33,4 @@ Thumbs.db
 
 # Logs
 *.log
+logs/
