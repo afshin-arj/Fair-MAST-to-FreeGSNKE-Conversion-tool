@@ -119,6 +119,17 @@ class Extractor:
                 mag_df[k] = arr.astype(float)
         mag_df.to_csv(out_inputs_dir/"magnetics_timeseries.csv", index=False)
 
+        # Per-probe 2-D traces (channel, time) on the shared magnetics timebase.
+        # Convention (v10.3.0): one CSV per probe family, columns named by the
+        # FAIR-MAST channel coordinate values VERBATIM:
+        #   inputs/flux_loops.csv  <- flux_loop_* data vars (e.g. flux_loop_flux, Wb)
+        #   inputs/pickups.csv     <- b_field_*_probe_*_field data vars (T)
+        # Only variables sampled on the SAME time axis as Ip are exported; probe
+        # families on other timebases (time_mirnov/time_saddle/...) are skipped
+        # and recorded in extract_meta. Units are copied from zarr attrs, never
+        # assumed.
+        probe_families = self._extract_probe_families(ds_mag, t_mag, t, out_inputs_dir)
+
         return {
             "t0": t0,
             "ip0": ip0,
@@ -127,4 +138,81 @@ class Extractor:
             "pf_vars_exported": exported_pf,
             "flux_vars_found": flux_vars[:80],
             "pickup_vars_found": pickup_vars[:160],
+            "probe_families": probe_families,
         }
+
+    def _extract_probe_families(self, ds_mag, t_mag: str, t, out_inputs_dir: Path) -> Dict[str, Any]:
+        """Export 2-D per-probe traces to family CSVs with verbatim channel names.
+
+        Returns a report dict recorded in extract_meta (files, variables, units,
+        channel names, and skipped variables with reasons). Fails fast on
+        duplicate channel names within a family (never silently overwrite).
+        """
+        import numpy as np
+        import pandas as pd
+
+        n_time = int(t.shape[0])
+        family_frames: Dict[str, "pd.DataFrame"] = {}
+        report: Dict[str, Any] = {
+            "convention": "inputs/<family>.csv, columns = FAIR-MAST channel names verbatim",
+            "families": {},
+            "skipped_2d_vars": [],
+        }
+
+        def classify(var_name: str) -> str | None:
+            if var_name.startswith("flux_loop"):
+                return "flux_loops"
+            if "_probe_" in var_name and var_name.endswith("_field"):
+                return "pickups"
+            return None
+
+        for k in sorted(ds_mag.data_vars):
+            v = ds_mag[k]
+            if getattr(v, "ndim", 0) != 2:
+                continue
+            dims = list(v.dims)
+            if t_mag not in dims:
+                report["skipped_2d_vars"].append({"var": k, "reason": f"not_on_shared_timebase:{dims}"})
+                continue
+            chan_dim = dims[0] if dims[1] == t_mag else dims[1]
+            if chan_dim not in ds_mag.coords:
+                report["skipped_2d_vars"].append({"var": k, "reason": f"no_channel_coordinate:{chan_dim}"})
+                continue
+            family = classify(k)
+            if family is None:
+                report["skipped_2d_vars"].append({"var": k, "reason": "no_family_rule"})
+                continue
+
+            channels = [str(x) for x in ds_mag[chan_dim].values.tolist()]
+            arr = np.asarray(v.values, dtype=float)
+            if dims[0] == t_mag:
+                arr = arr.T  # normalize to (channel, time)
+            if arr.shape != (len(channels), n_time):
+                report["skipped_2d_vars"].append(
+                    {"var": k, "reason": f"shape_mismatch:{arr.shape} vs ({len(channels)},{n_time})"}
+                )
+                continue
+
+            df = family_frames.setdefault(family, pd.DataFrame({"time": t}))
+            dup = [ch for ch in channels if ch in df.columns]
+            if dup:
+                raise RuntimeError(
+                    f"Duplicate probe channel names in family '{family}' from {k}: {dup}. "
+                    "Refusing to overwrite experimental columns."
+                )
+            for i, ch in enumerate(channels):
+                df[ch] = arr[i, :]
+
+            units = v.attrs.get("units")
+            fam_rep = report["families"].setdefault(family, {"csv": f"inputs/{family}.csv", "variables": {}})
+            fam_rep["variables"][k] = {
+                "units": (str(units) if units is not None else None),
+                "channel_dim": chan_dim,
+                "n_channels": len(channels),
+                "channels": channels,
+            }
+
+        for family, df in family_frames.items():
+            df.to_csv(out_inputs_dir / f"{family}.csv", index=False)
+
+        return report

@@ -127,8 +127,13 @@ def compare_from_contracts(run_dir: Path, contracts: List[DiagnosticContract]) -
     """
     Compute residual metrics for all contracts, writing residual CSVs and a summary JSON.
 
-    Deterministic rules:
-      - Interpolate synthetic to experimental timebase (linear).
+    Deterministic rules (v10.3.0):
+      - Compare on the SYNTHETIC timebase: the FreeGSNKE equilibrium is solved at
+        the window time slice(s), so the experimental trace is linearly
+        interpolated onto the synthetic time(s). Comparing a full experimental
+        time series against a single-slice synthetic constant would mix times.
+      - Synthetic times must lie inside the experimental time support
+        (no extrapolation; out-of-range is a per-contract error).
       - Apply sign/scale per contract BEFORE comparison.
       - Drop NaNs in experimental.
     """
@@ -156,11 +161,25 @@ def compare_from_contracts(run_dir: Path, contracts: List[DiagnosticContract]) -
             mask = np.isfinite(t_exp) & np.isfinite(y_exp)
             t_exp2 = t_exp[mask]
             y_exp2 = y_exp[mask]
-            if t_exp2.size < 3:
-                raise ValueError("insufficient experimental points after NaN filtering")
+            if t_exp2.size < 2:
+                raise ValueError(
+                    "insufficient finite experimental points to interpolate onto synthetic time "
+                    f"(n_finite={t_exp2.size}; channel may be entirely NaN in FAIR-MAST Level-2)"
+                )
 
-            y_syn_i = _interp_to(t_exp2, t_syn, y_syn)
-            r = y_exp2 - y_syn_i
+            mask_s = np.isfinite(t_syn) & np.isfinite(y_syn)
+            t_syn2 = t_syn[mask_s]
+            y_syn2 = y_syn[mask_s]
+            if t_syn2.size < 1:
+                raise ValueError("no finite synthetic samples")
+            if float(t_syn2.min()) < float(t_exp2.min()) or float(t_syn2.max()) > float(t_exp2.max()):
+                raise ValueError(
+                    f"synthetic time(s) [{t_syn2.min()}, {t_syn2.max()}] outside experimental support "
+                    f"[{t_exp2.min()}, {t_exp2.max()}]; refusing to extrapolate"
+                )
+
+            y_exp_i = _interp_to(t_syn2, t_exp2, y_exp2)
+            r = y_exp_i - y_syn2
 
             met = ResidualMetric(
                 name=c.name,
@@ -170,7 +189,7 @@ def compare_from_contracts(run_dir: Path, contracts: List[DiagnosticContract]) -
                 max_abs=float(np.max(np.abs(r))),
             )
 
-            res_df = pd.DataFrame({"time": t_exp2, "exp": y_exp2, "syn": y_syn_i, "residual": r})
+            res_df = pd.DataFrame({"time": t_syn2, "exp": y_exp_i, "syn": y_syn2, "residual": r})
             res_path = out_dir / f"residual_{c.name}.csv"
             res_df.to_csv(res_path, index=False)
 
@@ -180,19 +199,19 @@ def compare_from_contracts(run_dir: Path, contracts: List[DiagnosticContract]) -
                     rep_dir = run_dir / "report" / "key_plots"
                     rep_dir.mkdir(parents=True, exist_ok=True)
 
-                    # exp vs syn
+                    # exp trace with synthetic value(s) at the solved time(s)
                     fig = plt.figure()
                     plt.plot(t_exp2, y_exp2, label="exp")
-                    plt.plot(t_exp2, y_syn_i, label="syn")
+                    plt.plot(t_syn2, y_syn2, "rx", ms=8, label="syn (solved slice)")
                     plt.xlabel("time [s]")
                     plt.ylabel(f"{c.name} [{c.units}]")
                     plt.legend()
                     fig.savefig(rep_dir / f"{c.name}_exp_vs_syn.png", dpi=150, bbox_inches="tight")
                     plt.close(fig)
 
-                    # residual
+                    # residual at the solved time(s)
                     fig2 = plt.figure()
-                    plt.plot(t_exp2, r)
+                    plt.plot(t_syn2, r, "ko-")
                     plt.xlabel("time [s]")
                     plt.ylabel(f"residual [{c.units}]")
                     fig2.savefig(rep_dir / f"{c.name}_residual.png", dpi=150, bbox_inches="tight")

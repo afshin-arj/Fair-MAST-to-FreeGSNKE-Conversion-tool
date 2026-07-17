@@ -1,6 +1,6 @@
 # Fair-MAST → FreeGSNKE Conversion Tool
 
-**Version 10.2.0** · Deterministic reconstruction pipeline for MAST experimental data
+**Version 10.3.0** · Deterministic reconstruction pipeline for MAST experimental data
 
 Enter one or more **MAST shot numbers**. The pipeline downloads FAIR-MAST Level-2 data, builds FreeGSNKE inputs under explicit authorities, runs inverse and forward reconstructions, and writes a fully auditable folder under `SHOTS/<shot>/`.
 
@@ -101,7 +101,7 @@ flowchart TB
 | `machine_authority/` | Probe/coil geometry + FreeGSNKE structural pickles | Built from FAIR-MAST Level-2 + FreeGSNKE MAST-U-like machine |
 | `configs/coil_map.json` | Maps Level-2 `current_channel` labels to FreeGSNKE circuits | FAIR-MAST channels (`SOL`, `P2IL FEED`, …) with explicit `sum` |
 | Execution authority | Grid, profile basis, solver tolerances | Generated per run under `inputs/execution_authority/` |
-| Diagnostic contracts | Experimental ↔ synthetic comparison | **Not shipped** — disabled until both experimental per-probe traces and synthetic probe CSVs exist with verifiable channel identity (the run prints why) |
+| Diagnostic contracts | Experimental ↔ synthetic comparison | **Shipped** — `configs/diagnostic_contracts.json` (identity sign/scale; 14 flux loops + 58 pickups after excluding all-NaN Level-2 channels; units from FAIR-MAST zarr attrs) |
 
 > Template or `CHANGE_ME` machine authority is **rejected**. Metrology must come from FAIR-MAST or an authoritative machine definition.
 
@@ -314,6 +314,6 @@ Cite this repository and include the run’s `manifest.json`, authorities, and c
 
 ## License & citation
 
-See repository license terms. Package version: **10.2.0**.
+See repository license terms. Package version: **10.3.0**.
 
 Full history: [`CHANGELOG.md`](CHANGELOG.md)

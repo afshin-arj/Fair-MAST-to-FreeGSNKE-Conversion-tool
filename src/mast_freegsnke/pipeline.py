@@ -469,13 +469,28 @@ class ShotPipeline:
                                     n_written=len(syn_res.written),
                                     errors=syn_res.errors,
                                 )
+                                if not syn_res.ok:
+                                    blocking_errors.append(
+                                        "synthetic_extract_failed: " + "; ".join(syn_res.errors)
+                                    )
                                 metrics_summary = compare_from_contracts(run_dir, contracts)
+                                metrics_ok = bool(metrics_summary.get("ok", False)) and int(
+                                    metrics_summary.get("n_scored", 0)
+                                ) > 0
                                 _stage(
                                     "residual_metrics_contracts",
-                                    metrics_summary.get("ok", False),
+                                    metrics_ok,
                                     n_scored=metrics_summary.get("n_scored"),
                                     errors=metrics_summary.get("errors"),
                                 )
+                                if not metrics_ok:
+                                    blocking_errors.append(
+                                        "residual_metrics_failed: "
+                                        + (
+                                            "; ".join(metrics_summary.get("errors", []))
+                                            or f"n_scored={metrics_summary.get('n_scored')}"
+                                        )
+                                    )
                         except Exception as e:
                             # Contract system errors are blocking when explicitly enabled.
                             blocking_errors.append(f"contracts_failed: {type(e).__name__}: {e}")

@@ -369,4 +369,7 @@ def test_interactive_prints_contract_status(monkeypatch, capsys) -> None:
     rc = interactive_run.main(["--default-config", str(REPO / "configs" / "default.json")])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "Contract residual metrics disabled" in out
+    # v10.3.0: default.json ships real contracts + enable_contract_metrics=true,
+    # so the status line is omitted (fully wired). Still print the enable flag.
+    assert "enable_contract_metrics=True" in out
+    assert "Contract residual metrics disabled" not in out

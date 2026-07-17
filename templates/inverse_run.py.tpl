@@ -123,6 +123,45 @@ def load_pf_currents(t0: float) -> dict:
         )
     return out
 
+def write_synthetic_probe_csvs(tokamak, eq, t0: float) -> None:
+    """Emit synthetic diagnostics for the solved equilibrium (v10.3.0).
+
+    Uses FreeGSNKE's Probes API (built from magnetic_probes.pickle):
+      - calculate_fluxloop_value(eq): poloidal flux psi at each flux loop [Wb]
+      - calculate_pickup_value(eq):   B . n_hat at each pickup coil [T]
+
+    Output schema (consumed by diagnostic contracts / synthetic_extract):
+      synthetic/synthetic_fluxloops.csv : columns time,<probe names from geometry authority>
+      synthetic/synthetic_pickups.csv   : columns time,<probe names from geometry authority>
+    One row: the solved time slice t0. Fail-fast if probes are unavailable.
+    """
+    probes = getattr(tokamak, "probes", None)
+    if probes is None or not hasattr(probes, "floops"):
+        raise RuntimeError(
+            "Magnetic probes were not loaded into the tokamak (magnetic_probes.pickle missing?); "
+            "cannot emit synthetic diagnostics required by contract metrics."
+        )
+    probes.initialise_setup(eq)
+
+    out_dir = HERE / "synthetic"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    fl_names = [str(n) for n in probes.floop_order]
+    fl_vals = [float(v) for v in probes.calculate_fluxloop_value(eq)]
+    pd.DataFrame([[float(t0)] + fl_vals], columns=["time"] + fl_names).to_csv(
+        out_dir / "synthetic_fluxloops.csv", index=False
+    )
+
+    pu_names = [str(n) for n in probes.pickup_order]
+    pu_vals = [float(v) for v in probes.calculate_pickup_value(eq)]
+    pd.DataFrame([[float(t0)] + pu_vals], columns=["time"] + pu_names).to_csv(
+        out_dir / "synthetic_pickups.csv", index=False
+    )
+    print(
+        f"Saved synthetic/synthetic_fluxloops.csv ({len(fl_names)} loops) and "
+        f"synthetic/synthetic_pickups.csv ({len(pu_names)} pickups) at t0={t0:.6f}s"
+    )
+
 def set_machine_currents(tokamak, currents_dict):
     for name, coil in getattr(tokamak, "coils", []):
         if name in currents_dict and hasattr(coil, "current"):
@@ -258,6 +297,9 @@ def main():
     with open(HERE/"inverse_dump.pkl", "wb") as f:
         pickle.dump(dump, f)
     print("Saved inverse_dump.pkl")
+
+    # Synthetic probe diagnostics for the solved equilibrium (contract metrics input)
+    write_synthetic_probe_csvs(tokamak, eq, t0)
 
     fig, ax = plt.subplots(1,1, figsize=(6,10), dpi=140)
     tokamak.plot(axis=ax, show=False)

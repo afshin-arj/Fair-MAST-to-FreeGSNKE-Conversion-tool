@@ -1,18 +1,18 @@
 """Honest, single-line status for contract residual metrics.
 
-Contract metrics compare experimental probe traces against synthetic probe
-traces produced by the FreeGSNKE run. As of v10.2.0 neither side exists for
-MAST shots in this repository:
+As of v10.3.0 the shot-only happy path ships a real diagnostic contracts
+authority (configs/diagnostic_contracts.json) and enables metrics by default:
 
-- The extractor exports only 1-D magnetics variables; FAIR-MAST Level-2
-  per-probe traces (e.g. flux_loop_flux) are 2-D (channel, time) and are not
-  yet extracted into named columns.
-- The generated FreeGSNKE inverse/forward runners do not emit synthetic probe
-  CSVs under SHOTS/<N>/synthetic/.
+- Extractor writes inputs/flux_loops.csv and inputs/pickups.csv with FAIR-MAST
+  channel names verbatim (units from zarr attrs: Wb / T).
+- Inverse FreeGSNKE runner emits synthetic/synthetic_fluxloops.csv and
+  synthetic/synthetic_pickups.csv via freegsnke.magnetic_probes.Probes
+  (calculate_fluxloop_value / calculate_pickup_value).
+- Metrics interpolate experimental traces onto the solved synthetic time
+  slice(s); failures remain blocking when enable_contract_metrics=true.
 
-Until both sides exist with verifiable shared channel identity (same probe
-names, SI units, identity sign/scale), no diagnostic contracts authority is
-shipped and metrics stay disabled. We never fabricate scale factors.
+Probe families on other timebases (mirnov/saddle/omaha) or without unit-matched
+identity remain excluded from the contracts authority.
 
 Author: © 2026 Afshin Arjhangmehr
 """
@@ -32,11 +32,10 @@ def contract_metrics_status_line(cfg: AppConfig) -> Optional[str]:
         return (
             "[WARN] enable_contract_metrics=true but diagnostic_contracts_path is not set: "
             "metrics will be skipped. Provide a diagnostic contracts JSON "
-            "(see configs/diagnostic_contracts.example.json) and set diagnostic_contracts_path."
+            "(see configs/diagnostic_contracts.json) and set diagnostic_contracts_path."
         )
     return (
-        "[INFO] Contract residual metrics disabled: no diagnostic-contracts authority exists yet "
-        "(experimental per-probe traces are not extracted and FreeGSNKE runs emit no synthetic probe CSVs); "
-        "to enable, provide diagnostic_contracts_path + enable_contract_metrics=true once both sides exist "
-        "(see HOW_TO_RUN.txt, 'Diagnostic contract metrics')."
+        "[INFO] Contract residual metrics disabled in this config "
+        "(set diagnostic_contracts_path + enable_contract_metrics=true to score "
+        "experimental vs synthetic probes; see HOW_TO_RUN.txt, 'Diagnostic contract metrics')."
     )

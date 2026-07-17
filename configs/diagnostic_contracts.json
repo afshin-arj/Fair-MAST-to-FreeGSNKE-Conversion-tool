@@ -1,0 +1,1446 @@
+{
+  "diagnostics": [
+    {
+      "dtype": "flux_loop",
+      "exp": {
+        "csv": "inputs/flux_loops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CC03"
+      },
+      "name": "FL_CC03",
+      "notes": "FAIR-MAST flux_loop_flux channel 'CC03' (family label FL/..., uda AMB_FL/...) <-> geometry probe 'FL_CC03' (flux_loop_geometry_channel); identity sign/scale.",
+      "syn": {
+        "csv": "synthetic/synthetic_fluxloops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "FL_CC03"
+      },
+      "units": "Wb"
+    },
+    {
+      "dtype": "flux_loop",
+      "exp": {
+        "csv": "inputs/flux_loops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CC04"
+      },
+      "name": "FL_CC04",
+      "notes": "FAIR-MAST flux_loop_flux channel 'CC04' (family label FL/..., uda AMB_FL/...) <-> geometry probe 'FL_CC04' (flux_loop_geometry_channel); identity sign/scale.",
+      "syn": {
+        "csv": "synthetic/synthetic_fluxloops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "FL_CC04"
+      },
+      "units": "Wb"
+    },
+    {
+      "dtype": "flux_loop",
+      "exp": {
+        "csv": "inputs/flux_loops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CC05"
+      },
+      "name": "FL_CC05",
+      "notes": "FAIR-MAST flux_loop_flux channel 'CC05' (family label FL/..., uda AMB_FL/...) <-> geometry probe 'FL_CC05' (flux_loop_geometry_channel); identity sign/scale.",
+      "syn": {
+        "csv": "synthetic/synthetic_fluxloops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "FL_CC05"
+      },
+      "units": "Wb"
+    },
+    {
+      "dtype": "flux_loop",
+      "exp": {
+        "csv": "inputs/flux_loops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CC07"
+      },
+      "name": "FL_CC07",
+      "notes": "FAIR-MAST flux_loop_flux channel 'CC07' (family label FL/..., uda AMB_FL/...) <-> geometry probe 'FL_CC07' (flux_loop_geometry_channel); identity sign/scale.",
+      "syn": {
+        "csv": "synthetic/synthetic_fluxloops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "FL_CC07"
+      },
+      "units": "Wb"
+    },
+    {
+      "dtype": "flux_loop",
+      "exp": {
+        "csv": "inputs/flux_loops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CC09"
+      },
+      "name": "FL_CC09",
+      "notes": "FAIR-MAST flux_loop_flux channel 'CC09' (family label FL/..., uda AMB_FL/...) <-> geometry probe 'FL_CC09' (flux_loop_geometry_channel); identity sign/scale.",
+      "syn": {
+        "csv": "synthetic/synthetic_fluxloops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "FL_CC09"
+      },
+      "units": "Wb"
+    },
+    {
+      "dtype": "flux_loop",
+      "exp": {
+        "csv": "inputs/flux_loops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "P3U/1"
+      },
+      "name": "FL_P3U_1",
+      "notes": "FAIR-MAST flux_loop_flux channel 'P3U/1' (family label FL/..., uda AMB_FL/...) <-> geometry probe 'FL_P3U_1' (flux_loop_geometry_channel); identity sign/scale.",
+      "syn": {
+        "csv": "synthetic/synthetic_fluxloops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "FL_P3U_1"
+      },
+      "units": "Wb"
+    },
+    {
+      "dtype": "flux_loop",
+      "exp": {
+        "csv": "inputs/flux_loops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "P3U/4"
+      },
+      "name": "FL_P3U_4",
+      "notes": "FAIR-MAST flux_loop_flux channel 'P3U/4' (family label FL/..., uda AMB_FL/...) <-> geometry probe 'FL_P3U_4' (flux_loop_geometry_channel); identity sign/scale.",
+      "syn": {
+        "csv": "synthetic/synthetic_fluxloops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "FL_P3U_4"
+      },
+      "units": "Wb"
+    },
+    {
+      "dtype": "flux_loop",
+      "exp": {
+        "csv": "inputs/flux_loops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "P4L/1"
+      },
+      "name": "FL_P4L_1",
+      "notes": "FAIR-MAST flux_loop_flux channel 'P4L/1' (family label FL/..., uda AMB_FL/...) <-> geometry probe 'FL_P4L_1' (flux_loop_geometry_channel); identity sign/scale.",
+      "syn": {
+        "csv": "synthetic/synthetic_fluxloops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "FL_P4L_1"
+      },
+      "units": "Wb"
+    },
+    {
+      "dtype": "flux_loop",
+      "exp": {
+        "csv": "inputs/flux_loops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "P4L/4"
+      },
+      "name": "FL_P4L_4",
+      "notes": "FAIR-MAST flux_loop_flux channel 'P4L/4' (family label FL/..., uda AMB_FL/...) <-> geometry probe 'FL_P4L_4' (flux_loop_geometry_channel); identity sign/scale.",
+      "syn": {
+        "csv": "synthetic/synthetic_fluxloops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "FL_P4L_4"
+      },
+      "units": "Wb"
+    },
+    {
+      "dtype": "flux_loop",
+      "exp": {
+        "csv": "inputs/flux_loops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "P4U/4"
+      },
+      "name": "FL_P4U_4",
+      "notes": "FAIR-MAST flux_loop_flux channel 'P4U/4' (family label FL/..., uda AMB_FL/...) <-> geometry probe 'FL_P4U_4' (flux_loop_geometry_channel); identity sign/scale.",
+      "syn": {
+        "csv": "synthetic/synthetic_fluxloops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "FL_P4U_4"
+      },
+      "units": "Wb"
+    },
+    {
+      "dtype": "flux_loop",
+      "exp": {
+        "csv": "inputs/flux_loops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "P5L/1"
+      },
+      "name": "FL_P5L_1",
+      "notes": "FAIR-MAST flux_loop_flux channel 'P5L/1' (family label FL/..., uda AMB_FL/...) <-> geometry probe 'FL_P5L_1' (flux_loop_geometry_channel); identity sign/scale.",
+      "syn": {
+        "csv": "synthetic/synthetic_fluxloops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "FL_P5L_1"
+      },
+      "units": "Wb"
+    },
+    {
+      "dtype": "flux_loop",
+      "exp": {
+        "csv": "inputs/flux_loops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "P5L/4"
+      },
+      "name": "FL_P5L_4",
+      "notes": "FAIR-MAST flux_loop_flux channel 'P5L/4' (family label FL/..., uda AMB_FL/...) <-> geometry probe 'FL_P5L_4' (flux_loop_geometry_channel); identity sign/scale.",
+      "syn": {
+        "csv": "synthetic/synthetic_fluxloops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "FL_P5L_4"
+      },
+      "units": "Wb"
+    },
+    {
+      "dtype": "flux_loop",
+      "exp": {
+        "csv": "inputs/flux_loops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "P5U/1"
+      },
+      "name": "FL_P5U_1",
+      "notes": "FAIR-MAST flux_loop_flux channel 'P5U/1' (family label FL/..., uda AMB_FL/...) <-> geometry probe 'FL_P5U_1' (flux_loop_geometry_channel); identity sign/scale.",
+      "syn": {
+        "csv": "synthetic/synthetic_fluxloops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "FL_P5U_1"
+      },
+      "units": "Wb"
+    },
+    {
+      "dtype": "flux_loop",
+      "exp": {
+        "csv": "inputs/flux_loops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "P6L/1"
+      },
+      "name": "FL_P6L_1",
+      "notes": "FAIR-MAST flux_loop_flux channel 'P6L/1' (family label FL/..., uda AMB_FL/...) <-> geometry probe 'FL_P6L_1' (flux_loop_geometry_channel); identity sign/scale.",
+      "syn": {
+        "csv": "synthetic/synthetic_fluxloops.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "FL_P6L_1"
+      },
+      "units": "Wb"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV01"
+      },
+      "name": "CCBV01",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV01' <-> geometry probe 'CCBV01' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV01"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV03"
+      },
+      "name": "CCBV03",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV03' <-> geometry probe 'CCBV03' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV03"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV04"
+      },
+      "name": "CCBV04",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV04' <-> geometry probe 'CCBV04' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV04"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV05"
+      },
+      "name": "CCBV05",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV05' <-> geometry probe 'CCBV05' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV05"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV06"
+      },
+      "name": "CCBV06",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV06' <-> geometry probe 'CCBV06' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV06"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV07"
+      },
+      "name": "CCBV07",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV07' <-> geometry probe 'CCBV07' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV07"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV08"
+      },
+      "name": "CCBV08",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV08' <-> geometry probe 'CCBV08' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV08"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV09"
+      },
+      "name": "CCBV09",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV09' <-> geometry probe 'CCBV09' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV09"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV10"
+      },
+      "name": "CCBV10",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV10' <-> geometry probe 'CCBV10' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV10"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV11"
+      },
+      "name": "CCBV11",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV11' <-> geometry probe 'CCBV11' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV11"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV12"
+      },
+      "name": "CCBV12",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV12' <-> geometry probe 'CCBV12' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV12"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV13"
+      },
+      "name": "CCBV13",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV13' <-> geometry probe 'CCBV13' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV13"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV14"
+      },
+      "name": "CCBV14",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV14' <-> geometry probe 'CCBV14' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV14"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV15"
+      },
+      "name": "CCBV15",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV15' <-> geometry probe 'CCBV15' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV15"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV16"
+      },
+      "name": "CCBV16",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV16' <-> geometry probe 'CCBV16' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV16"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV17"
+      },
+      "name": "CCBV17",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV17' <-> geometry probe 'CCBV17' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV17"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV18"
+      },
+      "name": "CCBV18",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV18' <-> geometry probe 'CCBV18' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV18"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV19"
+      },
+      "name": "CCBV19",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV19' <-> geometry probe 'CCBV19' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV19"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV20"
+      },
+      "name": "CCBV20",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV20' <-> geometry probe 'CCBV20' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV20"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV22"
+      },
+      "name": "CCBV22",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV22' <-> geometry probe 'CCBV22' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV22"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV23"
+      },
+      "name": "CCBV23",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV23' <-> geometry probe 'CCBV23' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV23"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV24"
+      },
+      "name": "CCBV24",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV24' <-> geometry probe 'CCBV24' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV24"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV25"
+      },
+      "name": "CCBV25",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV25' <-> geometry probe 'CCBV25' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV25"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV26"
+      },
+      "name": "CCBV26",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV26' <-> geometry probe 'CCBV26' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV26"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV27"
+      },
+      "name": "CCBV27",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV27' <-> geometry probe 'CCBV27' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV27"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV28"
+      },
+      "name": "CCBV28",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV28' <-> geometry probe 'CCBV28' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV28"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV29"
+      },
+      "name": "CCBV29",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV29' <-> geometry probe 'CCBV29' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV29"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV30"
+      },
+      "name": "CCBV30",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV30' <-> geometry probe 'CCBV30' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV30"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV31"
+      },
+      "name": "CCBV31",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV31' <-> geometry probe 'CCBV31' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV31"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV33"
+      },
+      "name": "CCBV33",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV33' <-> geometry probe 'CCBV33' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV33"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV34"
+      },
+      "name": "CCBV34",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV34' <-> geometry probe 'CCBV34' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV34"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV36"
+      },
+      "name": "CCBV36",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV36' <-> geometry probe 'CCBV36' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV36"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV37"
+      },
+      "name": "CCBV37",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV37' <-> geometry probe 'CCBV37' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV37"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV38"
+      },
+      "name": "CCBV38",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV38' <-> geometry probe 'CCBV38' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV38"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV39"
+      },
+      "name": "CCBV39",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV39' <-> geometry probe 'CCBV39' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV39"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV40"
+      },
+      "name": "CCBV40",
+      "notes": "FAIR-MAST b_field_pol_probe_ccbv_field channel 'CCBV40' <-> geometry probe 'CCBV40' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "CCBV40"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBV03"
+      },
+      "name": "OBV03",
+      "notes": "FAIR-MAST b_field_pol_probe_obv_field channel 'OBV03' <-> geometry probe 'OBV03' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBV03"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBV04"
+      },
+      "name": "OBV04",
+      "notes": "FAIR-MAST b_field_pol_probe_obv_field channel 'OBV04' <-> geometry probe 'OBV04' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBV04"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBV05"
+      },
+      "name": "OBV05",
+      "notes": "FAIR-MAST b_field_pol_probe_obv_field channel 'OBV05' <-> geometry probe 'OBV05' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBV05"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBV06"
+      },
+      "name": "OBV06",
+      "notes": "FAIR-MAST b_field_pol_probe_obv_field channel 'OBV06' <-> geometry probe 'OBV06' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBV06"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBV09"
+      },
+      "name": "OBV09",
+      "notes": "FAIR-MAST b_field_pol_probe_obv_field channel 'OBV09' <-> geometry probe 'OBV09' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBV09"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBV11"
+      },
+      "name": "OBV11",
+      "notes": "FAIR-MAST b_field_pol_probe_obv_field channel 'OBV11' <-> geometry probe 'OBV11' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBV11"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBV17"
+      },
+      "name": "OBV17",
+      "notes": "FAIR-MAST b_field_pol_probe_obv_field channel 'OBV17' <-> geometry probe 'OBV17' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBV17"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBV18"
+      },
+      "name": "OBV18",
+      "notes": "FAIR-MAST b_field_pol_probe_obv_field channel 'OBV18' <-> geometry probe 'OBV18' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBV18"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR01"
+      },
+      "name": "OBR01",
+      "notes": "FAIR-MAST b_field_pol_probe_obr_field channel 'OBR01' <-> geometry probe 'OBR01' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR01"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR04"
+      },
+      "name": "OBR04",
+      "notes": "FAIR-MAST b_field_pol_probe_obr_field channel 'OBR04' <-> geometry probe 'OBR04' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR04"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR05"
+      },
+      "name": "OBR05",
+      "notes": "FAIR-MAST b_field_pol_probe_obr_field channel 'OBR05' <-> geometry probe 'OBR05' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR05"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR06"
+      },
+      "name": "OBR06",
+      "notes": "FAIR-MAST b_field_pol_probe_obr_field channel 'OBR06' <-> geometry probe 'OBR06' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR06"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR08"
+      },
+      "name": "OBR08",
+      "notes": "FAIR-MAST b_field_pol_probe_obr_field channel 'OBR08' <-> geometry probe 'OBR08' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR08"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR09"
+      },
+      "name": "OBR09",
+      "notes": "FAIR-MAST b_field_pol_probe_obr_field channel 'OBR09' <-> geometry probe 'OBR09' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR09"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR10"
+      },
+      "name": "OBR10",
+      "notes": "FAIR-MAST b_field_pol_probe_obr_field channel 'OBR10' <-> geometry probe 'OBR10' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR10"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR12"
+      },
+      "name": "OBR12",
+      "notes": "FAIR-MAST b_field_pol_probe_obr_field channel 'OBR12' <-> geometry probe 'OBR12' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR12"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR13"
+      },
+      "name": "OBR13",
+      "notes": "FAIR-MAST b_field_pol_probe_obr_field channel 'OBR13' <-> geometry probe 'OBR13' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR13"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR14"
+      },
+      "name": "OBR14",
+      "notes": "FAIR-MAST b_field_pol_probe_obr_field channel 'OBR14' <-> geometry probe 'OBR14' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR14"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR15"
+      },
+      "name": "OBR15",
+      "notes": "FAIR-MAST b_field_pol_probe_obr_field channel 'OBR15' <-> geometry probe 'OBR15' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR15"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR16"
+      },
+      "name": "OBR16",
+      "notes": "FAIR-MAST b_field_pol_probe_obr_field channel 'OBR16' <-> geometry probe 'OBR16' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR16"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR17"
+      },
+      "name": "OBR17",
+      "notes": "FAIR-MAST b_field_pol_probe_obr_field channel 'OBR17' <-> geometry probe 'OBR17' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR17"
+      },
+      "units": "T"
+    },
+    {
+      "dtype": "pickup",
+      "exp": {
+        "csv": "inputs/pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR18"
+      },
+      "name": "OBR18",
+      "notes": "FAIR-MAST b_field_pol_probe_obr_field channel 'OBR18' <-> geometry probe 'OBR18' (verbatim identity).",
+      "syn": {
+        "csv": "synthetic/synthetic_pickups.csv",
+        "scale": 1.0,
+        "sign": 1.0,
+        "time_col": "time",
+        "value_col": "OBR18"
+      },
+      "units": "T"
+    }
+  ],
+  "notes": "Diagnostic contracts authority (v10.3.0). Identity sign/scale only; units read from FAIR-MAST Level-2 zarr attrs (flux loops: Wb; pickups: T). Experimental columns are FAIR-MAST channel names verbatim (inputs/flux_loops.csv, inputs/pickups.csv); synthetic columns are geometry-authority probe names emitted by the FreeGSNKE inverse runner (synthetic/synthetic_fluxloops.csv, synthetic/synthetic_pickups.csv). Flux-loop pairs use the FAIR-MAST-internal rename FL_<channel with / -> _>, declared per contract. Probe families on other timebases (mirnov, saddle, omaha) are EXCLUDED: not extracted onto the shared magnetics timebase and/or measured in V (uncalibrated), so no honest identity contract exists for them. Channels that are entirely NaN in FAIR-MAST Level-2 for the authority-reference shot 30201 are also EXCLUDED (listed in the generator EXCLUDE_ALL_NAN_REF_SHOT_30201): P3L/4, CCBV02/21/32/35, OBV01/02/07/08/10/12-16/19, OBR02/03/07/11/19 \u2014 they remain in extract outputs for audit but cannot be scored.",
+  "version": "1.0"
+}

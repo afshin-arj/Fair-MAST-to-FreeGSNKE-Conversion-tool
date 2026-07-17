@@ -1,3 +1,13 @@
+## 10.3.0 — Real contract-driven residual metrics
+- Extractor exports FAIR-MAST 2-D per-probe traces onto the shared magnetics timebase as family CSVs:
+  - `inputs/flux_loops.csv` from `flux_loop_flux` (`flux_loop_channel` × `time`, units Wb)
+  - `inputs/pickups.csv` from `b_field_pol_probe_{ccbv,obv,obr}_field` (channel × `time`, units T)
+  Channel names are FAIR-MAST coordinate values verbatim; units are copied from zarr attrs into `extract_meta`. Probe families on other timebases (mirnov/saddle/omaha) are skipped and reported.
+- Inverse FreeGSNKE runner emits `synthetic/synthetic_fluxloops.csv` and `synthetic/synthetic_pickups.csv` via FreeGSNKE 3.0.1 `tokamak.probes` (`initialise_setup` + `calculate_fluxloop_value` / `calculate_pickup_value`) at the solved time slice `t0`.
+- Ship `configs/diagnostic_contracts.json` (72 identity contracts after excluding 21 channels that are entirely NaN in FAIR-MAST Level-2 for reference shot 30201: 14 flux loops + 58 pickups). Flux-loop pairs declare the FAIR-MAST-internal rename `FL_<channel with / → _>` (corroborated by zarr attrs `label`/`uda_name` and `flux_loop_geometry_channel`); pickups use verbatim name identity. Units verified from zarr attrs (Wb / T). No fabricated scale factors.
+- Enable `diagnostic_contracts_path` + `enable_contract_metrics=true` in `configs/default.json`. Metrics interpolate experimental traces onto the synthetic solve time(s); synthetic-extract and residual-metrics failures remain blocking when enabled.
+- Docs / `contracts_status` updated to reflect the new reality.
+
 ## 10.2.0 — P1/P2 hardening: install hygiene, cache reuse, batch CLI, honest contracts status
 - Launcher install hygiene: `RUN_PIPELINE_SKIP_INSTALL=1` skips pip upgrade/install entirely; otherwise `run_pipeline.cmd`/`run_pipeline.sh` reinstall only when `pyproject.toml` changed (SHA256 marker at `.venv/.install_marker`).
 - Download cache reuse (`allow_cache_reuse`, default true): non-empty `data_cache/shot_<N>/<group>.zarr` trees are not re-synced; when every required group is cached the run skips MastApp REST, S3 preflight, availability, and sync entirely (no network). Per-group `download_report` (resolved S3 path, `cache_hit`, cheap file counts + bytes; no tree hashing) is recorded in the manifest and next to the cache.
