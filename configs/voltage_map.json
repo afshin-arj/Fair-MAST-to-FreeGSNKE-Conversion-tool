@@ -1,0 +1,96 @@
+{
+  "version": "1.0",
+  "notes": "FAIR-MAST Level-2 voltage_channel labels → FreeGSNKE active circuit order (machine_authority/active_coils.pickle control coils). Units are volts (V) from zarr attrs. Circuits without a Level-2 voltage channel declare default_V=0 explicitly (zero-drive), not silent invention.",
+  "machine_active_circuit_order": [
+    "Solenoid",
+    "PX",
+    "D1",
+    "D2",
+    "D3",
+    "Dp",
+    "D5",
+    "D6",
+    "D7",
+    "P4",
+    "P5",
+    "P6"
+  ],
+  "circuits": {
+    "Solenoid": {
+      "voltage_channels": ["p1"],
+      "combine": "identity",
+      "scale": 1.0,
+      "sign": 1,
+      "notes": "FAIR-MAST p1 is the solenoid/OH voltage channel (zarr attrs link AMC_SOL to /xdc/pf/f/p1); units V."
+    },
+    "PX": {
+      "voltage_channels": ["p2"],
+      "combine": "identity",
+      "scale": 1.0,
+      "sign": 1,
+      "notes": "FAIR-MAST voltage channel p2 mapped to FreeGSNKE MAST-U-like circuit PX (active_coils.pickle has no P2 label). Explicit cross-machine declaration."
+    },
+    "D1": {
+      "voltage_channels": [],
+      "combine": "default",
+      "default_V": 0.0,
+      "notes": "FAIR-MAST Level-2 has no voltage channel for D1; explicit zero-drive declaration."
+    },
+    "D2": {
+      "voltage_channels": [],
+      "combine": "default",
+      "default_V": 0.0,
+      "notes": "FAIR-MAST Level-2 has no voltage channel for D2; explicit zero-drive declaration."
+    },
+    "D3": {
+      "voltage_channels": [],
+      "combine": "default",
+      "default_V": 0.0,
+      "notes": "FAIR-MAST Level-2 has no voltage channel for D3; explicit zero-drive declaration."
+    },
+    "Dp": {
+      "voltage_channels": [],
+      "combine": "default",
+      "default_V": 0.0,
+      "notes": "FAIR-MAST Level-2 has no voltage channel for Dp; explicit zero-drive declaration."
+    },
+    "D5": {
+      "voltage_channels": [],
+      "combine": "default",
+      "default_V": 0.0,
+      "notes": "FAIR-MAST Level-2 has no voltage channel for D5; explicit zero-drive declaration."
+    },
+    "D6": {
+      "voltage_channels": [],
+      "combine": "default",
+      "default_V": 0.0,
+      "notes": "FAIR-MAST Level-2 has no voltage channel for D6; explicit zero-drive declaration."
+    },
+    "D7": {
+      "voltage_channels": [],
+      "combine": "default",
+      "default_V": 0.0,
+      "notes": "FAIR-MAST Level-2 has no voltage channel for D7; explicit zero-drive declaration."
+    },
+    "P4": {
+      "voltage_channels": ["p4"],
+      "combine": "identity",
+      "scale": 1.0,
+      "sign": 1,
+      "notes": "FAIR-MAST p4 → FreeGSNKE P4; units V."
+    },
+    "P5": {
+      "voltage_channels": ["p5"],
+      "combine": "identity",
+      "scale": 1.0,
+      "sign": 1,
+      "notes": "FAIR-MAST p5 → FreeGSNKE P5; units V."
+    },
+    "P6": {
+      "voltage_channels": [],
+      "combine": "default",
+      "default_V": 0.0,
+      "notes": "FAIR-MAST Level-2 has no voltage channel for P6; explicit zero-drive declaration."
+    }
+  }
+}

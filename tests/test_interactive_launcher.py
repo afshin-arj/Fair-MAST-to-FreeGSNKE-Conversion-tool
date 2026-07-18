@@ -126,11 +126,12 @@ def test_interactive_run_rejects_unknown_args() -> None:
     assert ei.value.code == 2
 
 
-def test_default_config_uses_shots_dir() -> None:
+def test_default_config_uses_shot_dir() -> None:
     from mast_freegsnke.config import AppConfig
 
     cfg = AppConfig.load(REPO / "configs" / "default.json")
-    assert cfg.runs_dir == Path("SHOTS")
+    assert cfg.runs_dir == Path("SHOT")
+    assert cfg.execute_evolutive is True
 
 
 def _extract_interactive_invocations(text: str) -> list[str]:

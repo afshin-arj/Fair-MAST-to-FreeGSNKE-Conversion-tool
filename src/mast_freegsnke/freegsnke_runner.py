@@ -86,6 +86,8 @@ class FreeGSNKERunner:
     ):
         self.python_exe = resolve_freegsnke_python(python_exe)
         self.env = dict(os.environ)
+        # Unbuffered child stdout so long FreeGSNKE inits (nl_solver) appear in logs.
+        self.env.setdefault("PYTHONUNBUFFERED", "1")
         if env:
             self.env.update({str(k): str(v) for k, v in env.items()})
         self.timeout_s = float(timeout_s) if timeout_s is not None else None

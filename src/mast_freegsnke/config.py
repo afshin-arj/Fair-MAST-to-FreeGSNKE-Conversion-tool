@@ -46,8 +46,14 @@ class AppConfig:
     diagnostic_calibration_path: Optional[str]
     # Optional: path to PF/coil mapping authority JSON.
     coil_map_path: Optional[str]
+    # Optional: path to voltage_map authority (FAIR-MAST voltage channels → FreeGSNKE active vector).
+    voltage_map_path: Optional[str]
+    # Optional: path to evolutive_authority JSON (nl_solver numerics; fail-closed when execute_evolutive).
+    evolutive_authority_path: Optional[str]
     # Enable contract-driven extraction + residual metrics (requires contracts).
     enable_contract_metrics: bool
+    # If True, generate+execute evolutive_run.py after static inverse (when voltage map + voltages exist).
+    execute_evolutive: bool
 
     # Optional: machine authority directory (versioned geometry/registry).
     machine_authority_dir: Optional[str]
@@ -89,7 +95,7 @@ class AppConfig:
         s3_endpoint_url = (str(obj["s3_endpoint_url"]) if obj.get("s3_endpoint_url") else None)
         s3_no_sign_request = bool(obj.get("s3_no_sign_request", False))
         s5cmd_timeout_s = int(obj.get("s5cmd_timeout_s", 60))
-        runs_dir = Path(obj.get("runs_dir", "SHOTS"))
+        runs_dir = Path(obj.get("runs_dir", "SHOT"))
         cache_dir = Path(obj.get("cache_dir", "data_cache"))
         formed_plasma_frac = float(obj.get("formed_plasma_frac", 0.80))
         allow_missing_geometry = bool(obj.get("allow_missing_geometry", False))
@@ -104,7 +110,12 @@ class AppConfig:
             str(obj["diagnostic_calibration_path"]) if obj.get("diagnostic_calibration_path") else None
         )
         coil_map_path = (str(obj["coil_map_path"]) if obj.get("coil_map_path") else None)
+        voltage_map_path = (str(obj["voltage_map_path"]) if obj.get("voltage_map_path") else None)
+        evolutive_authority_path = (
+            str(obj["evolutive_authority_path"]) if obj.get("evolutive_authority_path") else None
+        )
         enable_contract_metrics = bool(obj.get("enable_contract_metrics", False))
+        execute_evolutive = bool(obj.get("execute_evolutive", False))
 
         machine_authority_dir = (str(obj["machine_authority_dir"]) if obj.get("machine_authority_dir") else None)
         require_machine_authority = bool(obj.get("require_machine_authority", False))
@@ -150,7 +161,10 @@ class AppConfig:
             diagnostic_contracts_path=diagnostic_contracts_path,
             diagnostic_calibration_path=diagnostic_calibration_path,
             coil_map_path=coil_map_path,
+            voltage_map_path=voltage_map_path,
+            evolutive_authority_path=evolutive_authority_path,
             enable_contract_metrics=enable_contract_metrics,
+            execute_evolutive=execute_evolutive,
             machine_authority_dir=machine_authority_dir,
             require_machine_authority=require_machine_authority,
             provenance_hash_data=provenance_hash_data,
@@ -162,7 +176,7 @@ class AppConfig:
 
 
 def run_dir_for_shot(cfg: "AppConfig", shot: int) -> Path:
-    """Single source of truth for the user-facing run folder layout (SHOTS/<N>)."""
+    """Single source of truth for the user-facing run folder layout (SHOT/<N>)."""
     return Path(cfg.runs_dir) / str(int(shot))
 
 

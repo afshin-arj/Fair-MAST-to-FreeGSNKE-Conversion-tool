@@ -1,320 +1,155 @@
-# Fair-MAST → FreeGSNKE Conversion Tool
+# fair-mast-freegsnke
 
-**Version 10.5.0** · Deterministic reconstruction pipeline for MAST experimental data
+**Shot-only** FAIR-MAST Level-2 → FreeGSNKE: static inverse/forward **and** evolutive forward, under explicit authorities, with residual metrics and full provenance.
 
-Enter one or more **MAST shot numbers**. The pipeline downloads FAIR-MAST Level-2 data, builds FreeGSNKE inputs under explicit authorities, runs inverse and forward reconstructions, and writes a fully auditable folder under `SHOTS/<shot>/`.
+Enter one or more **MAST shot numbers**. Everything else is automatic.
 
 ```text
-  shot number(s)  →  FAIR-MAST Level-2  →  FreeGSNKE inverse/forward  →  SHOTS/<N>/
+shot number(s)  →  FAIR-MAST Level-2  →  FreeGSNKE inverse/forward/evolutive  →  SHOT/<N>/
 ```
 
-**Author:** © 2026 Afshin Arjhangmehr
+Upstream references:
+
+- [FAIR-MAST](https://github.com/ukaea/fair-mast) — Level-2 Zarr (currents + `coil_voltage` in V)
+- [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke) — Grad–Shafranov + evolutive `nl_solver` / `nlstepper`
+
+Version **11.0.0**.
 
 ---
 
-## What this tool does
+## Quick start (shot number only)
 
-| Stage | Action |
-|-------|--------|
-| Discover | Verify the shot exists and required Level-2 groups are present |
-| Download | Sync FAIR-MAST Zarr data via `s5cmd` (STFC public S3) |
-| Extract | Export PF currents, magnetics, and related CSVs |
-| Window | Infer a formed-plasma time window (overrideable, logged) |
-| Authority | Apply machine geometry, coil map, and execution numerics |
-| Generate | Emit `inverse_run.py`, `forward_run.py`, and probe pickles |
-| Execute | Optionally run FreeGSNKE and capture logs + solver evidence |
-| Provenance | Hash artifacts, snapshot authorities, write `manifest.json` |
+```bash
+# Windows
+run_pipeline.cmd
+# prompts ONLY for shot number(s)
 
-### Design principles
+# Non-interactive
+mast-freegsnke run --shot 30201 --config configs/default.json
+```
 
-1. **Determinism** — no hidden optimization, smoothing, or silent conventions  
-2. **Explicit authority** — machine, coil map, contracts, and numerics are declared JSON (snapshotted and hashed)  
-3. **Fail fast** — missing or template metrology blocks the run; geometry is never invented  
-4. **One mapping path** — `configs/coil_map.json` drives PF currents; heuristics are suggest-only  
-5. **Manifest everything** — every stage outcome is recorded for replay and review  
+Requirements: Python 3.11+, `s5cmd`, FreeGSNKE in `.venv-freegsnke`, pipeline package in `.venv`.
+
+```bash
+mast-freegsnke doctor --config configs/default.json
+```
 
 ---
 
-## End-to-end data flow
+## Data flow
 
 ```mermaid
 flowchart LR
-  A["MAST shot<br/>number"] --> B["MAST App<br/>availability"]
-  B --> C["s5cmd sync<br/>Level-2 Zarr"]
-  C --> D["Extract CSVs<br/>PF · magnetics"]
-  D --> E["Time window<br/>+ QC"]
-  E --> F["Authorities<br/>machine · coil · exec"]
-  F --> G["Generate<br/>FreeGSNKE scripts"]
-  G --> H["Inverse + Forward<br/>FreeGSNKE"]
-  H --> I["SHOTS/N/<br/>manifest · provenance"]
+  U["User: shot N"] --> D["Download FAIR-MAST L2<br/>pf_active + magnetics"]
+  D --> E["Extract CSVs<br/>currents · voltages · probes"]
+  E --> A["Authorities<br/>coil_map · voltage_map · machine · execution · evolutive"]
+  A --> I["Inverse GS"]
+  I --> F["Static forward replay"]
+  I --> V["Evolutive forward<br/>nl_solver + FAIR-MAST V(t)"]
+  I --> M["Contract residual metrics"]
+  F --> O["SHOT/N/"]
+  V --> O
+  M --> O
+```
 
-  style A fill:#1a365d,stroke:#90cdf4,color:#fff
-  style I fill:#22543d,stroke:#9ae6b4,color:#fff
+### Static vs evolutive
+
+```mermaid
+flowchart TB
+  subgraph static [Static path]
+    INV["inverse_run.py<br/>shape/profile IC at t0"]
+    FWD["forward_run.py<br/>GS replay at fixed currents"]
+    INV --> FWD
+  end
+  subgraph evol [Evolutive path]
+    IC["inverse_dump.pkl IC"]
+    NL["nl_solver + initialize_from_ICs"]
+    STEP["nlstepper(active_voltage_vec)<br/>mapped FAIR-MAST voltages"]
+    IC --> NL --> STEP
+  end
+  INV --> IC
 ```
 
 ---
 
 ## Authority model
 
-Reconstruction inputs are never inferred silently. Each authority is versioned, validated, and copied into the run folder.
+| Authority | Role |
+|-----------|------|
+| `machine_authority/` | FreeGSNKE pickles + FAIR-MAST probe geometry (no invented metrology) |
+| `configs/coil_map.json` | Current channels → FreeGSNKE circuits (binding) |
+| `configs/voltage_map.json` | Voltage channels → active vector order (binding; missing circuits declare `default_V=0`) |
+| `execution_authority` | Grid, profiles, boundary, solver, metrics timebase |
+| `configs/evolutive_authority.json` | `dt`, `n_steps`, `linear_only`, `plasma_resistivity`, timeouts |
+| `diagnostic_contracts.json` | Residual scoring pairs |
+| `diagnostic_calibration.json` | Optional V→T / V→Wb (empty until real factors exist) |
+
+**Design laws:** determinism · explicit authority · fail fast · never invent geometry/voltages/profiles · one binding mapping path · manifest everything.
+
+---
+
+## Output layout (`SHOT/<N>/`)
+
+Operational paths stay at the run root (stable for tooling). An expert-facing index is added on top:
+
+```text
+SHOT/30201/
+  00_README.txt                 # human index
+  01_summary/
+    SUMMARY.md / SUMMARY.json   # status, window, modes, metrics, limits
+    timeline.txt
+  inputs/                       # experimental CSVs + authority snapshots
+  synthetic/                    # FreeGSNKE probe synthetics
+  metrics/                      # residual scores
+  evolutive/                    # history.csv, snapshots, meta
+  logs/
+  manifest.json
+  inverse_run.py / forward_run.py / evolutive_run.py
+  inverse_dump.pkl
+```
 
 ```mermaid
 flowchart TB
-  subgraph Inputs
-    S["Shot number"]
-    CFG["configs/default.json"]
-  end
-
-  subgraph Authorities["Explicit authorities"]
-    MA["machine_authority/<br/>probes · coils · pickles"]
-    CM["configs/coil_map.json<br/>FAIR-MAST → FreeGSNKE circuits"]
-    EA["execution_authority<br/>grid · profiles · tolerances"]
-    DC["diagnostic_contracts<br/>optional residual scoring"]
-  end
-
-  subgraph Pipeline["Pipeline stages"]
-    DL["Download + extract"]
-    MAP["Apply coil map"]
-    GEN["Generate runners"]
-    RUN["Execute FreeGSNKE"]
-  end
-
-  subgraph Output["Auditable run folder"]
-    RF["SHOTS/N/"]
-    MAN["manifest.json"]
-    PROV["provenance/ hashes"]
-  end
-
-  S --> DL
-  CFG --> DL
-  MA --> GEN
-  CM --> MAP
-  DL --> MAP --> GEN --> RUN --> RF
-  EA --> GEN
-  DC -.-> RUN
-  RF --> MAN
-  RF --> PROV
+  R["SHOT/N/"]
+  R --> R0["00_README.txt"]
+  R --> R1["01_summary/"]
+  R --> IN["inputs/"]
+  R --> SYN["synthetic/"]
+  R --> MET["metrics/"]
+  R --> EV["evolutive/"]
+  R --> LOG["logs/"]
+  R --> MAN["manifest.json"]
 ```
 
-| Authority | Role | Shipped default |
-|-----------|------|-----------------|
-| `machine_authority/` | Probe/coil geometry + FreeGSNKE structural pickles | Built from FAIR-MAST Level-2 + FreeGSNKE MAST-U-like machine |
-| `configs/coil_map.json` | Maps Level-2 `current_channel` labels to FreeGSNKE circuits | FAIR-MAST channels (`SOL`, `P2IL FEED`, …) with explicit `sum` |
-| Execution authority | Grid, profile basis, solver tolerances | Generated per run under `inputs/execution_authority/` |
-| Diagnostic contracts | Experimental ↔ synthetic comparison | **Shipped** — `configs/diagnostic_contracts.json` (identity sign/scale; ALL 93 identity-mapped channels: 15 flux loops + 78 pickups; all-NaN channels are skipped shot-scoped at metrics time, never hard-excluded; units from FAIR-MAST zarr attrs). Residuals are scored at multiple deterministic window sample times (`metrics_timebase` authority, `metrics_n_times`, default 5) using preferred **full FreeGSNKE inverse** per sample (`solver.multitime`, `solve_mode=full_inverse`; forward-GS is an explicit per-time fallback). Mirnov/saddle/omaha stay audit-only by default under `inputs/audit_other_timebase/`; promote via optional `configs/diagnostic_calibration.json` (empty `channels` / `awaiting_authority` — never invents V→T). Synthesizable contracts merge only when calibration sets `synthesize=true` for point pickups with geometry |
-| Diagnostic calibration | Optional V→T / unit-resolution for other-timebase families | **Shipped empty** — `diagnostic_calibration_path` → `configs/diagnostic_calibration.json`; see `diagnostic_calibration.example.json` for schema |
-
-> Template or `CHANGE_ME` machine authority is **rejected**. Metrology must come from FAIR-MAST or an authoritative machine definition.
+Legacy `SHOTS/` is still ignored by git if present; default `runs_dir` is now **`SHOT`**.
 
 ---
 
-## Quick start
+## Honest limitations
 
-### Prerequisites
+- Structural machine is **MAST-U-like** FreeGSNKE pickles; classic MAST FAIR-MAST voltages (`p1`/`p2`/`p4`/`p5`) are mapped explicitly (`p1→Solenoid`, `p2→PX`, `p4→P4`, `p5→P5`).
+- Circuits without Level-2 voltage channels use **declared** `default_V=0` (zero-drive), not silent inventing.
+- Evolutive profile parameters (`alpha_m`/`alpha_n`/…) are **held from the inverse IC** unless FAIR-MAST provides them (they do not invent them).
+- Mirnov/saddle/omaha stay audit-only until a real calibration authority is populated.
 
-| Requirement | Notes |
-|-------------|-------|
-| Python **3.9+** | Pipeline package |
-| Python **3.11** venv | FreeGSNKE (3.14 often lacks compatible SciPy wheels) |
-| `s5cmd` | On `PATH`, or at `tools/s5cmd.exe` |
+---
 
-### 1. Install the pipeline
+## Install
 
 ```bash
 python -m venv .venv
-# Windows:  .venv\Scripts\activate
-# Linux/macOS: source .venv/bin/activate
+.venv\Scripts\activate          # Windows
+pip install -e ".[dev,zarr]"
 
-pip install -e ".[zarr,dev]"
+# FreeGSNKE (separate venv recommended)
+python3.11 -m venv .venv-freegsnke
+.venv-freegsnke\Scripts\pip install freegsnke
 ```
 
-### 2. Install FreeGSNKE (one-time)
-
-```bash
-# Windows example — use Python 3.11
-py -3.11 -m venv .venv-freegsnke
-.venv-freegsnke\Scripts\python -m pip install -r requirements-freegsnke.txt
-```
-
-`configs/default.json` already points `freegsnke_python` at `.venv-freegsnke/Scripts/python.exe`. Adjust the path on Linux/macOS.
-
-### 3. Ensure `s5cmd`
-
-```bash
-python scripts/ensure_s5cmd.py
-# or place s5cmd on PATH / set s5cmd_path in config
-```
-
-### 4. Run (shot number only)
-
-**Interactive (recommended):**
-
-```bat
-run_pipeline.cmd
-```
-
-```bash
-./run_pipeline.sh
-```
-
-**CLI:**
-
-```bash
-python -m mast_freegsnke.cli doctor --config configs/default.json
-python -m mast_freegsnke.cli run --shot 30201 --config configs/default.json
-# Batch (same summary/worst-exit-code semantics as the interactive launcher):
-python -m mast_freegsnke.cli run --shots 30201 30202 --config configs/default.json
-```
-
-Doctor should report OK for s5cmd, machine authority, coil map, and FreeGSNKE before a full run.
-
-**Launcher environment variables:**
-
-| Variable | Effect |
-|----------|--------|
-| `RUN_PIPELINE_SKIP_INSTALL=1` | Skip pip upgrade/install entirely (fast start) |
-| `RUN_PIPELINE_NO_PAUSE=1` | Windows only: don't pause before the console closes |
-
-Without `RUN_PIPELINE_SKIP_INSTALL`, the launchers reinstall only when `pyproject.toml` changed since the last install (SHA256 marker at `.venv/.install_marker`).
+Set `freegsnke_python` in `configs/default.json` if needed.
 
 ---
 
-## Pipeline stages (detail)
+## License / authorship
 
-```mermaid
-sequenceDiagram
-  participant User
-  participant CLI as mast-freegsnke
-  participant S3 as STFC S3 (s5cmd)
-  participant Auth as Authorities
-  participant FG as FreeGSNKE (3.11)
-
-  User->>CLI: run --shot 30201
-  CLI->>CLI: check shot + required groups
-  CLI->>S3: sync Level-2 Zarr (shot-scoped)
-  CLI->>CLI: extract CSVs + infer window
-  CLI->>Auth: validate machine + apply coil_map
-  CLI->>CLI: write magnetic_probes.pickle + runners
-  CLI->>FG: inverse_run.py
-  CLI->>FG: forward_run.py
-  CLI->>CLI: provenance + manifest.json
-  CLI-->>User: SHOTS/30201/ (status: success)
-```
-
----
-
-## Run folder layout
-
-```text
-SHOTS/30201/
-├── inputs/                      # CSVs, window, execution authority
-├── machine_authority_snapshot/  # hashed copy of machine authority
-├── magnetic_probes.pickle       # FreeGSNKE-native probe dict
-├── inverse_run.py
-├── forward_run.py
-├── logs/                        # FreeGSNKE stdout/stderr
-├── solver_introspection/        # solver state + default-detection
-├── provenance/                  # hashes, env fingerprint, manifest_v2
-├── contracts/                   # resolved contracts (if enabled)
-├── metrics/                     # residual scores (if enabled)
-└── manifest.json                # stage outcomes (source of truth)
-```
-
-Export a self-contained reviewer bundle:
-
-```bash
-mast-freegsnke reviewer-pack --run SHOTS/30201
-```
-
----
-
-## Configuration
-
-Canonical config: [`configs/default.json`](configs/default.json)
-
-| Key | Purpose |
-|-----|---------|
-| `level2_s3_prefix` | `s3://mast/level2/shots` |
-| `s3_endpoint_url` | `https://s3.echo.stfc.ac.uk` |
-| `s3_no_sign_request` | `true` for public Level-2 |
-| `machine_authority_dir` | `machine_authority` |
-| `coil_map_path` | `configs/coil_map.json` |
-| `execute_freegsnke` | `true` / `false` |
-| `freegsnke_run_mode` | `inverse` · `forward` · `both` |
-| `freegsnke_python` | Path to FreeGSNKE Python 3.11 interpreter |
-| `allow_cache_reuse` | `true`: reuse non-empty `data_cache/shot_<N>/<group>.zarr` (skips network when all groups cached) |
-| `batch_abort_on_failure` | `true`: stop a multi-shot batch at the first failing shot |
-
-Rebuild machine authority from a cached shot (when refreshing geometry):
-
-```bash
-python scripts/build_authority_from_fairmast.py \
-  --shot-cache data_cache/shot_30201 --out machine_authority --shot 30201
-python scripts/fetch_freegsnke_machine.py
-```
-
----
-
-## CLI reference
-
-```bash
-mast-freegsnke doctor              # environment + authority health
-mast-freegsnke check --shot N      # shot + Level-2 group availability
-mast-freegsnke run --shot N        # full pipeline
-mast-freegsnke machine-validate    # machine authority
-mast-freegsnke coilmap-validate    # coil map
-mast-freegsnke contracts-validate  # diagnostic contracts
-mast-freegsnke reviewer-pack       # export REVIEWER_PACK/
-mast-freegsnke replay-run          # hash-verified replay (v8)
-```
-
-Advanced workflows (robustness DOE, physics audit, atlas compare, forensics) are documented under [`examples/`](examples/) and [`CHANGELOG.md`](CHANGELOG.md).
-
----
-
-## Repository layout
-
-```text
-├── configs/                 # default.json, coil_map.json, examples
-├── machine_authority/       # probe/coil geometry + FreeGSNKE pickles
-├── src/mast_freegsnke/      # pipeline package
-├── scripts/                 # authority build, s5cmd helper, fetch machine
-├── templates/               # FreeGSNKE runner templates
-├── examples/                # progressive walkthroughs
-├── tests/
-├── run_pipeline.cmd /.sh    # interactive shot-only launcher
-└── requirements-freegsnke.txt
-```
-
----
-
-## Troubleshooting
-
-| Symptom | Fix |
-|---------|-----|
-| `s5cmd` not found | `python scripts/ensure_s5cmd.py` or set `s5cmd_path` |
-| FreeGSNKE import / SciPy build fails | Use a **Python 3.11** venv; point `freegsnke_python` at it |
-| Machine authority rejected | Rebuild from FAIR-MAST; templates with `CHANGE_ME` are fail-closed |
-| Empty download | Confirm endpoint/prefix; doctor runs shot-scoped S3 preflight |
-| Run failure | Attach `SHOTS/<N>/EXCEPTION_TRACEBACK.txt` and `logs/run_*.log` |
-
----
-
-## Reproducibility
-
-Each run records:
-
-- Stage outcomes in `manifest.json`
-- SHA-256 artifact hashes under `provenance/`
-- Environment fingerprint and `pip freeze`
-- Snapshotted machine authority and execution numerics
-
-Cite this repository and include the run’s `manifest.json`, authorities, and contracts in derived publications.
-
----
-
-## License & citation
-
-See repository license terms. Package version: **10.5.0**.
-
-Full history: [`CHANGELOG.md`](CHANGELOG.md)
+© 2026 Afshin Arjhangmehr. See repository LICENSE if present.

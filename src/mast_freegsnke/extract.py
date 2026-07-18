@@ -110,6 +110,46 @@ class Extractor:
         # Do NOT invent NaN placeholder pf_currents.csv. Production mapping must come from
         # explicit coil_map authority (pipeline apply_coil_map stage).
 
+        # PF voltages: coil_voltage (voltage_channel, time) with verbatim channel labels.
+        # Units from zarr attrs (FAIR-MAST declares V) — never assumed.
+        voltage_meta: Dict[str, Any] = {
+            "csv": None,
+            "channels": [],
+            "units": None,
+            "attrs": {},
+            "present": False,
+        }
+        if "coil_voltage" in ds_pf and "voltage_channel" in ds_pf.coords:
+            v_channels = [str(x) for x in ds_pf["voltage_channel"].values.tolist()]
+            v_arr = np.asarray(ds_pf["coil_voltage"].values, dtype=float)
+            v_time = ds_pf[t_pf].values.astype(float)
+            volt_df = pd.DataFrame({"time": v_time})
+            if v_arr.ndim == 2 and v_arr.shape[1] == volt_df.shape[0]:
+                for i, ch in enumerate(v_channels):
+                    volt_df[ch] = v_arr[i, :].astype(float)
+            elif v_arr.ndim == 2 and v_arr.shape[0] == volt_df.shape[0]:
+                for i, ch in enumerate(v_channels):
+                    volt_df[ch] = v_arr[:, i].astype(float)
+            else:
+                raise RuntimeError(
+                    f"Unexpected coil_voltage shape {v_arr.shape} vs time length {volt_df.shape[0]}"
+                )
+            volt_path = out_inputs_dir / "pf_voltages_raw.csv"
+            volt_df.to_csv(volt_path, index=False)
+            v_attrs = {str(k): (str(v) if not isinstance(v, (int, float, bool, type(None))) else v)
+                       for k, v in dict(ds_pf["coil_voltage"].attrs).items()}
+            units = ds_pf["coil_voltage"].attrs.get("units")
+            voltage_meta = {
+                "csv": "inputs/pf_voltages_raw.csv",
+                "channels": v_channels,
+                "units": (str(units) if units is not None else None),
+                "attrs": v_attrs,
+                "present": True,
+                "n_times": int(volt_df.shape[0]),
+            }
+        else:
+            voltage_meta["note"] = "coil_voltage or voltage_channel missing from pf_active.zarr"
+
         mag_df = pd.DataFrame({"time": t})
         flux_vars = [k for k in ds_mag.data_vars if ("flux" in k.lower() or "loop" in k.lower())]
         pickup_vars = [k for k in ds_mag.data_vars if ("pickup" in k.lower() or "probe" in k.lower() or "b_" in k.lower())]
@@ -136,6 +176,7 @@ class Extractor:
             "ip_max": ip_max,
             "ip_var": ip_var,
             "pf_vars_exported": exported_pf,
+            "pf_voltages": voltage_meta,
             "flux_vars_found": flux_vars[:80],
             "pickup_vars_found": pickup_vars[:160],
             "probe_families": probe_families,

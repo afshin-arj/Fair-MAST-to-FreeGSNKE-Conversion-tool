@@ -280,6 +280,56 @@ def main(argv=None) -> int:
         else:
             print("[WARN] coil_map_path not set")
 
+        # Voltage map (required when execute_evolutive)
+        if cfg.voltage_map_path:
+            from .voltage_map import load_voltage_map, validate_voltage_map
+
+            vmp = Path(cfg.voltage_map_path)
+            if not vmp.is_absolute():
+                vmp = (Path.cwd() / vmp).resolve()
+            if not vmp.exists():
+                print(f"[FAIL] voltage_map_path not found: {vmp}")
+                ok = False
+            else:
+                vm = load_voltage_map(vmp)
+                vrep = validate_voltage_map(vm)
+                if not vrep.get("ok"):
+                    print(f"[FAIL] voltage_map invalid: {vrep.get('errors')}")
+                    ok = False
+                else:
+                    print(f"[OK] voltage_map: {vrep.get('n_circuits')} circuits")
+        elif cfg.execute_evolutive:
+            print("[FAIL] voltage_map_path required when execute_evolutive=true")
+            ok = False
+        else:
+            print("[WARN] voltage_map_path not set")
+
+        # Evolutive authority (required when execute_evolutive)
+        if cfg.evolutive_authority_path:
+            from .evolutive_authority import load_evolutive_authority
+
+            eap = Path(cfg.evolutive_authority_path)
+            if not eap.is_absolute():
+                eap = (Path.cwd() / eap).resolve()
+            if not eap.exists():
+                print(f"[FAIL] evolutive_authority_path not found: {eap}")
+                ok = False
+            else:
+                try:
+                    ea = load_evolutive_authority(eap)
+                    print(
+                        f"[OK] evolutive_authority: n_steps={ea.n_steps} "
+                        f"dt={ea.full_timestep_s}s linear_only={ea.linear_only}"
+                    )
+                except Exception as e:
+                    print(f"[FAIL] evolutive_authority invalid: {e}")
+                    ok = False
+        elif cfg.execute_evolutive:
+            print("[FAIL] evolutive_authority_path required when execute_evolutive=true")
+            ok = False
+        else:
+            print("[WARN] evolutive_authority_path not set")
+
         # Diagnostic calibration (optional; empty channels = awaiting)
         if cfg.diagnostic_calibration_path:
             from .diagnostic_calibration import (

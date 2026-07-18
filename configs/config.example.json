@@ -4,11 +4,14 @@
   "batch_abort_on_failure": false,
   "cache_dir": "data_cache",
   "coil_map_path": null,
+  "voltage_map_path": null,
+  "evolutive_authority_path": null,
   "diagnostic_contracts_path": null,
   "diagnostic_calibration_path": null,
   "diagnostics_compare": [],
   "enable_contract_metrics": false,
   "execute_freegsnke": false,
+  "execute_evolutive": false,
   "formed_plasma_frac": 0.8,
   "freegsnke_python": null,
   "freegsnke_run_mode": "none",
@@ -21,7 +24,7 @@
     "pf_active",
     "magnetics"
   ],
-  "runs_dir": "SHOTS",
+  "runs_dir": "SHOT",
   "s3_layout_patterns": [
     "{prefix}/{group}/shot_{shot}.zarr",
     "{prefix}/shot_{shot}/{group}.zarr",

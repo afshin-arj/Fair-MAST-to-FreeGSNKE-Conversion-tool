@@ -39,6 +39,14 @@ from .diagnostic_calibration import (
     snapshot_diagnostic_calibration,
 )
 from .coil_map import apply_coil_map, load_coil_map, validate_coil_map, write_resolved_coil_map
+from .voltage_map import (
+    apply_voltage_map,
+    load_voltage_map,
+    snapshot_voltage_map_hash,
+    validate_voltage_map,
+)
+from .evolutive_authority import load_evolutive_authority, write_evolutive_authority
+from .shot_summary import write_shot_expert_overlay
 from .synthetic_extract import extract_synthetic_by_contracts
 from .metrics import compare_from_contracts
 from .execution_authority import write_execution_authority
@@ -113,7 +121,7 @@ class ShotPipeline:
         status = "started"
 
         ensure_dir(self.cfg.runs_dir)
-        # User-facing layout: SHOTS/<shot> (e.g. SHOTS/30201), not runs/shot_<N>.
+        # User-facing layout: SHOT/<shot> (e.g. SHOT/30201); legacy SHOTS/ still supported if configured.
         run_dir = ensure_dir(run_dir_for_shot(self.cfg, shot))
         prior_run_archived_to = _archive_prior_run(run_dir)
         inputs_dir = ensure_dir(run_dir / "inputs")
@@ -356,6 +364,55 @@ class ShotPipeline:
                 else:
                     _stage("coil_map", True, note="no_coil_map_path")
 
+            # Voltage-map authority → pf_voltages.csv (binding for evolutive)
+            raw_v = inputs_dir / "pf_voltages_raw.csv"
+            vm_path = _resolve_config_path(self.cfg.voltage_map_path, repo_root)
+            if vm_path is not None:
+                try:
+                    vmap = load_voltage_map(vm_path)
+                    vm_report = validate_voltage_map(vmap)
+                    snapshot_voltage_map_hash(vmap, run_dir)
+                    if not vm_report.get("ok", False):
+                        blocking_errors.append(
+                            "voltage_map_invalid: " + "; ".join(vm_report.get("errors", []))
+                        )
+                        _stage("voltage_map", False, errors=vm_report.get("errors"))
+                    elif not raw_v.exists():
+                        if self.cfg.execute_evolutive:
+                            blocking_errors.append(
+                                "voltage_map_apply_failed: missing inputs/pf_voltages_raw.csv "
+                                "(FAIR-MAST coil_voltage not extracted; cannot run evolutive)"
+                            )
+                            _stage("voltage_map_apply", False, note="missing_pf_voltages_raw")
+                        else:
+                            _stage("voltage_map", True, note="map_ok_but_no_raw_voltages")
+                    else:
+                        v_apply = apply_voltage_map(raw_v, inputs_dir / "pf_voltages.csv", vmap)
+                        write_json(inputs_dir / "voltage_map_apply_report.json", v_apply)
+                        if not v_apply.get("ok", False):
+                            blocking_errors.append(
+                                "voltage_map_apply_failed: " + "; ".join(v_apply.get("errors", []))
+                            )
+                            _stage("voltage_map_apply", False, errors=v_apply.get("errors"))
+                        else:
+                            _stage(
+                                "voltage_map_apply",
+                                True,
+                                n_mapped=v_apply.get("n_mapped"),
+                                n_default_zero=v_apply.get("n_default_zero"),
+                            )
+                except Exception as e:
+                    blocking_errors.append(f"voltage_map_failed: {type(e).__name__}: {e}")
+                    _stage("voltage_map", False, error=str(e))
+            else:
+                if self.cfg.execute_evolutive:
+                    blocking_errors.append(
+                        "voltage_map_required_for_evolutive: set voltage_map_path in config"
+                    )
+                    _stage("voltage_map", False, note="missing_voltage_map_path")
+                else:
+                    _stage("voltage_map", True, note="no_voltage_map_path")
+
             # Generate run scripts/stubs
             gen = ScriptGenerator(templates_dir=self.templates_dir)
             gen.generate(run_dir=run_dir, machine_dir=machine_dir, formed_frac=self.cfg.formed_plasma_frac)
@@ -369,6 +426,26 @@ class ShotPipeline:
             except Exception as e:
                 _stage("execution_authority", False, error=str(e))
                 blocking_errors.append(f"execution_authority_write_failed:{e}")
+
+            # Evolutive authority snapshot (fail-closed when execute_evolutive)
+            if self.cfg.execute_evolutive:
+                evo_path = _resolve_config_path(self.cfg.evolutive_authority_path, repo_root)
+                if evo_path is None or not evo_path.exists():
+                    blocking_errors.append(
+                        "evolutive_authority_required: set evolutive_authority_path "
+                        "(all nl_solver numerics must be declared; no hidden defaults)"
+                    )
+                    _stage("evolutive_authority", False, note="missing_path")
+                else:
+                    try:
+                        evo_auth = load_evolutive_authority(evo_path)
+                        evo_root = write_evolutive_authority(inputs_dir, evo_auth)
+                        _stage("evolutive_authority", True, root=str(evo_root))
+                    except Exception as e:
+                        blocking_errors.append(f"evolutive_authority_failed: {type(e).__name__}: {e}")
+                        _stage("evolutive_authority", False, error=str(e))
+            else:
+                _stage("evolutive_authority", True, note="execute_evolutive=false")
 
             # Time window: override > consensus > single-signal inference
             window_override: Optional[Dict[str, Any]] = None
@@ -504,6 +581,58 @@ class ShotPipeline:
                     write_execution_report(run_dir, exec_summary)
                     _stage("freegsnke_execute", all(bool(x.get("ok")) for x in results) if results else False, n_scripts=len(results))
 
+                    # Evolutive forward (FAIR-MAST voltages) after successful inverse IC
+                    if self.cfg.execute_evolutive:
+                        evo_script = run_dir / "evolutive_run.py"
+                        inv_ok = any(
+                            str(x.get("script")) == "inverse_run.py" and bool(x.get("ok"))
+                            for x in results
+                        )
+                        if not evo_script.exists():
+                            blocking_errors.append("missing_evolutive_run.py")
+                            _stage("evolutive_execute", False, error="missing_script")
+                        elif not inv_ok:
+                            blocking_errors.append(
+                                "evolutive_requires_successful_inverse: inverse_dump.pkl IC missing/failed"
+                            )
+                            _stage("evolutive_execute", False, note="inverse_not_ok")
+                        elif not (inputs_dir / "pf_voltages.csv").exists():
+                            blocking_errors.append(
+                                "evolutive_requires_pf_voltages: inputs/pf_voltages.csv missing"
+                            )
+                            _stage("evolutive_execute", False, note="missing_pf_voltages")
+                        else:
+                            # Prefer evolutive_authority script_timeout_s when declared
+                            evo_timeout = self.cfg.freegsnke_script_timeout_s
+                            evo_auth_path = inputs_dir / "evolutive_authority" / "evolutive_authority.json"
+                            if evo_auth_path.exists():
+                                try:
+                                    evo_timeout = float(
+                                        json.loads(evo_auth_path.read_text(encoding="utf-8")).get(
+                                            "script_timeout_s", evo_timeout
+                                        )
+                                    )
+                                except Exception:
+                                    pass
+                            evo_runner = FreeGSNKERunner(
+                                python_exe=self.cfg.freegsnke_python,
+                                timeout_s=evo_timeout,
+                            )
+                            er = evo_runner.run_script(evo_script, run_dir=run_dir, label="evolutive")
+                            results.append(er.__dict__)
+                            exec_summary["results"] = results
+                            exec_summary["evolutive"] = er.__dict__
+                            write_execution_report(run_dir, exec_summary)
+                            if not er.ok:
+                                blocking_errors.append(
+                                    f"freegsnke_evolutive_failed (see {er.stderr_path})"
+                                )
+                                _stage("evolutive_execute", False, error_hint=er.error_hint)
+                            else:
+                                _stage("evolutive_execute", True, duration_s=er.duration_s)
+                    else:
+                        _stage("evolutive_execute", True, note="execute_evolutive=false")
+
                     # Contract-driven extraction + residual metrics (deterministic authority)
                     if self.cfg.enable_contract_metrics and self.cfg.diagnostic_contracts_path:
                         try:
@@ -587,6 +716,14 @@ class ShotPipeline:
                     "diagnostic_calibration_apply": calibration_apply,
                 }
             )
+
+            # Expert-facing overlay (00_README + 01_summary); operational paths unchanged
+            try:
+                base_for_summary = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+                overlay = write_shot_expert_overlay(run_dir, shot=shot, manifest=base_for_summary)
+                _stage("shot_expert_overlay", True, **overlay)
+            except Exception as e:
+                _stage("shot_expert_overlay", False, error=str(e))
 
             # Reproducibility lock (hash run artifacts + environment capture) and manifest v2.
             try:

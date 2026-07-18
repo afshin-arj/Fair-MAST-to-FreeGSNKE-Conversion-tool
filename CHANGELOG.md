@@ -1,3 +1,10 @@
+## 11.0.0 — Evolutive forward + SHOT/ layout + repo rename
+- **Evolutive forward from FAIR-MAST voltages:** extract `coil_voltage` → `inputs/pf_voltages_raw.csv` (units V from zarr attrs); binding `configs/voltage_map.json` maps `p1/p2/p4/p5` onto FreeGSNKE active circuit order (`Solenoid`, `PX`, …, `P4`, `P5`, `P6`) with explicit `default_V=0` for circuits without Level-2 voltage channels; snapshot+hash into `contracts/`.
+- New `templates/evolutive_run.py.tpl` drives FreeGSNKE `nl_solver` / `initialize_from_ICs` / `nlstepper(active_voltage_vec=…)` using mapped voltages; numerics from fail-closed `configs/evolutive_authority.json` (default short window-friendly `n_steps=10`, `full_timestep_s=0.02`, `linear_only=true`). Profile parameters held from inverse IC — never invented.
+- Happy path: `execute_evolutive: true` in `configs/default.json` (no new interactive prompts). Doctor validates voltage_map + evolutive_authority.
+- **SHOT/<N>/** default `runs_dir` (was `SHOTS/`); expert overlay `00_README.txt` + `01_summary/SUMMARY.md` while keeping operational `inputs/` / `manifest.json` paths stable. `.gitignore` covers both `SHOT/` and `SHOTS/`.
+- GitHub repo renamed to **fair-mast-freegsnke**; README rewritten with Mermaid diagrams; version **11.0.0**.
+
 ## 10.6.0 — Optional diagnostic calibration authority (mirnov/saddle/omaha)
 - Convert mirnov / saddle / omaha from a hard forever-block into an **explicit optional authority**: `configs/diagnostic_calibration.json` ships with `status=awaiting_authority` and empty `channels` (no fabricated V→T / V→Wb numbers). Config key `diagnostic_calibration_path` points at it by default.
 - Schema: per-channel `{source_variable, exp_column, units_in, units_out, scale, sign, offset?, source, notes, synthesize?, syn_probe?}` plus optional `unit_resolution` to resolve units-vs-label contradictions **only** via explicit declaration (never silent heuristics). Snapshot + SHA-256 into `SHOTS/<N>/contracts/`.

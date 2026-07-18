@@ -23,7 +23,7 @@ No interactive prompts for config paths, geometry paths, execute y/n, or metrics
 | `pipeline-orchestrator` | Implement or fix shot-only end-to-end automation |
 | `authority-auditor` | Find philosophy violations (silent defaults, unwired authorities) |
 | `freegsnke-integrator` | Wire FreeGSNKE execution, templates, introspection |
-| `run-doctor` | Diagnose a failed `SHOTS/<N>/` |
+| `run-doctor` | Diagnose a failed `SHOT/<N>/` |
 
 ## Skills
 

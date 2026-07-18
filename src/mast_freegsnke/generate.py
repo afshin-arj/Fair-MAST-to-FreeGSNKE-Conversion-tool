@@ -103,9 +103,13 @@ class ScriptGenerator:
 
         inv_tpl = (self.templates_dir/"inverse_run.py.tpl").read_text()
         fwd_tpl = (self.templates_dir/"forward_run.py.tpl").read_text()
+        evo_tpl_path = self.templates_dir / "evolutive_run.py.tpl"
+        evo_tpl = evo_tpl_path.read_text() if evo_tpl_path.exists() else None
 
         (run_dir/"inverse_run.py").write_text(self._render_template(inv_tpl, machine_dir=machine_dir, formed_frac=formed_frac))
         (run_dir/"forward_run.py").write_text(self._render_template(fwd_tpl, machine_dir=machine_dir))
+        if evo_tpl is not None:
+            (run_dir/"evolutive_run.py").write_text(self._render_template(evo_tpl, machine_dir=machine_dir))
 
         # Suggest-only helper (never applied automatically).
         (run_dir/"suggest_pf_map.py").write_text(SUGGEST_PF_HELPER)
@@ -115,6 +119,8 @@ class ScriptGenerator:
         try:
             (run_dir/"inverse_run.py").chmod(0o755)
             (run_dir/"forward_run.py").chmod(0o755)
+            if evo_tpl is not None:
+                (run_dir/"evolutive_run.py").chmod(0o755)
             (run_dir/"suggest_pf_map.py").chmod(0o755)
         except Exception:
             pass
@@ -131,6 +137,9 @@ class ScriptGenerator:
             "1.5) Review execution-state authority (NO hidden defaults):\n"
             "     cat inputs/execution_authority/execution_authority_bundle.json\n"
             "   Edit it if you want to change grid, profiles, boundary constraints, or solver tolerances.\n\n"
+            "1.6) Evolutive authority (when execute_evolutive):\n"
+            "     cat inputs/evolutive_authority/evolutive_authority.json\n"
+            "   Mapped voltages: inputs/pf_voltages.csv (from voltage_map + pf_voltages_raw.csv).\n\n"
             "2) PF currents must come from coil_map authority (pipeline stage apply_coil_map).\n"
             "   Optional suggest-only helper (does NOT write production CSVs):\n"
             "     python suggest_pf_map.py\n\n"
@@ -139,5 +148,7 @@ class ScriptGenerator:
             "4) Run inverse solve:\n"
             "     python inverse_run.py\n\n"
             "5) Run forward replay:\n"
-            "     python forward_run.py\n"
+            "     python forward_run.py\n\n"
+            "6) Run evolutive forward (FAIR-MAST voltages; requires inverse_dump.pkl):\n"
+            "     python evolutive_run.py\n"
         )

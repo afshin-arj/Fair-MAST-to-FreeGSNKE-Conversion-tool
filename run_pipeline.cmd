@@ -5,7 +5,7 @@ REM ---------------------------------------------------------------------------
 REM MAST -> FreeGSNKE Pipeline launcher (Windows)
 REM - Creates/uses .venv
 REM - Installs/updates package + optional extras
-REM - Runs interactive shot workflow (one or more shots; outputs under SHOTS\<N>)
+REM - Runs interactive shot workflow (one or more SHOT; outputs under SHOT\<N>)
 REM - Captures full log to logs\run_<timestamp>.log (PowerShell Transcript; preserves stdin)
 REM - Always pauses on exit (success or failure) unless RUN_PIPELINE_NO_PAUSE=1
 REM
@@ -153,7 +153,7 @@ set "RC=%ERRORLEVEL%"
 echo.
 echo [INFO] Completed with exit code %RC%
 echo [INFO] Log: %LOG_FILE%
-echo [INFO] Shot outputs: %CD%\SHOTS\<shot_number>
+echo [INFO] Shot outputs: %CD%\SHOT\<shot_number>
 
 REM Always pause (success or failure) so the console can be read before the
 REM window closes. Skip via RUN_PIPELINE_NO_PAUSE=1 (CI / automation).

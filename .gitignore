@@ -19,6 +19,7 @@ dist/
 # Local run outputs
 runs/
 SHOTS/
+SHOT/
 cache/
 data_cache/
 tools/

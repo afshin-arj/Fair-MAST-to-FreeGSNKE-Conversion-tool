@@ -1,0 +1,14 @@
+{
+  "authority_name": "freegsnke_evolutive_authority",
+  "authority_version": "11.0.0",
+  "full_timestep_s": 0.02,
+  "n_steps": 2,
+  "linear_only": true,
+  "plasma_resistivity_ohm_m": 1.0e-6,
+  "max_solving_iterations": 50,
+  "max_mode_frequency": 316.22776601683796,
+  "min_dIy_dI": 0.01,
+  "script_timeout_s": 1800.0,
+  "snapshot_equilibria_every_n": 0,
+  "notes": "Declared evolutive numerics for FreeGSNKE nl_solver/nlstepper. Default linear_only=true, n_steps=2, full_timestep_s=0.02 and min_dIy_dI=0.01 keep happy-path/smoke finite on MAST-U-like machines (longer windows can hang after linearization departure). snapshot_equilibria_every_n=0 disables mid-run PNG snapshots. Profile alpha_m/alpha_n/paxis/fvac are held from the inverse IC — never invented. Missing FAIR-MAST voltage channels use voltage_map default_V=0 (explicit zero-drive)."
+}
