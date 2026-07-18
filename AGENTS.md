@@ -9,9 +9,9 @@ No interactive prompts for config paths, geometry paths, execute y/n, or metrics
 ## Design laws (never violate)
 
 1. **Determinism** — no hidden optimization, smoothing, or silent conventions.
-2. **Explicit authority** — machine, coil map, contracts, execution numerics are declared JSON, snapshotted, hashed.
+2. **Explicit authority** — machine, coil map, contracts, diagnostic calibration, execution numerics are declared JSON, snapshotted, hashed.
 3. **Fail fast** — missing/invalid authority is a blocking error, not a soft continue that invents metrology.
-4. **Do not invent geometry** — templates must not look like real MAST probes.
+4. **Do not invent geometry** — templates must not look like real MAST probes; do not invent V→T / V→Wb calibration factors (use optional `diagnostic_calibration` authority when real factors exist).
 5. **One binding mapping path** — coil_map authority drives PF mapping; heuristic `pf_map_rules` / auto-token scoring must not write production inputs silently.
 6. **Manifest everything** — every stage outcome goes into `manifest.json` / provenance.
 

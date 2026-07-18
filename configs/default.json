@@ -15,6 +15,7 @@
   "freegsnke_python": ".venv-freegsnke/Scripts/python.exe",
   "diagnostics_compare": [],
   "diagnostic_contracts_path": "configs/diagnostic_contracts.json",
+  "diagnostic_calibration_path": "configs/diagnostic_calibration.json",
   "coil_map_path": "configs/coil_map.json",
   "enable_contract_metrics": true,
   "metrics_n_times": 5,

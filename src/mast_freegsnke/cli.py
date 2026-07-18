@@ -280,6 +280,42 @@ def main(argv=None) -> int:
         else:
             print("[WARN] coil_map_path not set")
 
+        # Diagnostic calibration (optional; empty channels = awaiting)
+        if cfg.diagnostic_calibration_path:
+            from .diagnostic_calibration import (
+                CalibrationError,
+                load_diagnostic_calibration,
+                validate_diagnostic_calibration,
+                calibration_status_line,
+            )
+
+            calp = Path(cfg.diagnostic_calibration_path)
+            if not calp.is_absolute():
+                calp = (Path.cwd() / calp).resolve()
+            if not calp.exists():
+                print(f"[FAIL] diagnostic_calibration_path not found: {calp}")
+                ok = False
+            else:
+                try:
+                    cal = load_diagnostic_calibration(calp)
+                    crep = validate_diagnostic_calibration(cal)
+                    if not crep.get("ok"):
+                        print(f"[FAIL] diagnostic_calibration invalid: {crep.get('errors')}")
+                        ok = False
+                    else:
+                        print(
+                            calibration_status_line(
+                                path=cfg.diagnostic_calibration_path, cal=cal
+                            )
+                        )
+                except CalibrationError as e:
+                    print(f"[FAIL] diagnostic_calibration: {e}")
+                    ok = False
+        else:
+            from .diagnostic_calibration import calibration_status_line
+
+            print(calibration_status_line(path=None))
+
         # FreeGSNKE python
         if cfg.execute_freegsnke:
             from .freegsnke_runner import resolve_freegsnke_python
@@ -659,6 +695,9 @@ def main(argv=None) -> int:
         status_line = contract_metrics_status_line(cfg)
         if status_line:
             print(status_line)
+        from .contracts_status import diagnostic_calibration_status_line
+
+        print(diagnostic_calibration_status_line(cfg, cwd=Path.cwd()))
 
         pipe = ShotPipeline(cfg=cfg, templates_dir=templates_dir)
         # Resolve machine dir: CLI --machine wins; else config.machine_authority_dir.

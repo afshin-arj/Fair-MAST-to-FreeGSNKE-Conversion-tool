@@ -5,6 +5,7 @@
   "cache_dir": "data_cache",
   "coil_map_path": null,
   "diagnostic_contracts_path": null,
+  "diagnostic_calibration_path": null,
   "diagnostics_compare": [],
   "enable_contract_metrics": false,
   "execute_freegsnke": false,

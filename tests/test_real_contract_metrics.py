@@ -371,12 +371,14 @@ def test_extract_audit_other_timebase_families(tmp_path: Path) -> None:
     assert cc["units"] == "T" and cc["label"] == "Tesla/sec"
     assert cc["timebase"] == "time_mirnov"
     assert any("unit_metadata_contradiction" in r for r in cc["contract_exclusion_reasons"])
-    assert any("no_freegsnke_synthesizer" in r for r in cc["contract_exclusion_reasons"])
+    assert any("awaiting_optional_diagnostic_calibration" in r for r in cc["contract_exclusion_reasons"])
+    assert any("freegsnke_point_pickup_synth_gated" in r for r in cc["contract_exclusion_reasons"])
 
     # OMV voltage: raw volts, no published calibration.
     omv = variables["b_field_pol_probe_omv_voltage"]
     assert omv["units"] == "V"
     assert any("raw_voltage_units_V" in r for r in omv["contract_exclusion_reasons"])
+    assert any("awaiting_optional_diagnostic_calibration" in r for r in omv["contract_exclusion_reasons"])
 
     # Traces written verbatim on the native timebase, channel names verbatim.
     cc_df = pd.read_csv(out / "audit_other_timebase" / "b_field_pol_probe_cc_field.csv")

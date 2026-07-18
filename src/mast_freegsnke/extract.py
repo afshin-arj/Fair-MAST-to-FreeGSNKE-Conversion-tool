@@ -226,26 +226,27 @@ class Extractor:
 
     @staticmethod
     def _audit_other_timebase(ds_mag, t_mag: str, out_inputs_dir: Path) -> Dict[str, Any]:
-        """Extract probe families on OTHER timebases verbatim, for audit only.
+        """Extract probe families on OTHER timebases verbatim, for audit (default).
 
-        Honest policy (authority-hardening): these families are NEVER contracted
-        for residual scoring, because FAIR-MAST Level-2 attrs give no explicit
-        calibration path and FreeGSNKE's Probes API cannot synthesize them.
+        Honest policy (authority-hardening, v10.6.0): these families are NOT
+        contracted by default. Production calibrated CSVs + optional contracts
+        require an explicit ``diagnostic_calibration`` authority (never invented
+        V→T / V→Wb). Until that authority provides per-channel entries, traces
+        stay under inputs/audit_other_timebase/ only.
+
         Evidence recorded per variable (from the shot's own zarr attrs):
           - units == 'V'  -> raw digitizer volts; no published V->T / V->Wb
-            sensitivity, gain, area or turns factors anywhere in Level-2 attrs
-            (geometry attrs state calibration: "None"; omaha label is 'arb').
+            sensitivity in Level-2 attrs (geometry attrs: calibration "None";
+            omaha label 'arb'). Optional calibration authority can supply scale.
           - units vs label contradiction (e.g. units='T' vs label='Tesla/sec'
-            for mirnov arrays, units='T' vs label='mT' for saddle coils):
-            the unit metadata is self-inconsistent, so an identity contract
-            would assert a calibration FAIR-MAST itself does not assert.
+            for mirnov, units='T' vs label='mT' for saddle): resolved ONLY via
+            explicit unit_resolution in diagnostic_calibration — never silently.
           - FreeGSNKE 3.0.1 Probes synthesizes only point flux loops (psi, Wb)
-            and point pickup coils (B.n, T); it has no model for AC/dB-dt
-            fluctuation signals nor for saddle-coil surface flux (28-point
-            3-D polyline geometry), so no synthetic counterpart exists.
+            and point pickup coils (B.n, T); no saddle surface-flux model.
+            OMV/CC_MV point probes exist in machine_authority geometry and may
+            be synthesized after calibration to T with synthesize=true.
 
-        The traces themselves are written verbatim (native timebase, channel
-        names verbatim) so reviewers can audit them; nothing is invented.
+        Traces are written verbatim (native timebase, channel names verbatim).
         """
         import numpy as np
         import pandas as pd
@@ -254,7 +255,8 @@ class Extractor:
         out: Dict[str, Any] = {
             "convention": (
                 "inputs/audit_other_timebase/<variable>.csv, columns = time,<FAIR-MAST channel names verbatim>; "
-                "audit-only, excluded from residual contracts (see contract_exclusion_reasons per variable)"
+                "audit-only by default; promote via diagnostic_calibration authority "
+                "(see contract_exclusion_reasons / awaiting_optional_diagnostic_calibration_authority)"
             ),
             "variables": {},
         }
@@ -290,15 +292,41 @@ class Extractor:
 
             reasons = [
                 "not_on_shared_magnetics_timebase:" + str(tdim),
-                "no_freegsnke_synthesizer_for_family (Probes API supports only point flux loops and point pickups)",
+                "awaiting_optional_diagnostic_calibration_authority",
             ]
+            # Point-pickup families (OMV / CC mirnov) CAN use FreeGSNKE after
+            # calibration to T; saddle/omaha cannot without inventing geometry/models.
+            fam = str(k).lower()
+            if "saddle" in fam:
+                reasons.append(
+                    "no_freegsnke_saddle_synthesizer (28-point polyline path flux; "
+                    "calibrate for audit/future contracts only)"
+                )
+            elif "omaha" in fam:
+                reasons.append(
+                    "no_omaha_rz_in_machine_authority (cannot synthesize without inventing metrology; "
+                    "calibrate experimental only)"
+                )
+            elif "omv" in fam or ("_cc_" in fam and "ccbv" not in fam):
+                reasons.append(
+                    "freegsnke_point_pickup_synth_gated_on_diagnostic_calibration "
+                    "(geometry may exist; requires units_out=T + synthesize + syn_probe)"
+                )
+            else:
+                reasons.append(
+                    "no_freegsnke_synthesizer_for_family (Probes API supports only point flux loops and point pickups)"
+                )
             if units_s == "V":
                 reasons.append(
                     "raw_voltage_units_V_no_published_calibration_in_level2_attrs"
                     + (f" (label={label_s!r})" if label_s else "")
+                    + "; supply diagnostic_calibration.channels[].scale to promote"
                 )
             elif units_s is not None and label_s is not None and label_s not in (units_s, ""):
-                reasons.append(f"unit_metadata_contradiction:units={units_s!r},label={label_s!r}")
+                reasons.append(
+                    f"unit_metadata_contradiction:units={units_s!r},label={label_s!r}; "
+                    "resolve only via diagnostic_calibration.unit_resolution"
+                )
 
             audit_dir.mkdir(parents=True, exist_ok=True)
             data = {"time": t_native}

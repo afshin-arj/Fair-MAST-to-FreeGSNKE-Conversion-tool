@@ -41,6 +41,9 @@ class AppConfig:
 
     # Optional: path to diagnostic contracts authority JSON.
     diagnostic_contracts_path: Optional[str]
+    # Optional: path to diagnostic calibration authority (mirnov/saddle/omaha).
+    # Empty channels / awaiting_authority keeps those families audit-only.
+    diagnostic_calibration_path: Optional[str]
     # Optional: path to PF/coil mapping authority JSON.
     coil_map_path: Optional[str]
     # Enable contract-driven extraction + residual metrics (requires contracts).
@@ -97,6 +100,9 @@ class AppConfig:
 
         diagnostics_compare = list(obj.get("diagnostics_compare", []))
         diagnostic_contracts_path = (str(obj["diagnostic_contracts_path"]) if obj.get("diagnostic_contracts_path") else None)
+        diagnostic_calibration_path = (
+            str(obj["diagnostic_calibration_path"]) if obj.get("diagnostic_calibration_path") else None
+        )
         coil_map_path = (str(obj["coil_map_path"]) if obj.get("coil_map_path") else None)
         enable_contract_metrics = bool(obj.get("enable_contract_metrics", False))
 
@@ -142,6 +148,7 @@ class AppConfig:
             freegsnke_python=freegsnke_python,
             diagnostics_compare=diagnostics_compare,
             diagnostic_contracts_path=diagnostic_contracts_path,
+            diagnostic_calibration_path=diagnostic_calibration_path,
             coil_map_path=coil_map_path,
             enable_contract_metrics=enable_contract_metrics,
             machine_authority_dir=machine_authority_dir,

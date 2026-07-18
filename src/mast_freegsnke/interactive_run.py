@@ -13,7 +13,7 @@ from typing import List, Optional
 from . import cli
 from .batch import run_shot_batch
 from .config import AppConfig
-from .contracts_status import contract_metrics_status_line
+from .contracts_status import contract_metrics_status_line, diagnostic_calibration_status_line
 
 
 _SHOT_TOKEN = re.compile(r"^[0-9]+$")
@@ -88,6 +88,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     status_line = contract_metrics_status_line(cfg)
     if status_line:
         print(status_line)
+    print(diagnostic_calibration_status_line(cfg, cwd=config_path.parent if config_path.is_absolute() else Path.cwd()))
     print("")
 
     shots = _prompt_shot_list(

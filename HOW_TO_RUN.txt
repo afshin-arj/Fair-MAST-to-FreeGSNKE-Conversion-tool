@@ -125,17 +125,27 @@ contracts authority:
     blocking failure, never a fabricated zero. Real failures remain
     blocking when enable_contract_metrics=true.
 
-Excluded (honestly, with evidence): mirnov / saddle / omaha families.
-Level-2 attrs give no calibration path (raw volts with no published V->T /
-V->Wb factors; self-contradictory unit metadata such as units='T' vs
-label='Tesla/sec' or 'mT') and FreeGSNKE Probes synthesizes only point flux
-loops and point pickups (no dB/dt fluctuation or saddle surface-flux model).
-Their traces ARE extracted verbatim for audit under
+Excluded by default (honestly, with evidence): mirnov / saddle / omaha families.
+Level-2 attrs give no published V->T / V->Wb factors; some variables have
+self-contradictory unit metadata (units='T' vs label='Tesla/sec' or 'mT').
+Traces ARE extracted verbatim for audit under
 SHOTS/<N>/inputs/audit_other_timebase/ with per-variable evidence in
 extract_meta.json.
 
+Optional promotion (v10.6.0) — diagnostic calibration authority:
+  configs/diagnostic_calibration.json
+    status=awaiting_authority, channels={} by default (no invented scales).
+  Populate channels with explicit scale/sign/source (and unit_resolution
+  when resolving units-vs-label). Calibrated families write to
+  inputs/mirnov.csv | saddle.csv | omaha.csv. FreeGSNKE identity contracts
+  merge only for synthesize=true point pickups with units_out T|Wb and a
+  geometry syn_probe. Saddle has no FreeGSNKE synthesizer; OMAHA has no R/Z
+  in machine_authority. See configs/diagnostic_calibration.example.json.
+  Doctor / launcher print one status line for this authority.
+
 Validate without a run:
   mast-freegsnke contracts-validate --contracts configs/diagnostic_contracts.json
+  mast-freegsnke doctor --config configs/default.json
 
 Outputs (on a successful shot run):
   SHOTS/<N>/contracts/diagnostic_contracts.resolved.json

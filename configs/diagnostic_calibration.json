@@ -1,0 +1,37 @@
+{
+  "version": "1.0",
+  "status": "awaiting_authority",
+  "notes": "Optional diagnostic calibration authority (v10.6.0). channels is empty by default — mirnov/saddle/omaha stay audit-only under inputs/audit_other_timebase/ until an explicit per-channel entry is provided. NEVER invent V→T / V→Wb numbers. Each channel entry must include exp_column, source_variable, units_in, units_out, scale, sign, source, and notes; optional offset, production_column, synthesize, syn_probe. unit_resolution resolves units-vs-label contradictions only via explicit declaration. Synthesize=true is allowed only for mirnov/pickup point probes with units_out T|Wb and a geometry syn_probe (FreeGSNKE calculate_pickup_value). Saddle: no FreeGSNKE synthesizer (28-point polylines) — calibrate for audit/future only. OMAHA: no R/Z in machine_authority — calibrate experimental only until geometry is imported from FAIR-MAST.",
+  "calibratable_families": {
+    "mirnov": {
+      "source_variables": [
+        "b_field_pol_probe_omv_voltage",
+        "b_field_pol_probe_cc_field",
+        "b_field_tor_probe_cc_field"
+      ],
+      "production_csv": "inputs/mirnov.csv",
+      "freegsnke_synthesizer": "point_pickup_if_calibrated_to_T_and_geometry_syn_probe",
+      "geometry_notes": "OMV_* and CC_MV_* point probes exist in machine_authority/probe_geometry.json; OMV voltage channels need V→T; CC_*_field has units='T' vs label='Tesla/sec' (requires unit_resolution; equilibrium B·n synth is only honest if resolved_units=T and the signal is truly DC B, which Level-2 evidence does not support for CC mirnov).",
+      "awaiting": "explicit per-channel scale/sign/source (and unit_resolution where contradictory)"
+    },
+    "saddle": {
+      "source_variables": [
+        "b_field_tor_probe_saddle_voltage",
+        "b_field_tor_probe_saddle_field"
+      ],
+      "production_csv": "inputs/saddle.csv",
+      "freegsnke_synthesizer": null,
+      "awaiting": "explicit calibration; no FreeGSNKE saddle surface-flux synthesizer (path geometry is 28-point polylines — do not invent equivalent-point model)"
+    },
+    "omaha": {
+      "source_variables": [
+        "b_field_tor_probe_omaha_voltage"
+      ],
+      "production_csv": "inputs/omaha.csv",
+      "freegsnke_synthesizer": null,
+      "awaiting": "explicit V→T calibration AND R/Z geometry authority (fairmast_authority does not import omaha r/z; Level-2 has no omaha geometry family wired)"
+    }
+  },
+  "unit_resolution": {},
+  "channels": {}
+}

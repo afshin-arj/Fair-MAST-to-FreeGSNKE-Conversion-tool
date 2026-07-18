@@ -1,0 +1,70 @@
+{
+  "version": "1.0",
+  "status": "partial",
+  "notes": "EXAMPLE TEMPLATE ONLY — not wired by configs/default.json. Replace every scale/sign/source with real metrology authority before use. The numeric scale below is a SCHEMA ILLUSTRATION (1.0 identity after an explicit unit_resolution), not a published MAST V→T factor. Do not copy fabricated sensitivities into production.",
+  "calibratable_families": {
+    "mirnov": {
+      "source_variables": [
+        "b_field_pol_probe_omv_voltage",
+        "b_field_pol_probe_cc_field",
+        "b_field_tor_probe_cc_field"
+      ],
+      "production_csv": "inputs/mirnov.csv",
+      "freegsnke_synthesizer": "point_pickup_if_calibrated_to_T_and_geometry_syn_probe"
+    },
+    "saddle": {
+      "source_variables": [
+        "b_field_tor_probe_saddle_voltage",
+        "b_field_tor_probe_saddle_field"
+      ],
+      "production_csv": "inputs/saddle.csv",
+      "freegsnke_synthesizer": null
+    },
+    "omaha": {
+      "source_variables": [
+        "b_field_tor_probe_omaha_voltage"
+      ],
+      "production_csv": "inputs/omaha.csv",
+      "freegsnke_synthesizer": null
+    }
+  },
+  "unit_resolution": {
+    "b_field_pol_probe_cc_field": {
+      "resolved_units": "T/s",
+      "source": "EXAMPLE: FAIR-MAST Level-2 attrs units='T' vs label='Tesla/sec'; explicit authority must choose. This example chooses T/s (dB/dt) so FreeGSNKE equilibrium pickup synth must NOT be enabled.",
+      "notes": "When resolved_units is not T or Wb, synthesize must stay false."
+    }
+  },
+  "channels": {
+    "OMV_110_EXAMPLE": {
+      "family": "mirnov",
+      "source_variable": "b_field_pol_probe_omv_voltage",
+      "exp_column": "110",
+      "production_column": "OMV_110",
+      "units_in": "V",
+      "units_out": "T",
+      "scale": 1.0,
+      "sign": 1,
+      "offset": 0.0,
+      "synthesize": true,
+      "syn_probe": "OMV_110",
+      "syn_csv": "synthetic/synthetic_pickups.csv",
+      "dtype": "pickup",
+      "source": "EXAMPLE_PLACEHOLDER — replace with real calibration citation (memo/DOI/UDA table). scale=1.0 is NOT a real V→T factor.",
+      "notes": "Schema illustration: after a real V→T scale is provided, FreeGSNKE can synthesize OMV_110 via calculate_pickup_value (geometry already in machine_authority)."
+    },
+    "SADDLE_EXAMPLE_CALIBRATE_ONLY": {
+      "family": "saddle",
+      "source_variable": "b_field_tor_probe_saddle_voltage",
+      "exp_column": "EXAMPLE_CH",
+      "production_column": "SADDLE_EXAMPLE_CH",
+      "units_in": "V",
+      "units_out": "Wb",
+      "scale": 1.0,
+      "sign": 1,
+      "synthesize": false,
+      "source": "EXAMPLE_PLACEHOLDER — saddle has no FreeGSNKE synthesizer; calibrate for audit/future contracts only.",
+      "notes": "synthesize must remain false for saddle."
+    }
+  }
+}

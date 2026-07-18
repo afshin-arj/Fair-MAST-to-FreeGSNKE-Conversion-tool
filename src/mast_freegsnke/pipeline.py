@@ -30,6 +30,14 @@ from .diagnostic_contracts import (
     validate_contracts,
     write_resolved_contracts,
 )
+from .diagnostic_calibration import (
+    CalibrationError,
+    apply_diagnostic_calibration,
+    calibration_status_line,
+    load_diagnostic_calibration,
+    merge_calibration_contracts,
+    snapshot_diagnostic_calibration,
+)
 from .coil_map import apply_coil_map, load_coil_map, validate_coil_map, write_resolved_coil_map
 from .synthetic_extract import extract_synthetic_by_contracts
 from .metrics import compare_from_contracts
@@ -123,6 +131,8 @@ class ShotPipeline:
         # If present, it is validated and snapshotted into the run directory.
         machine_snapshot = None
         ma_root = None
+        calibration_snapshot = None
+        calibration_apply = None
         if self.cfg.machine_authority_dir:
             ma_root = Path(self.cfg.machine_authority_dir)
             if not ma_root.is_absolute():
@@ -264,6 +274,53 @@ class ShotPipeline:
                 _stage("extract_csv", False, error=str(e))
                 blocking_errors.append(f"extract_csv_failed: {e}")
             write_json(inputs_dir / "extract_meta.json", extract_meta)
+
+            # Optional diagnostic calibration (mirnov/saddle/omaha) — fail-closed, never invents
+            cal_path = _resolve_config_path(self.cfg.diagnostic_calibration_path, repo_root)
+            if cal_path is not None:
+                try:
+                    cal = load_diagnostic_calibration(cal_path)
+                    calibration_snapshot = snapshot_diagnostic_calibration(cal, run_dir)
+                    # extract_meta must exist before apply (units gate)
+                    calibration_apply = apply_diagnostic_calibration(inputs_dir, cal)
+                    if not calibration_apply.get("ok", False):
+                        blocking_errors.append(
+                            "diagnostic_calibration_apply_failed: "
+                            + "; ".join(calibration_apply.get("errors", []))
+                        )
+                        _stage(
+                            "diagnostic_calibration",
+                            False,
+                            errors=calibration_apply.get("errors"),
+                            status=cal.status,
+                        )
+                    else:
+                        _stage(
+                            "diagnostic_calibration",
+                            True,
+                            status=cal.status,
+                            n_calibrated=cal.n_calibrated,
+                            n_applied=len(calibration_apply.get("applied") or []),
+                            n_synthesizable=cal.n_synthesizable,
+                            banner=calibration_status_line(
+                                path=self.cfg.diagnostic_calibration_path,
+                                cal=cal,
+                                apply_report=calibration_apply,
+                            ),
+                        )
+                except CalibrationError as e:
+                    blocking_errors.append(f"diagnostic_calibration_invalid: {e}")
+                    _stage("diagnostic_calibration", False, error=str(e))
+                except Exception as e:
+                    blocking_errors.append(f"diagnostic_calibration_failed: {type(e).__name__}: {e}")
+                    _stage("diagnostic_calibration", False, error=str(e))
+            else:
+                _stage(
+                    "diagnostic_calibration",
+                    True,
+                    note="no_diagnostic_calibration_path",
+                    banner=calibration_status_line(path=None),
+                )
 
             # Coil-map authority → pf_currents.csv (binding; after extract, before execute)
             raw_pf = inputs_dir / "pf_active_raw.csv"
@@ -455,7 +512,16 @@ class ShotPipeline:
                                 raise FileNotFoundError(
                                     f"diagnostic_contracts_path not found: {self.cfg.diagnostic_contracts_path}"
                                 )
-                            contracts = resolve_contracts_for_run(cpath, run_dir)
+                            # Merge synthesizable calibration contracts (omit until authority present)
+                            contracts_path_for_run = cpath
+                            cal_path_m = _resolve_config_path(self.cfg.diagnostic_calibration_path, repo_root)
+                            if cal_path_m is not None and cal_path_m.exists():
+                                cal_m = load_diagnostic_calibration(cal_path_m)
+                                if cal_m.n_synthesizable > 0:
+                                    merged_path = run_dir / "contracts" / "diagnostic_contracts.merged.json"
+                                    merge_calibration_contracts(cpath, cal_m, out_path=merged_path)
+                                    contracts_path_for_run = merged_path
+                            contracts = resolve_contracts_for_run(contracts_path_for_run, run_dir)
                             # Require files when metrics enabled (fail-closed).
                             contracts_report = validate_contracts(contracts, require_files=True)
                             write_resolved_contracts(run_dir, contracts)
@@ -517,6 +583,8 @@ class ShotPipeline:
                     "freegsnke_execution": exec_summary,
                     "reconstruction_metrics": metrics_summary,
                     "machine_authority_snapshot": machine_snapshot,
+                    "diagnostic_calibration_snapshot": calibration_snapshot,
+                    "diagnostic_calibration_apply": calibration_apply,
                 }
             )
 

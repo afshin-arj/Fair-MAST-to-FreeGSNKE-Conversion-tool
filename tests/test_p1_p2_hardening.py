@@ -73,6 +73,7 @@ def _mk_cfg(tmp_path: Path, **over) -> AppConfig:
         freegsnke_python=None,
         diagnostics_compare=[],
         diagnostic_contracts_path=None,
+        diagnostic_calibration_path=None,
         coil_map_path=None,
         enable_contract_metrics=False,
         machine_authority_dir=None,
