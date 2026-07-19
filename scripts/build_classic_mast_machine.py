@@ -19,7 +19,7 @@ def main() -> int:
     ap.add_argument(
         "--shot-cache",
         default="data_cache/shot_30201",
-        help="FAIR-MAST shot cache directory (contains pf_active.zarr + magnetics.zarr)",
+        help="FAIR-MAST shot cache directory (contains pf_active.zarr + wall.zarr)",
     )
     ap.add_argument("--out", default="machine_authority", help="Output machine directory")
     ap.add_argument("--shot", type=int, default=None, help="Shot number for provenance")

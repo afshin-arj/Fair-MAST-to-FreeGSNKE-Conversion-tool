@@ -15,22 +15,58 @@
     "wall.pickle",
     "passive_coils.pickle"
   ],
+  "honest_limits": [
+    "Limiter/wall = FAIR-MAST wall.zarr EFIT limiter \u2260 surveyed CAD vessel",
+    "No FreeGSNKE passives: pf_passive geometry exists but resistivity is unpublished",
+    "P3/P6 have no measured FAIR-MAST voltage (evolutive uses I\u00d7R only)",
+    "Active-coil resistivity = FreeGSNKE copper default 1.55e-08 (declared material constant)"
+  ],
   "limiter": {
-    "centroid_R_m": 0.938468185338107,
-    "centroid_Z_m": -0.03964023374613713,
-    "n_points": 44,
-    "provenance": "Computational limiter from FAIR-MAST flux-loop geometry channels (magnetics.zarr flux_loop_r/z), not a surveyed vessel CAD.",
-    "rule": "poloidal_angle_about_centroid_lexsort_angle_R_Z"
+    "arrays": [
+      "limiter_r",
+      "limiter_z"
+    ],
+    "centroid_R_m": 1.0328177213668823,
+    "centroid_Z_m": 0.010945945978164673,
+    "n_points": 37,
+    "not_cad_vessel": true,
+    "provenance": "FAIR-MAST Level-2 wall.zarr limiter_r/z (EFIT limiter geometry). Not surveyed CAD vessel; not a flux-loop computational contour. Attr comment: Data sourced from EFIT file",
+    "rule": "published_vertex_order_from_fairmast_wall",
+    "source": "wall.zarr",
+    "zarr_comment": "Data sourced from EFIT file"
   },
   "machine": "classic_MAST",
   "note": "Replaces FreeGSNKE public MAST-U-like structural pickles for FAIR-MAST classic MAST shots. Archived prior pickles under archive_mastu_like/ when present.",
-  "passives": "omitted (empty list); MAST-U passives not copied",
+  "passives": {
+    "geometry_components": [
+      "botcol",
+      "coil_cases",
+      "endcrown_l",
+      "endcrown_u",
+      "incon",
+      "lhorw",
+      "mid",
+      "p2larm",
+      "p2ldivpl",
+      "p2uarm",
+      "p2udivpl",
+      "ring",
+      "rodgr",
+      "topcol",
+      "uhorw",
+      "vertw"
+    ],
+    "passives_written": [],
+    "pf_passive_zarr_present": true,
+    "reason": "FAIR-MAST Level-2 pf_passive publishes parallelogram geometry (r/z/width/height/shapeAngle1/shapeAngle2) but no resistivity; FreeGSNKE passive pickles require resistivity. Do not invent \u03c1 \u2014 passive_coils.pickle stays empty.",
+    "resistivity_keys_found": []
+  },
   "polarity": "+1 for all filaments (declared)",
-  "resistivity_citation": "FreeGSNKE default copper resistivity used in public machine_configs (value 1.55e-08); material constant \u2014 not invented coil geometry.",
+  "resistivity_citation": "FreeGSNKE default copper resistivity used in public machine_configs (value 1.55e-08); material constant \u2014 not invented coil geometry. FAIR-MAST Level-2 pf_active does not publish coil resistivity.",
   "resistivity_ohm_m": 1.55e-08,
   "shot": 30201,
   "shot_cache": "data_cache\\shot_30201",
   "source": "FAIR-MAST Level-2 Zarr (classic MAST \u2014 not MAST-U)",
   "source_repo": "https://github.com/ukaea/fair-mast",
-  "wall": "set equal to limiter (computational contour)"
+  "wall": "set equal to wall.zarr limiter contour (EFIT limiter geometry; not CAD vessel)"
 }

@@ -1,3 +1,8 @@
+## 11.3.0 — Honest wall limiter + refined FAIR-MAST limits
+- **Re-investigation:** FAIR-MAST Level-2 publishes `wall/` (`limiter_r`/`limiter_z`, EFIT limiter) and `pf_passive/` (parallelogram geometry). Production limiter/wall now comes from **`wall.zarr`**, not a flux-loop angle-sorted proxy.
+- **Honest limits (documented + provenance):** EFIT wall limiter ≠ CAD vessel; **no FreeGSNKE passives** (`pf_passive` has geometry but **no resistivity** — do not invent ρ); **P3/P6** measured V absent → I×R only; active-coil **resistivity** = FreeGSNKE copper default **1.55e-8** (declared).
+- `configs/default.json` `required_groups` includes `wall`. Flux-loop limiter kept only as explicit legacy fallback. Version **11.3.0**.
+
 ## 11.2.0 — Classic MAST FreeGSNKE machine from FAIR-MAST Level-2
 - **Critical correction:** FAIR-MAST publishes **classic MAST**, not MAST-U. Production `machine_authority/` no longer uses FreeGSNKE public MAST-U-like pickles (divertors D1–D7/Dp/PX).
 - **Builder:** `classic_mast_machine.py` + `scripts/build_classic_mast_machine.py` reads `pf_active.zarr` filaments → `active_coils.pickle` circuits `Solenoid, P2_inner, P2_outer, P3, P4, P5, P6`; limiter from `flux_loop_r/z` sorted by poloidal angle about centroid (computational, not CAD); passives empty; resistivity `1.55e-8` declared as FreeGSNKE copper default.

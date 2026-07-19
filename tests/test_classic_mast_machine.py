@@ -1,4 +1,4 @@
-"""Classic MAST FreeGSNKE machine from FAIR-MAST Level-2 (v11.2.0)."""
+"""Classic MAST FreeGSNKE machine from FAIR-MAST Level-2 (v11.3.0)."""
 from __future__ import annotations
 
 import json
@@ -14,6 +14,7 @@ from mast_freegsnke.classic_mast_machine import (
     FREEGSNKE_DEFAULT_COPPER_RESISTIVITY,
     build_active_coils_from_pf_zarr,
     limiter_from_flux_loop_rz,
+    limiter_from_wall_rz,
     write_classic_mast_machine,
 )
 from mast_freegsnke.coil_map import load_coil_map
@@ -44,21 +45,35 @@ def test_build_active_coils_classic_keys() -> None:
         assert bad not in active
 
 
+def test_limiter_from_wall_preserves_order() -> None:
+    r = [1.0, 1.5, 1.5, 1.0]
+    z = [0.0, 0.0, 1.0, 1.0]
+    pts, meta = limiter_from_wall_rz(r, z, comment="Data sourced from EFIT file")
+    assert meta["source"] == "wall.zarr"
+    assert meta["not_cad_vessel"] is True
+    assert "EFIT" in meta["provenance"]
+    assert "CAD" in meta["provenance"]
+    # Closed: first point appended when open.
+    assert pts[0] == pts[-1]
+    assert [(p["R"], p["Z"]) for p in pts[:-1]] == list(zip(r, z))
+
+
 def test_limiter_from_flux_loops_sorted_by_angle() -> None:
     # Square about origin — angle sort should visit in CCW order from -pi.
     r = [1.0, 0.0, -1.0, 0.0]
     z = [0.0, 1.0, 0.0, -1.0]
     pts, meta = limiter_from_flux_loop_rz(r, z)
     assert meta["n_points"] == 4
-    assert "computational" in meta["provenance"].lower() or "flux-loop" in meta["provenance"].lower()
+    assert meta.get("fallback") is True
+    assert "flux-loop" in meta["provenance"].lower() or "FALLBACK" in meta["provenance"]
     angs = [float(np.arctan2(p["Z"] - meta["centroid_Z_m"], p["R"] - meta["centroid_R_m"])) for p in pts]
     assert angs == sorted(angs)
 
 
 @pytest.mark.skipif(
     not (SHOT_CACHE / "pf_active.zarr").exists()
-    or not (SHOT_CACHE / "magnetics.zarr").exists(),
-    reason="data_cache/shot_30201 incomplete",
+    or not (SHOT_CACHE / "wall.zarr").exists(),
+    reason="data_cache/shot_30201 incomplete (need pf_active + wall)",
 )
 def test_write_classic_machine_and_optional_tokamak(tmp_path: Path) -> None:
     out = tmp_path / "machine"
@@ -71,6 +86,8 @@ def test_write_classic_machine_and_optional_tokamak(tmp_path: Path) -> None:
     )
     assert rep["ok"]
     assert rep["circuits"] == list(CLASSIC_CIRCUIT_ORDER)
+    assert rep["limiter_meta"]["source"] == "wall.zarr"
+    assert rep["n_limiter_points"] == 37  # FAIR-MAST wall already closed (37 pts)
     with open(out / "active_coils.pickle", "rb") as f:
         active = pickle.load(f)
     assert list(active.keys()) == list(CLASSIC_CIRCUIT_ORDER)
@@ -78,10 +95,16 @@ def test_write_classic_machine_and_optional_tokamak(tmp_path: Path) -> None:
         assert pickle.load(f) == []
     with open(out / "limiter.pickle", "rb") as f:
         lim = pickle.load(f)
-    assert isinstance(lim, list) and len(lim) >= 3
+    assert isinstance(lim, list) and len(lim) == 37
     prov = json.loads((out / "FREEGSNKE_MACHINE_PROVENANCE.json").read_text(encoding="utf-8"))
     assert prov["machine"] == "classic_MAST"
-    assert "divertor" not in json.dumps(prov).lower() or "not" in prov.get("note", "").lower()
+    assert prov["limiter"]["source"] == "wall.zarr"
+    assert isinstance(prov["passives"], dict)
+    assert prov["passives"]["passives_written"] == []
+    assert "resistivity" in prov["passives"]["reason"].lower()
+    assert FREEGSNKE_DEFAULT_COPPER_RESISTIVITY == prov["resistivity_ohm_m"]
+    limits = " ".join(prov.get("honest_limits") or [])
+    assert "CAD" in limits and "P3/P6" in limits and "1.55" in limits
 
     # Tokamak validation if FreeGSNKE is importable in this interpreter.
     try:

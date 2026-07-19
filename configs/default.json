@@ -2,7 +2,8 @@
   "mastapp_base_url": "https://mastapp.site/json",
   "required_groups": [
     "pf_active",
-    "magnetics"
+    "magnetics",
+    "wall"
   ],
   "level2_s3_prefix": "s3://mast/level2/shots",
   "s5cmd_path": "s5cmd",

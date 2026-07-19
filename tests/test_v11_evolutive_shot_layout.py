@@ -342,4 +342,4 @@ def test_shot_expert_overlay(tmp_path: Path) -> None:
     readme = (run_dir / "00_README.txt").read_text(encoding="utf-8")
     assert "inputs/" in readme
     assert "manifest.json" in readme
-    assert "classic MAST" in readme or "flux-loop" in readme or "from_current_ohmic" in readme
+    assert "classic MAST" in readme or "EFIT" in readme or "from_current_ohmic" in readme or "I×R" in readme

@@ -1,11 +1,12 @@
 """Build classic MAST FreeGSNKE machine pickles from FAIR-MAST Level-2 geometry.
 
 FAIR-MAST publishes classic MAST (not MAST-U). Filament R/Z/width/height come
-from ``pf_active.zarr``. The limiter is a deterministic closed contour from
-``magnetics.zarr`` flux-loop geometry channels (computational limiter — not
-surveyed vessel CAD). Passives are omitted. Resistivity uses the FreeGSNKE
-default copper value ``1.55e-8`` declared in provenance (material constant),
-not invented coil geometry.
+from ``pf_active.zarr``. The limiter/wall contour comes from ``wall.zarr``
+``limiter_r``/``limiter_z`` (EFIT limiter geometry published by FAIR-MAST —
+not surveyed CAD vessel). Passives stay empty: ``pf_passive.zarr`` has
+parallelogram geometry but no resistivity, and inventing ρ is forbidden.
+Active-coil resistivity uses the FreeGSNKE default copper value ``1.55e-8``
+declared in provenance (material constant), not invented coil geometry.
 """
 
 from __future__ import annotations
@@ -71,7 +72,14 @@ def _open_zarr_group(path: Path):
 def _array(store, key: str) -> np.ndarray:
     if key not in store:
         raise ClassicMastMachineError(f"missing array {key!r} in store")
-    return np.asarray(store[key][:], dtype=float).ravel()
+    raw = store[key]
+    try:
+        shape = tuple(getattr(raw, "shape", ()) or ())
+    except Exception:
+        shape = ()
+    if len(shape) == 0:
+        return np.asarray([raw[()]], dtype=float).ravel()
+    return np.asarray(raw[:], dtype=float).ravel()
 
 
 def _has(store, key: str) -> bool:
@@ -79,6 +87,25 @@ def _has(store, key: str) -> bool:
         return key in store
     except Exception:
         return False
+
+
+def _zarr_attr(store, key: str, attr: str) -> Optional[str]:
+    """Best-effort string attr from a zarr/xarray child array."""
+    try:
+        child = store[key]
+        attrs = getattr(child, "attrs", None)
+        if attrs is None:
+            return None
+        if attr in attrs:
+            return str(attrs[attr])
+        # zarr v3 / dict-like
+        get = getattr(attrs, "get", None)
+        if callable(get):
+            v = get(attr)
+            return None if v is None else str(v)
+    except Exception:
+        return None
+    return None
 
 
 def _filament_leaf(
@@ -160,11 +187,79 @@ def build_active_coils_from_pf_zarr(
     return out
 
 
+def limiter_from_wall_rz(
+    r: Sequence[float],
+    z: Sequence[float],
+    *,
+    comment: Optional[str] = None,
+) -> Tuple[List[Dict[str, float]], Dict[str, Any]]:
+    """Limiter contour from FAIR-MAST ``wall.zarr`` in published vertex order.
+
+    Points are EFIT limiter geometry (zarr attrs), not CAD vessel survey and not
+    a flux-loop computational proxy. Order is preserved (polyline already closed
+    in Level-2 for classic MAST).
+    """
+    rr = np.asarray(r, dtype=float).ravel()
+    zz = np.asarray(z, dtype=float).ravel()
+    if rr.size != zz.size:
+        raise ClassicMastMachineError("wall limiter_r/z length mismatch")
+    m = np.isfinite(rr) & np.isfinite(zz)
+    rr, zz = rr[m], zz[m]
+    if rr.size < 3:
+        raise ClassicMastMachineError(
+            f"need >=3 finite wall limiter points, got {rr.size}"
+        )
+    points = [{"R": float(rr[i]), "Z": float(zz[i])} for i in range(rr.size)]
+    # Close the polygon if first/last differ (deterministic; no invented vertices).
+    if points[0]["R"] != points[-1]["R"] or points[0]["Z"] != points[-1]["Z"]:
+        points.append(dict(points[0]))
+    rc = float(np.mean(rr))
+    zc = float(np.mean(zz))
+    comment_s = (comment or "").strip()
+    meta: Dict[str, Any] = {
+        "source": "wall.zarr",
+        "arrays": ["limiter_r", "limiter_z"],
+        "rule": "published_vertex_order_from_fairmast_wall",
+        "centroid_R_m": rc,
+        "centroid_Z_m": zc,
+        "n_points": len(points),
+        "not_cad_vessel": True,
+        "provenance": (
+            "FAIR-MAST Level-2 wall.zarr limiter_r/z (EFIT limiter geometry). "
+            "Not surveyed CAD vessel; not a flux-loop computational contour."
+            + (f" Attr comment: {comment_s}" if comment_s else "")
+        ),
+    }
+    if comment_s:
+        meta["zarr_comment"] = comment_s
+    return points, meta
+
+
+def build_limiter_from_wall_zarr(wall_zarr: Path) -> Tuple[List[Dict[str, float]], Dict[str, Any]]:
+    store = _open_zarr_group(wall_zarr)
+    if not _has(store, "limiter_r") or not _has(store, "limiter_z"):
+        raise ClassicMastMachineError(
+            "wall.zarr missing limiter_r/z (required for classic MAST limiter/wall)"
+        )
+    comment = _zarr_attr(store, "limiter_r", "comment") or _zarr_attr(
+        store, "limiter_z", "comment"
+    )
+    return limiter_from_wall_rz(
+        _array(store, "limiter_r"),
+        _array(store, "limiter_z"),
+        comment=comment,
+    )
+
+
 def limiter_from_flux_loop_rz(
     r: Sequence[float],
     z: Sequence[float],
 ) -> Tuple[List[Dict[str, float]], Dict[str, Any]]:
-    """Deterministic limiter contour: sort flux-loop (R,Z) by poloidal angle about centroid."""
+    """Legacy fallback only: sort flux-loop (R,Z) by poloidal angle about centroid.
+
+    Not used for production machine_authority when wall.zarr is present. Kept for
+    unit tests and explicit ``allow_flux_loop_limiter_fallback``.
+    """
     rr = np.asarray(r, dtype=float).ravel()
     zz = np.asarray(z, dtype=float).ravel()
     if rr.size != zz.size:
@@ -182,13 +277,18 @@ def limiter_from_flux_loop_rz(
     order = np.lexsort((zz, rr, ang))
     points = [{"R": float(rr[i]), "Z": float(zz[i])} for i in order]
     meta = {
+        "source": "magnetics.zarr",
+        "arrays": ["flux_loop_r", "flux_loop_z"],
         "rule": "poloidal_angle_about_centroid_lexsort_angle_R_Z",
         "centroid_R_m": rc,
         "centroid_Z_m": zc,
         "n_points": len(points),
+        "not_cad_vessel": True,
+        "fallback": True,
         "provenance": (
-            "Computational limiter from FAIR-MAST flux-loop geometry channels "
-            "(magnetics.zarr flux_loop_r/z), not a surveyed vessel CAD."
+            "FALLBACK computational limiter from FAIR-MAST flux-loop geometry "
+            "channels (magnetics.zarr flux_loop_r/z). Not EFIT wall.limiter and "
+            "not surveyed vessel CAD."
         ),
     }
     return points, meta
@@ -198,9 +298,47 @@ def build_limiter_from_magnetics_zarr(mag_zarr: Path) -> Tuple[List[Dict[str, fl
     store = _open_zarr_group(mag_zarr)
     if not _has(store, "flux_loop_r") or not _has(store, "flux_loop_z"):
         raise ClassicMastMachineError(
-            "magnetics.zarr missing flux_loop_r/z (required for classic MAST limiter)"
+            "magnetics.zarr missing flux_loop_r/z (flux-loop limiter fallback)"
         )
     return limiter_from_flux_loop_rz(_array(store, "flux_loop_r"), _array(store, "flux_loop_z"))
+
+
+def pf_passive_omission_note(shot_cache: Path) -> Dict[str, Any]:
+    """Record why FreeGSNKE passives are empty despite FAIR-MAST pf_passive geometry."""
+    pp = Path(shot_cache) / "pf_passive.zarr"
+    note = {
+        "passives_written": [],
+        "reason": (
+            "FAIR-MAST Level-2 pf_passive publishes parallelogram geometry "
+            "(r/z/width/height/shapeAngle1/shapeAngle2) but no resistivity; "
+            "FreeGSNKE passive pickles require resistivity. Do not invent ρ — "
+            "passive_coils.pickle stays empty."
+        ),
+        "pf_passive_zarr_present": pp.exists(),
+    }
+    if not pp.exists():
+        note["hint"] = (
+            "Optional: download group pf_passive for audit; still cannot build "
+            "passives without a published resistivity authority."
+        )
+        return note
+    try:
+        store = _open_zarr_group(pp)
+        try:
+            keys = list(store.keys())
+        except Exception:
+            keys = list(store)
+        comps = sorted({k[:-2] for k in keys if str(k).endswith("_r")})
+        note["geometry_components"] = comps
+        resist_like = [
+            k
+            for k in keys
+            if any(tok in str(k).lower() for tok in ("resist", "ohm", "eta", "rho"))
+        ]
+        note["resistivity_keys_found"] = resist_like
+    except Exception as e:
+        note["inspect_error"] = f"{type(e).__name__}: {e}"
+    return note
 
 
 def _archive_mastu_pickles(machine_dir: Path, archive_dir: Path) -> List[str]:
@@ -231,16 +369,16 @@ def write_classic_mast_machine(
     archive_mastu: bool = True,
     resistivity: float = FREEGSNKE_DEFAULT_COPPER_RESISTIVITY,
     validate_tokamak: bool = False,
+    allow_flux_loop_limiter_fallback: bool = False,
 ) -> Dict[str, Any]:
     """Write classic MAST FreeGSNKE pickles into ``out_dir`` (production machine_authority)."""
     shot_cache = Path(shot_cache)
     out_dir = Path(out_dir)
     pf = shot_cache / "pf_active.zarr"
+    wall_zarr = shot_cache / "wall.zarr"
     mag = shot_cache / "magnetics.zarr"
-    if not pf.exists() or not mag.exists():
-        raise ClassicMastMachineError(
-            f"Need pf_active.zarr and magnetics.zarr under {shot_cache}"
-        )
+    if not pf.exists():
+        raise ClassicMastMachineError(f"Need pf_active.zarr under {shot_cache}")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     archived: List[str] = []
@@ -248,9 +386,21 @@ def write_classic_mast_machine(
         archived = _archive_mastu_pickles(out_dir, out_dir / "archive_mastu_like")
 
     active = build_active_coils_from_pf_zarr(pf, resistivity=resistivity)
-    limiter, lim_meta = build_limiter_from_magnetics_zarr(mag)
-    wall = list(limiter)  # optional; FreeGSNKE defaults wall=limiter if omitted
-    passives: List[Any] = []  # classic MAST: do not copy MAST-U passives
+
+    if wall_zarr.exists():
+        limiter, lim_meta = build_limiter_from_wall_zarr(wall_zarr)
+    elif allow_flux_loop_limiter_fallback and mag.exists():
+        limiter, lim_meta = build_limiter_from_magnetics_zarr(mag)
+    else:
+        raise ClassicMastMachineError(
+            f"Need wall.zarr under {shot_cache} (FAIR-MAST Level-2 wall limiter from EFIT). "
+            "Flux-loop contours are not the production vessel limiter "
+            "(pass allow_flux_loop_limiter_fallback=True only for legacy caches)."
+        )
+
+    wall = list(limiter)  # FreeGSNKE wall; same EFIT limiter contour (not CAD)
+    passives: List[Any] = []
+    passive_note = pf_passive_omission_note(shot_cache)
 
     (out_dir / "active_coils.pickle").write_bytes(pickle.dumps(active, protocol=4))
     (out_dir / "limiter.pickle").write_bytes(pickle.dumps(limiter, protocol=4))
@@ -277,12 +427,23 @@ def write_classic_mast_machine(
         "resistivity_ohm_m": resistivity,
         "resistivity_citation": (
             "FreeGSNKE default copper resistivity used in public machine_configs "
-            f"(value {resistivity}); material constant — not invented coil geometry."
+            f"(value {resistivity}); material constant — not invented coil geometry. "
+            "FAIR-MAST Level-2 pf_active does not publish coil resistivity."
         ),
         "polarity": "+1 for all filaments (declared)",
         "limiter": lim_meta,
-        "passives": "omitted (empty list); MAST-U passives not copied",
-        "wall": "set equal to limiter (computational contour)",
+        "wall": (
+            "set equal to wall.zarr limiter contour (EFIT limiter geometry; not CAD vessel)"
+            if lim_meta.get("source") == "wall.zarr"
+            else "set equal to fallback flux-loop limiter (not CAD vessel)"
+        ),
+        "passives": passive_note,
+        "honest_limits": [
+            "Limiter/wall = FAIR-MAST wall.zarr EFIT limiter ≠ surveyed CAD vessel",
+            "No FreeGSNKE passives: pf_passive geometry exists but resistivity is unpublished",
+            "P3/P6 have no measured FAIR-MAST voltage (evolutive uses I×R only)",
+            f"Active-coil resistivity = FreeGSNKE copper default {resistivity} (declared material constant)",
+        ],
         "note": (
             "Replaces FreeGSNKE public MAST-U-like structural pickles for FAIR-MAST "
             "classic MAST shots. Archived prior pickles under archive_mastu_like/ when present."
@@ -299,6 +460,7 @@ def write_classic_mast_machine(
         "circuits": list(CLASSIC_CIRCUIT_ORDER),
         "n_limiter_points": len(limiter),
         "limiter_meta": lim_meta,
+        "passives": passive_note,
         "archived_mastu_like": archived,
         "resistivity_ohm_m": resistivity,
     }

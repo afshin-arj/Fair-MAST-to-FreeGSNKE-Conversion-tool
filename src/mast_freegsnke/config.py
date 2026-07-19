@@ -89,7 +89,7 @@ class AppConfig:
 
         # Normalize + defaults
         mastapp_base_url = str(obj.get("mastapp_base_url", "https://mastapp.site/json")).rstrip("/")
-        required_groups = list(obj.get("required_groups", ["pf_active", "magnetics"]))
+        required_groups = list(obj.get("required_groups", ["pf_active", "magnetics", "wall"]))
         level2_s3_prefix = str(obj.get("level2_s3_prefix", ""))
         s5cmd_path = str(obj.get("s5cmd_path", "s5cmd"))
         s3_endpoint_url = (str(obj["s3_endpoint_url"]) if obj.get("s3_endpoint_url") else None)

@@ -58,7 +58,7 @@ Optional: execute FreeGSNKE scripts after generation (requires freegsnke install
   # Build machine_authority from a downloaded FAIR-MAST shot cache:
   # (1) probe/coil JSON authority from Level-2
   python scripts/build_authority_from_fairmast.py --shot-cache data_cache/shot_30201 --out machine_authority --shot 30201
-  # (2) classic MAST FreeGSNKE pickles (NOT MAST-U) from Level-2 filaments + flux-loop limiter
+  # (2) classic MAST FreeGSNKE pickles (NOT MAST-U) from Level-2 filaments + wall.zarr EFIT limiter
   python scripts/build_classic_mast_machine.py --shot-cache data_cache/shot_30201 --out machine_authority --shot 30201 --validate-tokamak
   # Optional archive-only: FreeGSNKE public MAST-U-like pickles (not production)
   # python scripts/fetch_freegsnke_machine.py
@@ -82,9 +82,11 @@ Machine / probe geometry authority
 ----------------------------------
 FAIR-MAST publishes classic MAST (not MAST-U). Production defaults use
 `machine_authority/` with FreeGSNKE pickles built from Level-2 PF filaments
-(active circuits: Solenoid, P2_inner, P2_outer, P3–P6) plus a computational
-limiter from flux-loop geometry channels. Templates with CHANGE_ME / TEMPLATE
-markers are refused. Do not invent metrology. When geometry resolves, the run writes:
+(active circuits: Solenoid, P2_inner, P2_outer, P3–P6) plus wall.zarr EFIT
+limiter geometry (not CAD vessel; passives empty — pf_passive has no ρ).
+Active-coil resistivity is FreeGSNKE copper default 1.55e-8 (declared).
+Templates with CHANGE_ME / TEMPLATE markers are refused. Do not invent
+metrology. When geometry resolves, the run writes:
   SHOT/<N>/magnetic_probes.pickle
   SHOT/<N>/magnetic_probes.json
 
