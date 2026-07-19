@@ -1,18 +1,25 @@
 {
   "authority_name": "MAST_FAIRMAST_Level2_MachineAuthority",
-  "authority_version": "1.0.0-fairmast",
+  "authority_version": "1.1.0-classic-mast",
   "files": {
     "coil_geometry": "coil_geometry.json",
     "diagnostic_registry": "diagnostic_registry.json",
-    "probe_geometry": "probe_geometry.json"
+    "probe_geometry": "probe_geometry.json",
+    "active_coils": "active_coils.pickle",
+    "limiter": "limiter.pickle",
+    "wall": "wall.pickle",
+    "passive_coils": "passive_coils.pickle",
+    "freegsnke_provenance": "FREEGSNKE_MACHINE_PROVENANCE.json"
   },
   "provenance": {
     "metrology_reference": "magnetics.zarr + pf_active.zarr geometry arrays",
+    "machine": "classic_MAST",
     "shot": 30201,
     "shot_cache": "data_cache\\shot_30201",
-    "source": "FAIR-MAST Level-2 Zarr",
+    "source": "FAIR-MAST Level-2 Zarr (classic MAST — not MAST-U)",
     "source_commit": "n/a-level2-archive",
-    "source_repo": "https://github.com/ukaea/mast-data"
+    "source_repo": "https://github.com/ukaea/mast-data",
+    "freegsnke_pickles": "Built by scripts/build_classic_mast_machine.py from Level-2 filaments; limiter from flux_loop_r/z; passives empty"
   },
   "schema_version": "1.0"
 }

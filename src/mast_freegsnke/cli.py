@@ -257,6 +257,47 @@ def main(argv=None) -> int:
                     ok = False
             else:
                 print(f"[OK] machine authority: {ma.manifest.get('authority_name')} v={ma.manifest.get('authority_version')}")
+                # Classic MAST structural pickles (vs archived MAST-U-like).
+                try:
+                    from .classic_mast_machine import (
+                        CLASSIC_CIRCUIT_ORDER,
+                        load_active_circuit_keys,
+                    )
+
+                    keys = load_active_circuit_keys(ma_dir)
+                    prov_path = ma_dir / "FREEGSNKE_MACHINE_PROVENANCE.json"
+                    machine_label = "unknown"
+                    if prov_path.exists():
+                        import json as _json
+
+                        prov = _json.loads(prov_path.read_text(encoding="utf-8"))
+                        machine_label = str(prov.get("machine") or prov.get("source") or "")
+                    divertorish = [
+                        k
+                        for k in keys
+                        if k in {"D1", "D2", "D3", "Dp", "D5", "D6", "D7", "PX"}
+                    ]
+                    if keys == list(CLASSIC_CIRCUIT_ORDER) and not divertorish:
+                        print(
+                            f"[OK] FreeGSNKE machine: classic MAST circuits "
+                            f"{', '.join(keys)} ({machine_label or 'classic_MAST'})"
+                        )
+                    elif divertorish:
+                        print(
+                            "[FAIL] FreeGSNKE machine still has MAST-U divertor/PX circuits "
+                            f"{divertorish}; rebuild with scripts/build_classic_mast_machine.py"
+                        )
+                        if cfg.require_machine_authority:
+                            ok = False
+                    elif keys:
+                        print(
+                            f"[WARN] FreeGSNKE active_coils keys {keys} "
+                            f"(expected classic {list(CLASSIC_CIRCUIT_ORDER)})"
+                        )
+                    else:
+                        print("[WARN] active_coils.pickle missing or unreadable")
+                except Exception as e:
+                    print(f"[WARN] classic machine check skipped: {type(e).__name__}: {e}")
 
         # Coil map
         if cfg.coil_map_path:

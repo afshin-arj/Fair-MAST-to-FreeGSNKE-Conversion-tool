@@ -6,8 +6,8 @@ Fail-closed. Drive modes (declared explicitly per circuit):
 - ``from_current_ohmic`` — no voltage channel but mapped currents exist;
   ``V = sign * scale * I_circuit(t) * R_circuit`` using FreeGSNKE machine
   coil resistance after load (snapshotted at evolutive runtime).
-- ``default`` + ``default_V`` — zero-drive (or declared constant) for
-  MAST-U-only structural circuits with neither voltage nor classic-MAST current.
+- ``default`` + ``default_V`` — zero-drive (or declared constant) only when
+  explicitly required; classic MAST production maps have no divertor zero-drives.
 """
 
 from __future__ import annotations
@@ -225,10 +225,14 @@ def voltage_map_drive_summary(vmap: VoltageMap) -> Dict[str, Any]:
             n_zero += 1
             zero_drive.append(name)
     total = len(vmap.machine_active_circuit_order)
+    if n_zero:
+        zero_bit = f"{n_zero} by declared 0 V (no FAIR-MAST drive)"
+    else:
+        zero_bit = "0 by declared 0 V"
     line = (
         f"{n_measured}/{total} active circuits driven by measured FAIR-MAST V; "
         f"{n_ohmic} by I*R (from_current_ohmic); "
-        f"{n_zero} by declared 0 V (MAST-U-only / no FAIR-MAST drive)"
+        f"{zero_bit}"
     )
     return {
         "n_measured": n_measured,

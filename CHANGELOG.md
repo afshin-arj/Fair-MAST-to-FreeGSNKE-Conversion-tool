@@ -1,3 +1,9 @@
+## 11.2.0 — Classic MAST FreeGSNKE machine from FAIR-MAST Level-2
+- **Critical correction:** FAIR-MAST publishes **classic MAST**, not MAST-U. Production `machine_authority/` no longer uses FreeGSNKE public MAST-U-like pickles (divertors D1–D7/Dp/PX).
+- **Builder:** `classic_mast_machine.py` + `scripts/build_classic_mast_machine.py` reads `pf_active.zarr` filaments → `active_coils.pickle` circuits `Solenoid, P2_inner, P2_outer, P3, P4, P5, P6`; limiter from `flux_loop_r/z` sorted by poloidal angle about centroid (computational, not CAD); passives empty; resistivity `1.55e-8` declared as FreeGSNKE copper default.
+- **Authorities:** `voltage_map.json` classic order only; `p1→Solenoid`, `p2→P2_inner` and `P2_outer` (same-V policy), `p4→P4`, `p5→P5`; P3/P6 `from_current_ohmic`. Coil map circuit names match active keys. Doctor reports classic MAST (fails if divertors remain).
+- Prior MAST-U-like pickles archived under `machine_authority/archive_mastu_like/`. Version **11.2.0**.
+
 ## 11.1.0 — FAIR-MAST voltages primary + window-cover evolutive + ohmic I×R
 - **Honest voltage policy corrected:** FAIR-MAST Level-2 **does** supply measured voltages (`p1`/`p2`/`p4`/`p5`, units V) — these are the primary evolutive drive. The remaining mismatch is FreeGSNKE’s MAST-U-like structural divertor circuits vs classic MAST PF set (not “missing voltages”).
 - **`from_current_ohmic`:** circuits with mapped FAIR-MAST currents but no voltage (P6 via coil_map `P6L+P6U`) build `V(t)=sign*scale*I(t)*R` using FreeGSNKE `evol_metal_curr.active_coil_resistances` after load; R snapshotted to `evolutive/coil_resist_snapshot.json`; fail-closed if R unavailable. Divertors D1–D7/Dp stay declared `default_V=0` (`machine_circuits_without_fairmast_drive`).

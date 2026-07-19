@@ -1,10 +1,36 @@
 {
-  "source": "https://github.com/FusionComputingLab/freegsnke/tree/main/machine_configs/MAST-U",
+  "active_circuits": [
+    "Solenoid",
+    "P2_inner",
+    "P2_outer",
+    "P3",
+    "P4",
+    "P5",
+    "P6"
+  ],
+  "filament_geometry": "R/Z filament lists and mean width/height (dR/dZ) from pf_active.zarr arrays (sol_*, p2_inner_*, p2_outer_*, p3_*, p4_*, p5_*, p6_*).",
   "files": [
     "active_coils.pickle",
-    "passive_coils.pickle",
     "limiter.pickle",
-    "wall.pickle"
+    "wall.pickle",
+    "passive_coils.pickle"
   ],
-  "note": "Public FreeGSNKE MAST-U-like structural machine pickles. Probe metrology is from FAIR-MAST Level-2 (probe_geometry.json / run magnetic_probes.pickle). Classic MAST shots may need a true MAST coil set when an authoritative public source is available."
+  "limiter": {
+    "centroid_R_m": 0.938468185338107,
+    "centroid_Z_m": -0.03964023374613713,
+    "n_points": 44,
+    "provenance": "Computational limiter from FAIR-MAST flux-loop geometry channels (magnetics.zarr flux_loop_r/z), not a surveyed vessel CAD.",
+    "rule": "poloidal_angle_about_centroid_lexsort_angle_R_Z"
+  },
+  "machine": "classic_MAST",
+  "note": "Replaces FreeGSNKE public MAST-U-like structural pickles for FAIR-MAST classic MAST shots. Archived prior pickles under archive_mastu_like/ when present.",
+  "passives": "omitted (empty list); MAST-U passives not copied",
+  "polarity": "+1 for all filaments (declared)",
+  "resistivity_citation": "FreeGSNKE default copper resistivity used in public machine_configs (value 1.55e-08); material constant \u2014 not invented coil geometry.",
+  "resistivity_ohm_m": 1.55e-08,
+  "shot": 30201,
+  "shot_cache": "data_cache\\shot_30201",
+  "source": "FAIR-MAST Level-2 Zarr (classic MAST \u2014 not MAST-U)",
+  "source_repo": "https://github.com/ukaea/fair-mast",
+  "wall": "set equal to limiter (computational contour)"
 }

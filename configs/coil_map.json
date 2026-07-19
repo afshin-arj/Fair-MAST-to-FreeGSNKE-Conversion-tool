@@ -1,6 +1,6 @@
 {
-  "version": "1.1",
-  "notes": "FAIR-MAST Level-2 current_channel labels → FreeGSNKE circuit names. Multi-feed circuits use explicit combine=sum (not silent heuristics).",
+  "version": "1.2",
+  "notes": "FAIR-MAST Level-2 (classic MAST) current_channel labels → FreeGSNKE classic circuit names (Solenoid, P2_inner, P2_outer, P3–P6). Must match active_coils.pickle keys exactly. Multi-feed circuits use explicit combine=sum (not silent heuristics).",
   "circuits": {
     "Solenoid": {
       "exp_columns": ["SOL"],

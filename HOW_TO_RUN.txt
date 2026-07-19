@@ -56,8 +56,12 @@ Optional: execute FreeGSNKE scripts after generation (requires freegsnke install
   python scripts/ensure_s5cmd.py
 
   # Build machine_authority from a downloaded FAIR-MAST shot cache:
+  # (1) probe/coil JSON authority from Level-2
   python scripts/build_authority_from_fairmast.py --shot-cache data_cache/shot_30201 --out machine_authority --shot 30201
-  python scripts/fetch_freegsnke_machine.py
+  # (2) classic MAST FreeGSNKE pickles (NOT MAST-U) from Level-2 filaments + flux-loop limiter
+  python scripts/build_classic_mast_machine.py --shot-cache data_cache/shot_30201 --out machine_authority --shot 30201 --validate-tokamak
+  # Optional archive-only: FreeGSNKE public MAST-U-like pickles (not production)
+  # python scripts/fetch_freegsnke_machine.py
 
   mast-freegsnke run --shot 30201 --config configs/default.json
 
@@ -76,11 +80,13 @@ Deterministic window override (optional; not part of the happy path):
 
 Machine / probe geometry authority
 ----------------------------------
-Production defaults use the shipped `machine_authority/` directory (FAIR-MAST Level-2
-geometry + coil map). Templates with CHANGE_ME / TEMPLATE markers are refused.
-Do not invent metrology. When geometry resolves, the run writes:
-  SHOTS/<N>/magnetic_probes.pickle
-  SHOTS/<N>/magnetic_probes.json
+FAIR-MAST publishes classic MAST (not MAST-U). Production defaults use
+`machine_authority/` with FreeGSNKE pickles built from Level-2 PF filaments
+(active circuits: Solenoid, P2_inner, P2_outer, P3–P6) plus a computational
+limiter from flux-loop geometry channels. Templates with CHANGE_ME / TEMPLATE
+markers are refused. Do not invent metrology. When geometry resolves, the run writes:
+  SHOT/<N>/magnetic_probes.pickle
+  SHOT/<N>/magnetic_probes.json
 
 Diagnostic contract metrics (enabled by default in configs/default.json)
 ------------------------------------------------------------------------

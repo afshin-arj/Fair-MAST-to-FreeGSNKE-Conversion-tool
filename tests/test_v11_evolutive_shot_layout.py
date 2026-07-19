@@ -1,4 +1,4 @@
-"""v11.1.0: FAIR-MAST voltages primary; ohmic I×R; cover_window evolutive."""
+"""v11.x: FAIR-MAST voltages primary; ohmic I×R; cover_window; classic MAST circuits."""
 from __future__ import annotations
 
 import json
@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from mast_freegsnke.classic_mast_machine import CLASSIC_CIRCUIT_ORDER
 from mast_freegsnke.config import AppConfig, run_dir_for_shot
 from mast_freegsnke.evolutive_authority import (
     load_evolutive_authority,
@@ -32,13 +33,14 @@ def test_shipped_voltage_map_valid() -> None:
     assert vmap.circuits["Solenoid"]["voltage_channels"] == ["p1"]
     assert vmap.circuits["P6"]["combine"] == "from_current_ohmic"
     assert vmap.circuits["P6"]["current_circuit"] == "P6"
-    assert vmap.circuits["D1"]["combine"] == "default"
-    assert float(vmap.circuits["D1"]["default_V"]) == 0.0
-    assert "D1" in (vmap.machine_circuits_without_fairmast_drive or [])
+    assert vmap.circuits["P3"]["combine"] == "from_current_ohmic"
+    assert "D1" not in vmap.circuits
+    assert "PX" not in vmap.circuits
+    assert vmap.machine_active_circuit_order == list(CLASSIC_CIRCUIT_ORDER)
     drive = voltage_map_drive_summary(vmap)
-    assert drive["n_measured"] == 4
-    assert drive["n_ohmic"] == 1
-    assert drive["n_zero_drive"] == 7
+    assert drive["n_measured"] == 5  # Solenoid, P2_inner, P2_outer, P4, P5
+    assert drive["n_ohmic"] == 2
+    assert drive["n_zero_drive"] == 0
     assert "measured FAIR-MAST V" in drive["line"]
 
 
@@ -78,6 +80,7 @@ def test_from_current_ohmic_deferred_without_r(tmp_path: Path) -> None:
         {
             "time": [0.0, 0.1],
             "Solenoid": [10.0, 20.0],
+            "P3": [1.0, 2.0],
             "P6": [100.0, 200.0],
         }
     ).to_csv(currents, index=False)
@@ -85,13 +88,14 @@ def test_from_current_ohmic_deferred_without_r(tmp_path: Path) -> None:
     out = tmp_path / "pf_voltages.csv"
     rep = apply_voltage_map(raw, out, vmap, pf_currents_csv=currents)
     assert rep["ok"], rep["errors"]
-    assert rep["n_ohmic"] == 1
-    assert rep["n_ohmic_deferred"] == 1
+    assert rep["n_ohmic"] == 2
+    assert rep["n_ohmic_deferred"] == 2
     assert rep["circuits"]["P6"]["deferred_ohmic"] is True
     df = pd.read_csv(out)
     assert list(df["Solenoid"]) == pytest.approx([1.0, 2.0])
     assert pd.isna(df["P6"]).all()
-    assert list(df["D1"]) == pytest.approx([0.0, 0.0])
+    assert "D1" not in df.columns
+    assert list(df["P2_inner"]) == pytest.approx([3.0, 4.0])
 
 
 def test_from_current_ohmic_with_r(tmp_path: Path) -> None:
@@ -106,7 +110,9 @@ def test_from_current_ohmic_with_r(tmp_path: Path) -> None:
         }
     ).to_csv(raw, index=False)
     currents = tmp_path / "pf_currents.csv"
-    pd.DataFrame({"time": [0.0, 0.1], "P6": [100.0, 200.0]}).to_csv(currents, index=False)
+    pd.DataFrame({"time": [0.0, 0.1], "P3": [0.0, 0.0], "P6": [100.0, 200.0]}).to_csv(
+        currents, index=False
+    )
     vmap = load_voltage_map(REPO / "configs" / "voltage_map.json")
     out = tmp_path / "pf_voltages.csv"
     rep = apply_voltage_map(
@@ -114,7 +120,7 @@ def test_from_current_ohmic_with_r(tmp_path: Path) -> None:
         out,
         vmap,
         pf_currents_csv=currents,
-        coil_resist_by_circuit={"P6": 0.01},
+        coil_resist_by_circuit={"P6": 0.01, "P3": 0.01},
     )
     assert rep["ok"], rep["errors"]
     assert rep["circuits"]["P6"]["deferred_ohmic"] is False
@@ -153,7 +159,9 @@ def test_from_current_ohmic_fail_closed_invalid_r(tmp_path: Path) -> None:
         }
     ).to_csv(raw, index=False)
     currents = tmp_path / "pf_currents.csv"
-    pd.DataFrame({"time": [0.0, 0.1], "P6": [100.0, 200.0]}).to_csv(currents, index=False)
+    pd.DataFrame({"time": [0.0, 0.1], "P3": [1.0, 2.0], "P6": [100.0, 200.0]}).to_csv(
+        currents, index=False
+    )
     vmap = load_voltage_map(REPO / "configs" / "voltage_map.json")
     out = tmp_path / "pf_voltages.csv"
     rep = apply_voltage_map(
@@ -161,7 +169,7 @@ def test_from_current_ohmic_fail_closed_invalid_r(tmp_path: Path) -> None:
         out,
         vmap,
         pf_currents_csv=currents,
-        coil_resist_by_circuit={"P6": 0.0},
+        coil_resist_by_circuit={"P6": 0.0, "P3": 0.01},
     )
     assert not rep["ok"]
     assert any("invalid_coil_resist_ohm:P6" in e for e in rep["errors"])
@@ -179,7 +187,9 @@ def test_apply_voltage_map_writes_circuit_columns(tmp_path: Path) -> None:
         }
     ).to_csv(raw, index=False)
     currents = tmp_path / "pf_currents.csv"
-    pd.DataFrame({"time": [0.0, 0.1], "P6": [0.0, 0.0]}).to_csv(currents, index=False)
+    pd.DataFrame({"time": [0.0, 0.1], "P3": [0.0, 0.0], "P6": [0.0, 0.0]}).to_csv(
+        currents, index=False
+    )
     vmap = load_voltage_map(REPO / "configs" / "voltage_map.json")
     out = tmp_path / "pf_voltages.csv"
     rep = apply_voltage_map(raw, out, vmap, pf_currents_csv=currents)
@@ -188,7 +198,8 @@ def test_apply_voltage_map_writes_circuit_columns(tmp_path: Path) -> None:
     for name in vmap.machine_active_circuit_order:
         assert name in df.columns
     assert list(df["Solenoid"]) == pytest.approx([1.0, 2.0])
-    assert list(df["PX"]) == pytest.approx([3.0, 4.0])
+    assert list(df["P2_inner"]) == pytest.approx([3.0, 4.0])
+    assert list(df["P2_outer"]) == pytest.approx([3.0, 4.0])
 
 
 def test_apply_voltage_map_allows_sparse_nan(tmp_path: Path) -> None:
@@ -203,9 +214,9 @@ def test_apply_voltage_map_allows_sparse_nan(tmp_path: Path) -> None:
         }
     ).to_csv(raw, index=False)
     currents = tmp_path / "pf_currents.csv"
-    pd.DataFrame({"time": [0.0, 0.1, 0.2], "P6": [1.0, 2.0, 3.0]}).to_csv(
-        currents, index=False
-    )
+    pd.DataFrame(
+        {"time": [0.0, 0.1, 0.2], "P3": [1.0, 2.0, 3.0], "P6": [1.0, 2.0, 3.0]}
+    ).to_csv(currents, index=False)
     vmap = load_voltage_map(REPO / "configs" / "voltage_map.json")
     out = tmp_path / "pf_voltages.csv"
     rep = apply_voltage_map(raw, out, vmap, pf_currents_csv=currents)
@@ -226,7 +237,9 @@ def test_apply_voltage_map_fails_if_all_nan(tmp_path: Path) -> None:
         }
     ).to_csv(raw, index=False)
     currents = tmp_path / "pf_currents.csv"
-    pd.DataFrame({"time": [0.0, 0.1], "P6": [1.0, 2.0]}).to_csv(currents, index=False)
+    pd.DataFrame({"time": [0.0, 0.1], "P3": [1.0, 2.0], "P6": [1.0, 2.0]}).to_csv(
+        currents, index=False
+    )
     vmap = load_voltage_map(REPO / "configs" / "voltage_map.json")
     out = tmp_path / "pf_voltages.csv"
     rep = apply_voltage_map(raw, out, vmap, pf_currents_csv=currents)
@@ -329,4 +342,4 @@ def test_shot_expert_overlay(tmp_path: Path) -> None:
     readme = (run_dir / "00_README.txt").read_text(encoding="utf-8")
     assert "inputs/" in readme
     assert "manifest.json" in readme
-    assert "DOES supply measured voltages" in readme
+    assert "classic MAST" in readme or "flux-loop" in readme or "from_current_ohmic" in readme

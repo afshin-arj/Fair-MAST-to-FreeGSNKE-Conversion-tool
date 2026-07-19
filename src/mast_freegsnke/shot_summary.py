@@ -13,9 +13,10 @@ from typing import Any, Dict, List, Optional
 
 
 _KNOWN_LIMITATIONS = [
-    "Structural machine pickles are FreeGSNKE MAST-U-like (see machine_authority/FREEGSNKE_MACHINE_PROVENANCE.json).",
-    "FAIR-MAST Level-2 DOES supply measured voltages (p1/p2/p4/p5 in V) — these are the primary evolutive drive via configs/voltage_map.json.",
-    "Mismatch is FreeGSNKE structural coils (divertors D1–D7/Dp) vs classic MAST PF set: divertors use declared default_V=0; P6 uses I×R (from_current_ohmic) with FreeGSNKE coil_resist.",
+    "Structural machine is classic MAST built from FAIR-MAST Level-2 filaments (machine_authority/; see FREEGSNKE_MACHINE_PROVENANCE.json) — not FreeGSNKE MAST-U pickles.",
+    "Limiter is a computational contour from FAIR-MAST flux_loop_r/z sorted by poloidal angle about centroid — not surveyed vessel CAD. Passives omitted.",
+    "FAIR-MAST Level-2 supplies measured voltages (p1/p2/p4/p5 in V) as primary evolutive drive; p2 is applied identically to P2_inner and P2_outer (declared same-V policy).",
+    "P3 and P6 have no measured voltage → from_current_ohmic (I×R with FreeGSNKE coil_resist after load).",
     "Profile alpha_m/alpha_n/fvac are held from the inverse IC; optional scale_paxis_with_ip is a declared Ip scaling law (default off) — never invented profile numbers.",
     "Contract residual metrics score only families with honest channel identity + units; uncalibrated mirnov/saddle/omaha stay audit-only until calibration authority is populated.",
 ]
