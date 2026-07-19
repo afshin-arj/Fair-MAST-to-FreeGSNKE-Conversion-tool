@@ -1,6 +1,6 @@
 {
   "version": "2.0",
-  "notes": "FAIR-MAST = classic MAST (not MAST-U). FreeGSNKE active circuits are classic only: Solenoid, P2_inner, P2_outer, P3, P4, P5, P6 — no divertors. Measured voltages p1/p2/p4/p5 (V) are primary drive. One FAIR-MAST p2 channel is applied identically to both P2_inner and P2_outer (declared same-V policy). P3 and P6 have no voltage channel → from_current_ohmic using coil_map currents × FreeGSNKE coil_resist after load.",
+  "notes": "FAIR-MAST = classic MAST (not MAST-U). FreeGSNKE active circuits are classic only: Solenoid, P2_inner, P2_outer, P3, P4, P5, P6 — no divertors. Measured voltages p1/p2/p4/p5 (V) are primary drive. One FAIR-MAST p2 channel is applied identically to both P2_inner and P2_outer (declared same-V policy). Level-2 coil_voltage has only four channels for reference shot 30201; P3 and P6 have no measured V in Level-2 (re-checked) → from_current_ohmic using coil_map currents × FreeGSNKE coil_resist after load. Do not invent P3/P6 voltage channels.",
   "machine_active_circuit_order": [
     "Solenoid",
     "P2_inner",

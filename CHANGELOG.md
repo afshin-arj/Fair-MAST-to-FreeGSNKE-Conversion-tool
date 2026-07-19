@@ -1,3 +1,10 @@
+## 11.4.0 — Hardening: optional pf_passive, machine sync, doctor limits, certify
+- **Doctor** prints `honest_limits` from machine provenance (wall≠CAD, no passives without ρ, P3/P6 I×R, copper 1.55e-8).
+- **`optional_groups`**: best-effort `pf_passive` download for audit (non-blocking); `configs/passive_resistivity.json` awaits cited ρ (never invent).
+- **`rebuild_machine_authority`**: fingerprints of `wall` + `pf_active` geometry; auto-rebuild classic pickles when they change (`machine-rebuild` CLI).
+- **`mast-freegsnke certify`**: reviewer-pack + replay → `CERTIFY_REPORT.json` (GREEN/YELLOW/RED).
+- Docs: stale `SHOTS/` → `SHOT/`; removed dead `machine_stub` + placeholder `machine_configs/`; evolutive notes classic-MAST-correct. Version **11.4.0**.
+
 ## 11.3.0 — Honest wall limiter + refined FAIR-MAST limits
 - **Re-investigation:** FAIR-MAST Level-2 publishes `wall/` (`limiter_r`/`limiter_z`, EFIT limiter) and `pf_passive/` (parallelogram geometry). Production limiter/wall now comes from **`wall.zarr`**, not a flux-loop angle-sorted proxy.
 - **Honest limits (documented + provenance):** EFIT wall limiter ≠ CAD vessel; **no FreeGSNKE passives** (`pf_passive` has geometry but **no resistivity** — do not invent ρ); **P3/P6** measured V absent → I×R only; active-coil **resistivity** = FreeGSNKE copper default **1.55e-8** (declared).

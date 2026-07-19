@@ -329,7 +329,7 @@ def build_geometry_from_machine_dir(machine_dir: Path) -> Tuple[Optional[ProbeGe
             return None, report
 
     # 2) Python module builder
-    for cand in ["probe_geometry.py", "machine.py", "machine_stub_freegsnke.py"]:
+    for cand in ["probe_geometry.py", "machine.py"]:
         p = machine_dir / cand
         if p.exists():
             try:

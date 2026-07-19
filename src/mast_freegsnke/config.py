@@ -14,6 +14,8 @@ except Exception:  # pragma: no cover
 class AppConfig:
     mastapp_base_url: str
     required_groups: List[str]
+    # Best-effort Level-2 groups (e.g. pf_passive for audit). Missing is WARN, not blocking.
+    optional_groups: List[str]
     level2_s3_prefix: str
     s5cmd_path: str
     # Optional S3 endpoint URL (MAST uses https://s3.echo.stfc.ac.uk)
@@ -50,6 +52,8 @@ class AppConfig:
     voltage_map_path: Optional[str]
     # Optional: path to evolutive_authority JSON (nl_solver numerics; fail-closed when execute_evolutive).
     evolutive_authority_path: Optional[str]
+    # Optional: passive resistivity authority (awaiting = empty FreeGSNKE passives).
+    passive_resistivity_path: Optional[str]
     # Enable contract-driven extraction + residual metrics (requires contracts).
     enable_contract_metrics: bool
     # If True, generate+execute evolutive_run.py after static inverse (when voltage map + voltages exist).
@@ -59,6 +63,8 @@ class AppConfig:
     machine_authority_dir: Optional[str]
     # If True, missing/invalid machine authority is a blocking error.
     require_machine_authority: bool
+    # If True, rebuild classic MAST pickles when wall/pf_active fingerprints disagree.
+    rebuild_machine_authority: bool
     # If True, also hash downloaded data cache tree (can be expensive).
     provenance_hash_data: bool
     # If True, reuse non-empty data_cache/shot_<N>/<group>.zarr trees instead of re-syncing.
@@ -90,6 +96,7 @@ class AppConfig:
         # Normalize + defaults
         mastapp_base_url = str(obj.get("mastapp_base_url", "https://mastapp.site/json")).rstrip("/")
         required_groups = list(obj.get("required_groups", ["pf_active", "magnetics", "wall"]))
+        optional_groups = list(obj.get("optional_groups", ["pf_passive"]))
         level2_s3_prefix = str(obj.get("level2_s3_prefix", ""))
         s5cmd_path = str(obj.get("s5cmd_path", "s5cmd"))
         s3_endpoint_url = (str(obj["s3_endpoint_url"]) if obj.get("s3_endpoint_url") else None)
@@ -114,11 +121,15 @@ class AppConfig:
         evolutive_authority_path = (
             str(obj["evolutive_authority_path"]) if obj.get("evolutive_authority_path") else None
         )
+        passive_resistivity_path = (
+            str(obj["passive_resistivity_path"]) if obj.get("passive_resistivity_path") else None
+        )
         enable_contract_metrics = bool(obj.get("enable_contract_metrics", False))
         execute_evolutive = bool(obj.get("execute_evolutive", False))
 
         machine_authority_dir = (str(obj["machine_authority_dir"]) if obj.get("machine_authority_dir") else None)
         require_machine_authority = bool(obj.get("require_machine_authority", False))
+        rebuild_machine_authority = bool(obj.get("rebuild_machine_authority", True))
         provenance_hash_data = bool(obj.get("provenance_hash_data", False))
         allow_cache_reuse = bool(obj.get("allow_cache_reuse", True))
         batch_abort_on_failure = bool(obj.get("batch_abort_on_failure", False))
@@ -144,6 +155,7 @@ class AppConfig:
         return AppConfig(
             mastapp_base_url=mastapp_base_url,
             required_groups=required_groups,
+            optional_groups=optional_groups,
             level2_s3_prefix=level2_s3_prefix,
             s5cmd_path=s5cmd_path,
             s3_endpoint_url=s3_endpoint_url,
@@ -163,10 +175,12 @@ class AppConfig:
             coil_map_path=coil_map_path,
             voltage_map_path=voltage_map_path,
             evolutive_authority_path=evolutive_authority_path,
+            passive_resistivity_path=passive_resistivity_path,
             enable_contract_metrics=enable_contract_metrics,
             execute_evolutive=execute_evolutive,
             machine_authority_dir=machine_authority_dir,
             require_machine_authority=require_machine_authority,
+            rebuild_machine_authority=rebuild_machine_authority,
             provenance_hash_data=provenance_hash_data,
             allow_cache_reuse=allow_cache_reuse,
             batch_abort_on_failure=batch_abort_on_failure,

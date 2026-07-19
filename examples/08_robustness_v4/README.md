@@ -3,7 +3,7 @@
 This example assumes you already completed a baseline run:
 
 ```bash
-mast-freegsnke run --shot 30201 --config configs/config.json --machine machine_configs/MAST --enable-contract-metrics
+mast-freegsnke run --shot 30201 --config configs/config.json --machine machine_authority --enable-contract-metrics
 ```
 
 Then run robustness analysis inside the created run directory:

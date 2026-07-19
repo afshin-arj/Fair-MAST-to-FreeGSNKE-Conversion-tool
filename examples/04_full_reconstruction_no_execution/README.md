@@ -5,7 +5,7 @@ Goal: produce a publishable run folder structure without executing FreeGSNKE.
 ## Commands
 
 ```bash
-mast-freegsnke run --shot 30201 --config ../../configs/config.example.json --machine ../../machine_configs/MAST
+mast-freegsnke run --shot 30201 --config ../../configs/config.example.json --machine ../../machine_authority
 ```
 
 ## Expected outputs

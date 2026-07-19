@@ -5,7 +5,7 @@ Goal: infer a formed-plasma window deterministically and produce QC diagnostics.
 ## Commands
 
 ```bash
-mast-freegsnke run --shot 30201 --config ../../configs/config.example.json --machine ../../machine_configs/MAST
+mast-freegsnke run --shot 30201 --config ../../configs/config.example.json --machine ../../machine_authority
 
 # Recompute window only (if supported by your CLI build)
 mast-freegsnke window --shot 30201 --config ../../configs/config.example.json

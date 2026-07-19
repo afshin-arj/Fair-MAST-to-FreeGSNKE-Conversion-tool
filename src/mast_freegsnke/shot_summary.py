@@ -15,10 +15,10 @@ from typing import Any, Dict, List, Optional
 _KNOWN_LIMITATIONS = [
     "Structural machine is classic MAST built from FAIR-MAST Level-2 filaments (machine_authority/; see FREEGSNKE_MACHINE_PROVENANCE.json) — not FreeGSNKE MAST-U pickles.",
     "Limiter/wall = FAIR-MAST wall.zarr limiter_r/z (EFIT limiter geometry) — not surveyed CAD vessel; not a flux-loop computational proxy.",
-    "No FreeGSNKE passives: Level-2 pf_passive has parallelogram geometry but no resistivity (do not invent ρ).",
+    "No FreeGSNKE passives: Level-2 pf_passive has parallelogram geometry but no resistivity (do not invent resistivity).",
     "FAIR-MAST Level-2 supplies measured voltages (p1/p2/p4/p5 in V) as primary evolutive drive; p2 is applied identically to P2_inner and P2_outer (declared same-V policy).",
-    "P3 and P6 have no measured voltage → from_current_ohmic (I×R with FreeGSNKE coil_resist after load).",
-    "Active-coil resistivity is FreeGSNKE copper default 1.55e-8 (declared material constant; Level-2 does not publish coil ρ).",
+    "P3 and P6 have no measured voltage -> from_current_ohmic (I*R with FreeGSNKE coil_resist after load).",
+    "Active-coil resistivity is FreeGSNKE copper default 1.55e-8 (declared material constant; Level-2 does not publish coil resistivity).",
     "Profile alpha_m/alpha_n/fvac are held from the inverse IC; optional scale_paxis_with_ip is a declared Ip scaling law (default off) — never invented profile numbers.",
     "Contract residual metrics score only families with honest channel identity + units; uncalibrated mirnov/saddle/omaha stay audit-only until calibration authority is populated.",
 ]

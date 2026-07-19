@@ -244,3 +244,82 @@ class BulkDownloader:
         (shot_dir / "resolved_s3_paths.json").write_text(json.dumps(resolved, indent=2, sort_keys=True) + "\n")
         (shot_dir / "download_report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
         return shot_dir, report
+
+    def download_optional_groups(
+        self,
+        shot: int,
+        groups: List[str],
+        shot_dir: Path,
+        allow_cache_reuse: bool = False,
+    ) -> Dict[str, Dict[str, Any]]:
+        """Best-effort sync for optional groups. Missing/fail → recorded, never raises for absence."""
+        shot_dir = Path(shot_dir)
+        shot_dir.mkdir(parents=True, exist_ok=True)
+        prior = load_prior_resolved_paths(shot_dir)
+        resolved: Dict[str, str] = dict(prior)
+        report: Dict[str, Dict[str, Any]] = {}
+        for g in groups:
+            if allow_cache_reuse and group_cache_hit(shot_dir, g):
+                n_files, total_bytes = group_cache_stats(shot_dir, g)
+                report[g] = {
+                    "s3_path": prior.get(g),
+                    "cache_hit": True,
+                    "optional": True,
+                    "ok": True,
+                    "n_files": n_files,
+                    "total_bytes": total_bytes,
+                }
+                continue
+            try:
+                self._check_s5cmd()
+                src = self.discover_group_path(shot, g)
+                src_dir = src.rstrip("/")
+                if src_dir.endswith("/*"):
+                    src_dir = src_dir[:-2].rstrip("/")
+                elif src_dir.endswith("*"):
+                    src_dir = src_dir[:-1].rstrip("/")
+                resolved[g] = src_dir
+                dst = shot_dir / f"{g}.zarr"
+                dst.mkdir(parents=True, exist_ok=True)
+                sync_src = src_dir.rstrip("/") + "/*"
+                sync_timeout = max(int(self.timeout_s), 600)
+                subprocess.run(
+                    self._s5cmd_base() + ["sync", sync_src, str(dst)],
+                    check=True,
+                    timeout=sync_timeout,
+                )
+                n_files, total_bytes = group_cache_stats(shot_dir, g)
+                report[g] = {
+                    "s3_path": src_dir,
+                    "cache_hit": False,
+                    "optional": True,
+                    "ok": n_files > 0,
+                    "n_files": n_files,
+                    "total_bytes": total_bytes,
+                }
+            except Exception as e:
+                report[g] = {
+                    "s3_path": prior.get(g),
+                    "cache_hit": False,
+                    "optional": True,
+                    "ok": False,
+                    "error": f"{type(e).__name__}: {e}",
+                    "n_files": 0,
+                    "total_bytes": 0,
+                }
+        # Merge into prior resolved + download_report without wiping required entries.
+        (shot_dir / "resolved_s3_paths.json").write_text(
+            json.dumps(resolved, indent=2, sort_keys=True) + "\n"
+        )
+        prior_report: Dict[str, Any] = {}
+        dr = shot_dir / "download_report.json"
+        if dr.exists():
+            try:
+                prior_report = json.loads(dr.read_text(encoding="utf-8"))
+                if not isinstance(prior_report, dict):
+                    prior_report = {}
+            except Exception:
+                prior_report = {}
+        prior_report.update(report)
+        dr.write_text(json.dumps(prior_report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return report

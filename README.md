@@ -13,7 +13,7 @@ Upstream references:
 - [FAIR-MAST](https://github.com/ukaea/fair-mast) — Level-2 Zarr (currents + `coil_voltage` in V)
 - [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke) — Grad–Shafranov + evolutive `nl_solver` / `nlstepper`
 
-Version **11.3.0**.
+Version **11.4.0**.
 
 ---
 
@@ -76,9 +76,10 @@ flowchart TB
 
 | Authority | Role |
 |-----------|------|
-| `machine_authority/` | Classic MAST FreeGSNKE pickles from FAIR-MAST Level-2 filaments + `wall.zarr` EFIT limiter; probe geometry JSON (no invented metrology) |
+| `machine_authority/` | Classic MAST FreeGSNKE pickles from FAIR-MAST Level-2 filaments + `wall.zarr` EFIT limiter; auto-rebuild on fingerprint change; probe geometry JSON (no invented metrology) |
 | `configs/coil_map.json` | Current channels → FreeGSNKE classic circuits (binding) |
 | `configs/voltage_map.json` | Voltage channels → classic active vector (measured FAIR-MAST V primary; `from_current_ohmic` for P3/P6; no divertors) |
+| `configs/passive_resistivity.json` | Awaiting cited ρ for FreeGSNKE passives (pf_passive geometry alone is not enough) |
 | `execution_authority` | Grid, profiles, boundary, solver, metrics timebase |
 | `configs/evolutive_authority.json` | `dt`, `cover_window`/`max_steps`, `linear_only`, `scale_paxis_with_ip`, resistivity, timeouts |
 | `diagnostic_contracts.json` | Residual scoring pairs |

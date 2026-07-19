@@ -205,6 +205,26 @@ def main(argv=None) -> int:
     r.add_argument("--coil-map", type=str, default=None, help="Override config coil_map_path")
     r.add_argument("--enable-contract-metrics", action="store_true", help="Enable contract-driven synthetic extraction and residual scoring")
 
+    cert = sub.add_parser(
+        "certify",
+        help="Reviewer-grade certify for SHOT/<N> (reviewer-pack + replay -> CERTIFY_REPORT.json)",
+    )
+    cert.add_argument("--config", type=str, default="configs/default.json")
+    cert.add_argument("--shot", type=int, default=None, help="Shot number under runs_dir")
+    cert.add_argument("--run", type=str, default=None, help="Run directory, e.g. SHOT/30201")
+    cert.add_argument("--skip-replay", action="store_true")
+    cert.add_argument("--skip-reviewer-pack", action="store_true")
+
+    mrb = sub.add_parser(
+        "machine-rebuild",
+        help="Rebuild classic MAST FreeGSNKE pickles from FAIR-MAST shot cache",
+    )
+    mrb.add_argument("--config", type=str, default="configs/default.json")
+    mrb.add_argument("--shot", type=int, default=30201)
+    mrb.add_argument("--shot-cache", type=str, default=None)
+    mrb.add_argument("--out", type=str, default=None)
+    mrb.add_argument("--force", action="store_true")
+    mrb.add_argument("--validate-tokamak", action="store_true")
 
     args = ap.parse_args(argv)
 
@@ -282,6 +302,10 @@ def main(argv=None) -> int:
                             f"[OK] FreeGSNKE machine: classic MAST circuits "
                             f"{', '.join(keys)} ({machine_label or 'classic_MAST'})"
                         )
+                        from .honest_limits import honest_limits_status_lines
+
+                        for line in honest_limits_status_lines(ma_dir):
+                            print(line)
                     elif divertorish:
                         print(
                             "[FAIL] FreeGSNKE machine still has MAST-U divertor/PX circuits "
@@ -421,6 +445,49 @@ def main(argv=None) -> int:
             from .diagnostic_calibration import calibration_status_line
 
             print(calibration_status_line(path=None))
+
+        # Passive resistivity (awaiting = empty FreeGSNKE passives; never invent resistivity)
+        from .passive_resistivity import (
+            PassiveResistivityError,
+            load_passive_resistivity,
+            passive_resistivity_status_line,
+        )
+
+        if cfg.passive_resistivity_path:
+            prp = Path(cfg.passive_resistivity_path)
+            if not prp.is_absolute():
+                prp = (Path.cwd() / prp).resolve()
+            if not prp.exists():
+                print(f"[FAIL] passive_resistivity_path not found: {prp}")
+                ok = False
+            else:
+                try:
+                    pra = load_passive_resistivity(prp)
+                    print(passive_resistivity_status_line(path=cfg.passive_resistivity_path, auth=pra))
+                except PassiveResistivityError as e:
+                    print(f"[FAIL] passive_resistivity: {e}")
+                    ok = False
+        else:
+            print(passive_resistivity_status_line(path=None))
+
+        if cfg.optional_groups:
+            from .honest_limits import optional_group_audit_line
+
+            print(
+                f"[OK] optional_groups configured: {', '.join(cfg.optional_groups)} "
+                "(best-effort audit download; missing is non-blocking)"
+            )
+            print(optional_group_audit_line(None, group=str(cfg.optional_groups[0])))
+        else:
+            print("[INFO] optional_groups empty (set e.g. pf_passive for audit download)")
+
+        if cfg.rebuild_machine_authority:
+            print(
+                "[OK] rebuild_machine_authority=true "
+                "(classic pickles refresh when wall/pf_active fingerprints change)"
+            )
+        else:
+            print("[WARN] rebuild_machine_authority=false (machine pickles will not auto-sync)")
 
         # FreeGSNKE python
         if cfg.execute_freegsnke:
@@ -777,6 +844,51 @@ def main(argv=None) -> int:
         rep = nondeterminism_check(target, n=int(args.n))
         print(f"[OK] nondeterminism ok={rep.ok} hashes={rep.run_hashes}")
         return 0 if rep.ok else 14
+
+    if args.cmd == "certify":
+        from .certify import certify_from_cli_args
+
+        if cfg is None:
+            cfg = AppConfig.load(Path(args.config))
+        try:
+            report = certify_from_cli_args(
+                run=args.run,
+                shot=args.shot,
+                runs_dir=str(cfg.runs_dir),
+                skip_replay=bool(args.skip_replay),
+                skip_reviewer_pack=bool(args.skip_reviewer_pack),
+            )
+        except ValueError as e:
+            print(f"[FAIL] {e}")
+            return 2
+        print(json.dumps(report, indent=2, sort_keys=True))
+        print(f"[INFO] wrote {(Path(report['run_dir']) / 'CERTIFY_REPORT.json')}")
+        return 0 if report.get("ok") else 15
+
+    if args.cmd == "machine-rebuild":
+        from .machine_sync import maybe_rebuild_classic_machine
+        from .classic_mast_machine import validate_classic_tokamak
+        from .util import shot_cache_dir
+
+        if cfg is None:
+            cfg = AppConfig.load(Path(args.config))
+        cache = (
+            Path(args.shot_cache)
+            if args.shot_cache
+            else shot_cache_dir(Path(cfg.cache_dir), int(args.shot))
+        )
+        out = Path(args.out) if args.out else (
+            Path(cfg.machine_authority_dir) if cfg.machine_authority_dir else Path("machine_authority")
+        )
+        if not out.is_absolute():
+            out = (Path.cwd() / out).resolve()
+        rep = maybe_rebuild_classic_machine(
+            cache, out, shot=int(args.shot), force=bool(args.force), archive_mastu=False
+        )
+        if args.validate_tokamak and rep.get("ok"):
+            rep["tokamak_validation"] = validate_classic_tokamak(out)
+        print(json.dumps(rep, indent=2, sort_keys=True))
+        return 0 if rep.get("ok") else 16
 
     if args.cmd == "run":
         if (args.shot is None) == (args.shots is None):

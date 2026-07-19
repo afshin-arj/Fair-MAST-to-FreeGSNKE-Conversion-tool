@@ -1,4 +1,4 @@
-"""Honest, single-line status for contract residual metrics + calibration.
+"""Honest, single-line status for contract residual metrics + calibration + limits.
 
 As of v10.6.0 the shot-only happy path ships:
 
@@ -23,6 +23,12 @@ from .diagnostic_calibration import (
     DiagnosticCalibration,
     calibration_status_line,
     load_diagnostic_calibration,
+)
+from .honest_limits import honest_limits_status_lines, optional_group_audit_line
+from .passive_resistivity import (
+    PassiveResistivityError,
+    load_passive_resistivity,
+    passive_resistivity_status_line,
 )
 
 
@@ -80,6 +86,20 @@ def diagnostic_calibration_status_line(
     return calibration_status_line(path=path, cal=cal, apply_report=apply_report)
 
 
+def passive_resistivity_banner(cfg: AppConfig, *, cwd: Optional[Path] = None) -> str:
+    raw = cfg.passive_resistivity_path
+    if not raw:
+        return passive_resistivity_status_line(path=None)
+    p = Path(raw)
+    if not p.is_absolute():
+        p = ((cwd or Path.cwd()) / p).resolve()
+    try:
+        auth = load_passive_resistivity(p)
+    except PassiveResistivityError as e:
+        return f"[FAIL] passive_resistivity invalid ({p}): {e}"
+    return passive_resistivity_status_line(path=str(raw), auth=auth)
+
+
 def status_lines_for_run(cfg: AppConfig, *, cwd: Optional[Path] = None) -> list[str]:
     """Lines to print for interactive / CLI run banners."""
     lines: list[str] = []
@@ -87,4 +107,15 @@ def status_lines_for_run(cfg: AppConfig, *, cwd: Optional[Path] = None) -> list[
     if cm:
         lines.append(cm)
     lines.append(diagnostic_calibration_status_line(cfg, cwd=cwd))
+    lines.append(passive_resistivity_banner(cfg, cwd=cwd))
+    ma = None
+    if cfg.machine_authority_dir:
+        ma = Path(cfg.machine_authority_dir)
+        if not ma.is_absolute():
+            ma = ((cwd or Path.cwd()) / ma).resolve()
+    lines.extend(honest_limits_status_lines(ma if ma and ma.exists() else None))
+    if cfg.optional_groups:
+        lines.append(
+            optional_group_audit_line(None, group=str(cfg.optional_groups[0]))
+        )
     return lines

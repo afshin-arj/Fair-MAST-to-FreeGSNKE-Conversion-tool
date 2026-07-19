@@ -186,6 +186,7 @@ class ShotPipeline:
                 "platform": {"python": platform.python_version(), "system": platform.platform()},
                 "mastapp_base_url": self.cfg.mastapp_base_url,
                 "required_groups": list(self.cfg.required_groups),
+                "optional_groups": list(self.cfg.optional_groups),
                 "level2_s3_prefix": self.cfg.level2_s3_prefix,
                 "s3_layout_patterns": list(self.cfg.s3_layout_patterns),
                 "s3_endpoint_url": self.cfg.s3_endpoint_url,
@@ -230,6 +231,28 @@ class ShotPipeline:
                     cache_hits=sorted(download_report.keys()),
                     download_report=download_report,
                 )
+                # Optional audit groups still attempted (best-effort; may use cache).
+                if self.cfg.optional_groups:
+                    dl_opt = BulkDownloader(
+                        s5cmd_path=self.cfg.s5cmd_path,
+                        level2_s3_prefix=self.cfg.level2_s3_prefix,
+                        layout_patterns=self.cfg.s3_layout_patterns,
+                        s3_endpoint_url=self.cfg.s3_endpoint_url,
+                        s3_no_sign_request=self.cfg.s3_no_sign_request,
+                        timeout_s=self.cfg.s5cmd_timeout_s,
+                    )
+                    opt_rep = dl_opt.download_optional_groups(
+                        shot,
+                        list(self.cfg.optional_groups),
+                        shot_cache,
+                        allow_cache_reuse=bool(self.cfg.allow_cache_reuse),
+                    )
+                    download_report.update(opt_rep)
+                    _stage(
+                        "download_optional_groups",
+                        True,
+                        optional_report=opt_rep,
+                    )
             else:
                 client = MastAppClient(base_url=self.cfg.mastapp_base_url)
                 if not client.shot_exists(shot):
@@ -271,6 +294,49 @@ class ShotPipeline:
                     cache_hits=sorted(g for g, r in download_report.items() if r.get("cache_hit")),
                     download_report=download_report,
                 )
+                if self.cfg.optional_groups:
+                    opt_rep = dl.download_optional_groups(
+                        shot,
+                        list(self.cfg.optional_groups),
+                        shot_cache,
+                        allow_cache_reuse=bool(self.cfg.allow_cache_reuse),
+                    )
+                    download_report.update(opt_rep)
+                    _stage("download_optional_groups", True, optional_report=opt_rep)
+
+            # Rebuild classic MAST pickles when wall/pf_active fingerprints disagree.
+            if (
+                self.cfg.rebuild_machine_authority
+                and ma_root is not None
+                and ma_root.exists()
+                and shot_cache is not None
+            ):
+                from .machine_sync import maybe_rebuild_classic_machine
+
+                rebuild_rep = maybe_rebuild_classic_machine(
+                    shot_cache,
+                    ma_root,
+                    shot=int(shot),
+                    force=False,
+                    archive_mastu=False,
+                )
+                write_json(run_dir / "machine_rebuild_report.json", rebuild_rep)
+                _stage(
+                    "machine_rebuild",
+                    bool(rebuild_rep.get("ok")),
+                    rebuilt=bool(rebuild_rep.get("rebuilt")),
+                    reason=(rebuild_rep.get("check") or {}).get("reason"),
+                    error=rebuild_rep.get("error"),
+                )
+                if rebuild_rep.get("rebuilt") and rebuild_rep.get("ok"):
+                    ma, ma_report = machine_authority_from_dir(ma_root)
+                    write_json(run_dir / "machine_authority_report.json", ma_report)
+                    if ma is not None:
+                        machine_snapshot = snapshot_machine_authority(ma, run_dir)
+                elif not rebuild_rep.get("ok") and self.cfg.require_machine_authority:
+                    blocking_errors.append(
+                        f"machine_rebuild_failed: {rebuild_rep.get('error') or rebuild_rep.get('check')}"
+                    )
 
             # Extract CSV inputs (optional stack)
             try:

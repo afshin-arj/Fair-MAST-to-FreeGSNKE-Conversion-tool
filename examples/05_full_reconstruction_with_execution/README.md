@@ -8,7 +8,7 @@ Goal: run inverse/forward scripts via the execution harness and capture logs.
 mast-freegsnke run \
   --shot 30201 \
   --config ../../configs/config.example.json \
-  --machine ../../machine_configs/MAST \
+  --machine ../../machine_authority \
   --execute-freegsnke --freegsnke-mode both
 ```
 
@@ -18,7 +18,7 @@ If FreeGSNKE is installed in a separate Python:
 mast-freegsnke run \
   --shot 30201 \
   --config ../../configs/config.example.json \
-  --machine ../../machine_configs/MAST \
+  --machine ../../machine_authority \
   --execute-freegsnke --freegsnke-mode both \
   --freegsnke-python /path/to/freegsnke/python
 ```

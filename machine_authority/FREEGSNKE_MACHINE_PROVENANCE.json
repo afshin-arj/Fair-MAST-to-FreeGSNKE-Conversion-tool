@@ -16,9 +16,9 @@
     "passive_coils.pickle"
   ],
   "honest_limits": [
-    "Limiter/wall = FAIR-MAST wall.zarr EFIT limiter \u2260 surveyed CAD vessel",
+    "Limiter/wall = FAIR-MAST wall.zarr EFIT limiter != surveyed CAD vessel",
     "No FreeGSNKE passives: pf_passive geometry exists but resistivity is unpublished",
-    "P3/P6 have no measured FAIR-MAST voltage (evolutive uses I\u00d7R only)",
+    "P3/P6 have no measured FAIR-MAST voltage (evolutive uses I*R only)",
     "Active-coil resistivity = FreeGSNKE copper default 1.55e-08 (declared material constant)"
   ],
   "limiter": {
@@ -58,7 +58,7 @@
     ],
     "passives_written": [],
     "pf_passive_zarr_present": true,
-    "reason": "FAIR-MAST Level-2 pf_passive publishes parallelogram geometry (r/z/width/height/shapeAngle1/shapeAngle2) but no resistivity; FreeGSNKE passive pickles require resistivity. Do not invent \u03c1 \u2014 passive_coils.pickle stays empty.",
+    "reason": "FAIR-MAST Level-2 pf_passive publishes parallelogram geometry (r/z/width/height/shapeAngle1/shapeAngle2) but no resistivity; FreeGSNKE passive pickles require resistivity. Do not invent resistivity \u2014 passive_coils.pickle stays empty.",
     "resistivity_keys_found": []
   },
   "polarity": "+1 for all filaments (declared)",
@@ -67,6 +67,74 @@
   "shot": 30201,
   "shot_cache": "data_cache\\shot_30201",
   "source": "FAIR-MAST Level-2 Zarr (classic MAST \u2014 not MAST-U)",
+  "source_fingerprints": {
+    "pf_active": {
+      "keys": [
+        "p2_inner_lower_height",
+        "p2_inner_lower_r",
+        "p2_inner_lower_width",
+        "p2_inner_lower_z",
+        "p2_inner_upper_height",
+        "p2_inner_upper_r",
+        "p2_inner_upper_width",
+        "p2_inner_upper_z",
+        "p2_outer_lower_height",
+        "p2_outer_lower_r",
+        "p2_outer_lower_width",
+        "p2_outer_lower_z",
+        "p2_outer_upper_height",
+        "p2_outer_upper_r",
+        "p2_outer_upper_width",
+        "p2_outer_upper_z",
+        "p3_lower_height",
+        "p3_lower_r",
+        "p3_lower_width",
+        "p3_lower_z",
+        "p3_upper_height",
+        "p3_upper_r",
+        "p3_upper_width",
+        "p3_upper_z",
+        "p4_lower_height",
+        "p4_lower_r",
+        "p4_lower_width",
+        "p4_lower_z",
+        "p4_upper_height",
+        "p4_upper_r",
+        "p4_upper_width",
+        "p4_upper_z",
+        "p5_lower_height",
+        "p5_lower_r",
+        "p5_lower_width",
+        "p5_lower_z",
+        "p5_upper_height",
+        "p5_upper_r",
+        "p5_upper_width",
+        "p5_upper_z",
+        "p6_lower_height",
+        "p6_lower_r",
+        "p6_lower_width",
+        "p6_lower_z",
+        "p6_upper_height",
+        "p6_upper_r",
+        "p6_upper_width",
+        "p6_upper_z",
+        "sol_height",
+        "sol_r",
+        "sol_width",
+        "sol_z"
+      ],
+      "path": "data_cache\\shot_30201\\pf_active.zarr",
+      "sha256": "7f5c6f6373a5c01d9f0dd8f516d5923e7305afaeacdfbe53be6959741505c8eb"
+    },
+    "wall": {
+      "keys": [
+        "limiter_r",
+        "limiter_z"
+      ],
+      "path": "data_cache\\shot_30201\\wall.zarr",
+      "sha256": "b8ce3723373f2111d48400765915e81f228a732fb14847d1d60c1baa2effb296"
+    }
+  },
   "source_repo": "https://github.com/ukaea/fair-mast",
   "wall": "set equal to wall.zarr limiter contour (EFIT limiter geometry; not CAD vessel)"
 }

@@ -311,7 +311,7 @@ def pf_passive_omission_note(shot_cache: Path) -> Dict[str, Any]:
         "reason": (
             "FAIR-MAST Level-2 pf_passive publishes parallelogram geometry "
             "(r/z/width/height/shapeAngle1/shapeAngle2) but no resistivity; "
-            "FreeGSNKE passive pickles require resistivity. Do not invent ρ — "
+            "FreeGSNKE passive pickles require resistivity. Do not invent resistivity — "
             "passive_coils.pickle stays empty."
         ),
         "pf_passive_zarr_present": pp.exists(),
@@ -439,9 +439,9 @@ def write_classic_mast_machine(
         ),
         "passives": passive_note,
         "honest_limits": [
-            "Limiter/wall = FAIR-MAST wall.zarr EFIT limiter ≠ surveyed CAD vessel",
+            "Limiter/wall = FAIR-MAST wall.zarr EFIT limiter != surveyed CAD vessel",
             "No FreeGSNKE passives: pf_passive geometry exists but resistivity is unpublished",
-            "P3/P6 have no measured FAIR-MAST voltage (evolutive uses I×R only)",
+            "P3/P6 have no measured FAIR-MAST voltage (evolutive uses I*R only)",
             f"Active-coil resistivity = FreeGSNKE copper default {resistivity} (declared material constant)",
         ],
         "note": (
@@ -449,6 +449,17 @@ def write_classic_mast_machine(
             "classic MAST shots. Archived prior pickles under archive_mastu_like/ when present."
         ),
     }
+    try:
+        from .honest_limits import shot_cache_machine_fingerprints
+
+        fps = shot_cache_machine_fingerprints(shot_cache)
+        provenance["source_fingerprints"] = {
+            "wall": fps.get("wall"),
+            "pf_active": fps.get("pf_active"),
+        }
+    except Exception as e:
+        provenance["source_fingerprints_error"] = f"{type(e).__name__}: {e}"
+
     (out_dir / "FREEGSNKE_MACHINE_PROVENANCE.json").write_text(
         json.dumps(provenance, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

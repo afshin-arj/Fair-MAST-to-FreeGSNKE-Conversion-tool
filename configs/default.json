@@ -5,6 +5,9 @@
     "magnetics",
     "wall"
   ],
+  "optional_groups": [
+    "pf_passive"
+  ],
   "level2_s3_prefix": "s3://mast/level2/shots",
   "s5cmd_path": "s5cmd",
   "runs_dir": "SHOT",
@@ -18,6 +21,7 @@
   "diagnostics_compare": [],
   "diagnostic_contracts_path": "configs/diagnostic_contracts.json",
   "diagnostic_calibration_path": "configs/diagnostic_calibration.json",
+  "passive_resistivity_path": "configs/passive_resistivity.json",
   "coil_map_path": "configs/coil_map.json",
   "voltage_map_path": "configs/voltage_map.json",
   "evolutive_authority_path": "configs/evolutive_authority.json",
@@ -26,6 +30,7 @@
   "freegsnke_script_timeout_s": 1200,
   "machine_authority_dir": "machine_authority",
   "require_machine_authority": true,
+  "rebuild_machine_authority": true,
   "provenance_hash_data": false,
   "allow_cache_reuse": true,
   "batch_abort_on_failure": false,

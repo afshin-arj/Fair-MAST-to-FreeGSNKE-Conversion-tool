@@ -11,7 +11,7 @@ mast-freegsnke coilmap-validate --coil-map ../../configs/coil_map.example.json
 mast-freegsnke run \
   --shot 30201 \
   --config ../../configs/config.example.json \
-  --machine ../../machine_configs/MAST \
+  --machine ../../machine_authority \
   --execute-freegsnke --freegsnke-mode both \
   --enable-contract-metrics \
   --contracts ../../configs/diagnostic_contracts.example.json \

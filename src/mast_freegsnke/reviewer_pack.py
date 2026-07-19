@@ -56,7 +56,7 @@ def build_reviewer_pack(run_dir: Path, out_dir: Optional[Path] = None, items: Op
     readme.write_text(
         """# REVIEWER PACK
 
-This folder is a self-contained export of a single MAST → FreeGSNKE reconstruction run.
+This folder is a self-contained export of a single MAST -> FreeGSNKE reconstruction run.
 
 ## Contents
 - `manifest.json`: pipeline manifest (v1 schema, human-readable)
@@ -70,7 +70,8 @@ This folder is a self-contained export of a single MAST → FreeGSNKE reconstruc
 Re-run the pipeline using the same repository revision, machine authority, and configuration.
 Use `provenance/file_hashes.json` to verify that deterministic inputs/outputs match.
 """.strip()
-        + "\n"
+        + "\n",
+        encoding="utf-8",
     )
 
     return {"ok": True, "out_dir": str(out_dir), "copied": copied, "missing": missing}
