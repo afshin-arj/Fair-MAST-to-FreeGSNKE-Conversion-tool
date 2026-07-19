@@ -291,13 +291,16 @@ def main(argv=None) -> int:
                 print(f"[FAIL] voltage_map_path not found: {vmp}")
                 ok = False
             else:
+                from .voltage_map import voltage_map_drive_summary
+
                 vm = load_voltage_map(vmp)
                 vrep = validate_voltage_map(vm)
                 if not vrep.get("ok"):
                     print(f"[FAIL] voltage_map invalid: {vrep.get('errors')}")
                     ok = False
                 else:
-                    print(f"[OK] voltage_map: {vrep.get('n_circuits')} circuits")
+                    drive = voltage_map_drive_summary(vm)
+                    print(f"[OK] voltage_map: {drive['line']}")
         elif cfg.execute_evolutive:
             print("[FAIL] voltage_map_path required when execute_evolutive=true")
             ok = False
@@ -317,9 +320,21 @@ def main(argv=None) -> int:
             else:
                 try:
                     ea = load_evolutive_authority(eap)
+                    if ea.cover_window:
+                        n_desc = (
+                            f"cover_window max_steps={ea.max_steps}"
+                            + (
+                                f" (n_steps override={ea.n_steps})"
+                                if ea.n_steps is not None
+                                else ""
+                            )
+                        )
+                    else:
+                        n_desc = f"n_steps={ea.n_steps}"
                     print(
-                        f"[OK] evolutive_authority: n_steps={ea.n_steps} "
-                        f"dt={ea.full_timestep_s}s linear_only={ea.linear_only}"
+                        f"[OK] evolutive_authority: {n_desc} "
+                        f"dt={ea.full_timestep_s}s linear_only={ea.linear_only} "
+                        f"scale_paxis_with_ip={ea.scale_paxis_with_ip}"
                     )
                 except Exception as e:
                     print(f"[FAIL] evolutive_authority invalid: {e}")

@@ -1,6 +1,6 @@
 {
-  "version": "1.0",
-  "notes": "FAIR-MAST Level-2 voltage_channel labels → FreeGSNKE active circuit order (machine_authority/active_coils.pickle control coils). Units are volts (V) from zarr attrs. Circuits without a Level-2 voltage channel declare default_V=0 explicitly (zero-drive), not silent invention.",
+  "version": "1.1",
+  "notes": "FAIR-MAST Level-2 DOES supply measured coil voltages (units V from zarr attrs) on channels p1/p2/p4/p5 — these are the primary evolutive drive. FreeGSNKE structural machine is MAST-U-like (extra divertor circuits D1–D7/Dp with no classic-MAST FAIR-MAST voltage or current). P6 has mapped FAIR-MAST currents (P6L+P6U via coil_map) but no voltage channel → combine=from_current_ohmic builds V=sign*scale*I*R using FreeGSNKE machine coil_resist after load (same source as nl_solver). Divertors use declared default_V=0 (zero-drive), not invented voltages.",
   "machine_active_circuit_order": [
     "Solenoid",
     "PX",
@@ -15,82 +15,93 @@
     "P5",
     "P6"
   ],
+  "machine_circuits_without_fairmast_drive": [
+    "D1",
+    "D2",
+    "D3",
+    "Dp",
+    "D5",
+    "D6",
+    "D7"
+  ],
   "circuits": {
     "Solenoid": {
       "voltage_channels": ["p1"],
       "combine": "identity",
       "scale": 1.0,
       "sign": 1,
-      "notes": "FAIR-MAST p1 is the solenoid/OH voltage channel (zarr attrs link AMC_SOL to /xdc/pf/f/p1); units V."
+      "notes": "PRIMARY measured FAIR-MAST voltage: p1 (zarr attrs link AMC_SOL to /xdc/pf/f/p1); units V."
     },
     "PX": {
       "voltage_channels": ["p2"],
       "combine": "identity",
       "scale": 1.0,
       "sign": 1,
-      "notes": "FAIR-MAST voltage channel p2 mapped to FreeGSNKE MAST-U-like circuit PX (active_coils.pickle has no P2 label). Explicit cross-machine declaration."
+      "notes": "PRIMARY measured FAIR-MAST voltage channel p2 → FreeGSNKE MAST-U-like circuit PX (active_coils.pickle has no P2 label). Explicit cross-machine declaration."
     },
     "D1": {
       "voltage_channels": [],
       "combine": "default",
       "default_V": 0.0,
-      "notes": "FAIR-MAST Level-2 has no voltage channel for D1; explicit zero-drive declaration."
+      "notes": "MAST-U-only divertor circuit: neither FAIR-MAST voltage nor classic-MAST current mapping; declared zero-drive (machine_circuits_without_fairmast_drive)."
     },
     "D2": {
       "voltage_channels": [],
       "combine": "default",
       "default_V": 0.0,
-      "notes": "FAIR-MAST Level-2 has no voltage channel for D2; explicit zero-drive declaration."
+      "notes": "MAST-U-only divertor circuit: neither FAIR-MAST voltage nor classic-MAST current mapping; declared zero-drive (machine_circuits_without_fairmast_drive)."
     },
     "D3": {
       "voltage_channels": [],
       "combine": "default",
       "default_V": 0.0,
-      "notes": "FAIR-MAST Level-2 has no voltage channel for D3; explicit zero-drive declaration."
+      "notes": "MAST-U-only divertor circuit: neither FAIR-MAST voltage nor classic-MAST current mapping; declared zero-drive (machine_circuits_without_fairmast_drive)."
     },
     "Dp": {
       "voltage_channels": [],
       "combine": "default",
       "default_V": 0.0,
-      "notes": "FAIR-MAST Level-2 has no voltage channel for Dp; explicit zero-drive declaration."
+      "notes": "MAST-U-only divertor circuit: neither FAIR-MAST voltage nor classic-MAST current mapping; declared zero-drive (machine_circuits_without_fairmast_drive)."
     },
     "D5": {
       "voltage_channels": [],
       "combine": "default",
       "default_V": 0.0,
-      "notes": "FAIR-MAST Level-2 has no voltage channel for D5; explicit zero-drive declaration."
+      "notes": "MAST-U-only divertor circuit: neither FAIR-MAST voltage nor classic-MAST current mapping; declared zero-drive (machine_circuits_without_fairmast_drive)."
     },
     "D6": {
       "voltage_channels": [],
       "combine": "default",
       "default_V": 0.0,
-      "notes": "FAIR-MAST Level-2 has no voltage channel for D6; explicit zero-drive declaration."
+      "notes": "MAST-U-only divertor circuit: neither FAIR-MAST voltage nor classic-MAST current mapping; declared zero-drive (machine_circuits_without_fairmast_drive)."
     },
     "D7": {
       "voltage_channels": [],
       "combine": "default",
       "default_V": 0.0,
-      "notes": "FAIR-MAST Level-2 has no voltage channel for D7; explicit zero-drive declaration."
+      "notes": "MAST-U-only divertor circuit: neither FAIR-MAST voltage nor classic-MAST current mapping; declared zero-drive (machine_circuits_without_fairmast_drive)."
     },
     "P4": {
       "voltage_channels": ["p4"],
       "combine": "identity",
       "scale": 1.0,
       "sign": 1,
-      "notes": "FAIR-MAST p4 → FreeGSNKE P4; units V."
+      "notes": "PRIMARY measured FAIR-MAST voltage: p4 → FreeGSNKE P4; units V."
     },
     "P5": {
       "voltage_channels": ["p5"],
       "combine": "identity",
       "scale": 1.0,
       "sign": 1,
-      "notes": "FAIR-MAST p5 → FreeGSNKE P5; units V."
+      "notes": "PRIMARY measured FAIR-MAST voltage: p5 → FreeGSNKE P5; units V."
     },
     "P6": {
       "voltage_channels": [],
-      "combine": "default",
-      "default_V": 0.0,
-      "notes": "FAIR-MAST Level-2 has no voltage channel for P6; explicit zero-drive declaration."
+      "combine": "from_current_ohmic",
+      "current_circuit": "P6",
+      "scale": 1.0,
+      "sign": 1,
+      "notes": "No FAIR-MAST voltage channel for P6; FAIR-MAST currents P6L+P6U are mapped via coil_map to circuit P6. V(t)=sign*scale*I_P6(t)*R_P6 using FreeGSNKE coil_resist after load (Ohm's law with machine R — same source nl_solver uses). R is snapshotted into evolutive provenance; fail-closed if R unavailable."
     }
   }
 }

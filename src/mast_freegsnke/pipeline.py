@@ -387,7 +387,12 @@ class ShotPipeline:
                         else:
                             _stage("voltage_map", True, note="map_ok_but_no_raw_voltages")
                     else:
-                        v_apply = apply_voltage_map(raw_v, inputs_dir / "pf_voltages.csv", vmap)
+                        v_apply = apply_voltage_map(
+                            raw_v,
+                            inputs_dir / "pf_voltages.csv",
+                            vmap,
+                            pf_currents_csv=inputs_dir / "pf_currents.csv",
+                        )
                         write_json(inputs_dir / "voltage_map_apply_report.json", v_apply)
                         if not v_apply.get("ok", False):
                             blocking_errors.append(
@@ -400,6 +405,9 @@ class ShotPipeline:
                                 True,
                                 n_mapped=v_apply.get("n_mapped"),
                                 n_default_zero=v_apply.get("n_default_zero"),
+                                n_ohmic=v_apply.get("n_ohmic"),
+                                n_ohmic_deferred=v_apply.get("n_ohmic_deferred"),
+                                drive=v_apply.get("drive_summary", {}).get("line"),
                             )
                 except Exception as e:
                     blocking_errors.append(f"voltage_map_failed: {type(e).__name__}: {e}")

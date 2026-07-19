@@ -1,3 +1,10 @@
+## 11.1.0 — FAIR-MAST voltages primary + window-cover evolutive + ohmic I×R
+- **Honest voltage policy corrected:** FAIR-MAST Level-2 **does** supply measured voltages (`p1`/`p2`/`p4`/`p5`, units V) — these are the primary evolutive drive. The remaining mismatch is FreeGSNKE’s MAST-U-like structural divertor circuits vs classic MAST PF set (not “missing voltages”).
+- **`from_current_ohmic`:** circuits with mapped FAIR-MAST currents but no voltage (P6 via coil_map `P6L+P6U`) build `V(t)=sign*scale*I(t)*R` using FreeGSNKE `evol_metal_curr.active_coil_resistances` after load; R snapshotted to `evolutive/coil_resist_snapshot.json`; fail-closed if R unavailable. Divertors D1–D7/Dp stay declared `default_V=0` (`machine_circuits_without_fairmast_drive`).
+- **Window-length evolutive:** `cover_window=true` + `max_steps=50` + `full_timestep_s=0.02` → `n_steps=min(max_steps, ceil((t_end-t_start)/dt))` (shot 30201 ≈ 9 steps); optional `n_steps` override. `linear_only=true` default; `script_timeout_s` + `max_solving_iterations` bound runtime.
+- **Optional profile law:** `scale_paxis_with_ip` (default **false** for smoke stability) scales `paxis` with measured `Ip(t)/Ip(t0)` when enabled — declared law, not invented numbers.
+- Doctor banner: `N/M measured FAIR-MAST V; K by I×R; J by declared 0 V`. Version **11.1.0**.
+
 ## 11.0.0 — Evolutive forward + SHOT/ layout + repo rename
 - **Evolutive forward from FAIR-MAST voltages:** extract `coil_voltage` → `inputs/pf_voltages_raw.csv` (units V from zarr attrs); binding `configs/voltage_map.json` maps `p1/p2/p4/p5` onto FreeGSNKE active circuit order (`Solenoid`, `PX`, …, `P4`, `P5`, `P6`) with explicit `default_V=0` for circuits without Level-2 voltage channels; snapshot+hash into `contracts/`.
 - New `templates/evolutive_run.py.tpl` drives FreeGSNKE `nl_solver` / `initialize_from_ICs` / `nlstepper(active_voltage_vec=…)` using mapped voltages; numerics from fail-closed `configs/evolutive_authority.json` (default short window-friendly `n_steps=10`, `full_timestep_s=0.02`, `linear_only=true`). Profile parameters held from inverse IC — never invented.

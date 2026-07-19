@@ -13,7 +13,7 @@ Upstream references:
 - [FAIR-MAST](https://github.com/ukaea/fair-mast) — Level-2 Zarr (currents + `coil_voltage` in V)
 - [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke) — Grad–Shafranov + evolutive `nl_solver` / `nlstepper`
 
-Version **11.0.0**.
+Version **11.1.0**.
 
 ---
 
@@ -78,9 +78,9 @@ flowchart TB
 |-----------|------|
 | `machine_authority/` | FreeGSNKE pickles + FAIR-MAST probe geometry (no invented metrology) |
 | `configs/coil_map.json` | Current channels → FreeGSNKE circuits (binding) |
-| `configs/voltage_map.json` | Voltage channels → active vector order (binding; missing circuits declare `default_V=0`) |
+| `configs/voltage_map.json` | Voltage channels → active vector (binding; measured FAIR-MAST V primary; `from_current_ohmic` for I×R; divertors `default_V=0`) |
 | `execution_authority` | Grid, profiles, boundary, solver, metrics timebase |
-| `configs/evolutive_authority.json` | `dt`, `n_steps`, `linear_only`, `plasma_resistivity`, timeouts |
+| `configs/evolutive_authority.json` | `dt`, `cover_window`/`max_steps`, `linear_only`, `scale_paxis_with_ip`, resistivity, timeouts |
 | `diagnostic_contracts.json` | Residual scoring pairs |
 | `diagnostic_calibration.json` | Optional V→T / V→Wb (empty until real factors exist) |
 
@@ -127,9 +127,9 @@ Legacy `SHOTS/` is still ignored by git if present; default `runs_dir` is now **
 
 ## Honest limitations
 
-- Structural machine is **MAST-U-like** FreeGSNKE pickles; classic MAST FAIR-MAST voltages (`p1`/`p2`/`p4`/`p5`) are mapped explicitly (`p1→Solenoid`, `p2→PX`, `p4→P4`, `p5→P5`).
-- Circuits without Level-2 voltage channels use **declared** `default_V=0` (zero-drive), not silent inventing.
-- Evolutive profile parameters (`alpha_m`/`alpha_n`/…) are **held from the inverse IC** unless FAIR-MAST provides them (they do not invent them).
+- FAIR-MAST Level-2 **does** supply measured voltages (`p1`/`p2`/`p4`/`p5` in V) — primary evolutive drive (`p1→Solenoid`, `p2→PX`, `p4→P4`, `p5→P5`).
+- Structural machine is **MAST-U-like** FreeGSNKE pickles: divertors D1–D7/Dp have no classic-MAST FAIR-MAST drive → declared `default_V=0`. P6 has currents but no voltage → `from_current_ohmic` (`V=I×R` with FreeGSNKE `coil_resist`).
+- Evolutive profiles: `alpha_m`/`alpha_n`/`fvac` held from inverse IC; optional `scale_paxis_with_ip` is a declared Ip scaling law (default off).
 - Mirnov/saddle/omaha stay audit-only until a real calibration authority is populated.
 
 ---

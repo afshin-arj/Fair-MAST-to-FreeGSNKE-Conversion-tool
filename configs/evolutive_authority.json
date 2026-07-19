@@ -1,14 +1,16 @@
 {
   "authority_name": "freegsnke_evolutive_authority",
-  "authority_version": "11.0.0",
+  "authority_version": "11.1.0",
   "full_timestep_s": 0.02,
-  "n_steps": 2,
+  "cover_window": true,
+  "max_steps": 50,
   "linear_only": true,
+  "scale_paxis_with_ip": false,
   "plasma_resistivity_ohm_m": 1.0e-6,
   "max_solving_iterations": 50,
   "max_mode_frequency": 316.22776601683796,
   "min_dIy_dI": 0.01,
   "script_timeout_s": 1800.0,
   "snapshot_equilibria_every_n": 0,
-  "notes": "Declared evolutive numerics for FreeGSNKE nl_solver/nlstepper. Default linear_only=true, n_steps=2, full_timestep_s=0.02 and min_dIy_dI=0.01 keep happy-path/smoke finite on MAST-U-like machines (longer windows can hang after linearization departure). snapshot_equilibria_every_n=0 disables mid-run PNG snapshots. Profile alpha_m/alpha_n/paxis/fvac are held from the inverse IC — never invented. Missing FAIR-MAST voltage channels use voltage_map default_V=0 (explicit zero-drive)."
+  "notes": "Declared evolutive numerics for FreeGSNKE nl_solver/nlstepper. cover_window=true sets n_steps=min(max_steps, ceil((t_end-t_start)/dt)) so the formed-plasma window is covered (optional n_steps overrides). linear_only=true for robust smoke on MAST-U-like machines; script_timeout_s + max_solving_iterations bound runtime. FAIR-MAST Level-2 supplies measured voltages p1/p2/p4/p5 (primary drive); P6 uses from_current_ohmic (I×R from FreeGSNKE coil_resist); divertors D1–D7/Dp are declared 0 V (MAST-U-only). Profile alpha_m/alpha_n/fvac held from inverse IC; scale_paxis_with_ip=false by default (optional declared Ip scaling law — enable only when smoke-stable)."
 }
