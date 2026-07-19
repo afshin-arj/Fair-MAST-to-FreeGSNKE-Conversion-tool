@@ -441,7 +441,7 @@ def write_classic_mast_machine(
         "honest_limits": [
             "Limiter/wall = FAIR-MAST wall.zarr EFIT limiter != surveyed CAD vessel",
             "No FreeGSNKE passives: pf_passive geometry exists but resistivity is unpublished",
-            "P3/P6 have no measured FAIR-MAST voltage (evolutive uses I*R only)",
+            "P3/P6: no usable measured FAIR-MAST PF voltage in public L1/L2 (see configs/l1_voltage_inventory_30201.json); evolutive uses I*R only",
             f"Active-coil resistivity = FreeGSNKE copper default {resistivity} (declared material constant)",
         ],
         "note": (

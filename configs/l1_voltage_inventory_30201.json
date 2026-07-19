@@ -1,0 +1,65 @@
+{
+  "version": "1.0",
+  "shot": 30201,
+  "inventoried_utc": "2026-07-19",
+  "verdict": "no_usable_measured_P3_or_P6_coil_voltage",
+  "action": "keep_from_current_ohmic",
+  "level2_coil_voltage": {
+    "path": "s3://mast/level2/shots/30201.zarr/pf_active/coil_voltage",
+    "channels": ["p1", "p2", "p4", "p5"],
+    "uda_family": "/xdc/pf/f/{channel}",
+    "typical_scale_V": "1e2..1e3 (p1 up to ~2e3)"
+  },
+  "fair_mast_ingestion_mapping": {
+    "repo": "ukaea/fair-mast-ingestion",
+    "file": "mappings/level2/mast.yml",
+    "coil_voltage_channels_declared": [
+      "/xdc/pf/f/p1",
+      "/xdc/pf/f/p2",
+      "/xdc/pf/f/p4",
+      "/xdc/pf/f/p5",
+      "XPC_FA DRIVE"
+    ],
+    "notes": "XPC_FA DRIVE is commented as P6 voltage from analog control, but published Level-2 for 30201 (and checked peers 30420/23822/28000) only materialises four channels — XPC_FA DRIVE is absent from the public zarr. P3 is not in the L2 voltage mapping at all."
+  },
+  "level1_amc": {
+    "path": "s3://mast/level1/shots/30201.zarr/amc/",
+    "p3": [
+      "p3l_case_current",
+      "p3l_coil_current",
+      "p3l_current",
+      "p3l_feed_current",
+      "p3u_case_current",
+      "p3u_coil_current",
+      "p3u_current",
+      "p3u_feed_current"
+    ],
+    "p6": ["p6l_current", "p6u_current"],
+    "voltage_arrays": [],
+    "notes": "AMC is currents-only for P3/P6 on this shot; no amc *voltage* arrays."
+  },
+  "level1_xpc": {
+    "path": "s3://mast/level1/shots/30201.zarr/xpc/",
+    "present": false,
+    "notes": "No public L1 xpc group; cannot recover XPC_FA DRIVE from S3."
+  },
+  "level1_xdc": {
+    "path": "s3://mast/level1/shots/30201.zarr/xdc/",
+    "has_pf_subtree": false,
+    "notes": "L1 xdc for 30201 has shape/density control signals only — not /xdc/pf/f/*."
+  },
+  "level1_xma_p6_volts": {
+    "path": "s3://mast/level1/shots/30201.zarr/xma/p6_volts",
+    "uda_name": "/XMA/P6/VOLTS",
+    "units_attr": "V",
+    "signal_type": "Raw",
+    "quality": "Not Checked",
+    "observed_scale_V": "~0.04 (nearly constant; sparse finite samples)",
+    "usable_as_freegsnke_pf_drive": false,
+    "reason": "Magnitude ~40 mV vs Level-2 PF supply voltages of hundreds–thousands of volts; no published calibration to coil terminal V. Do not invent a scale factor."
+  },
+  "p3_voltage": {
+    "found_in_public_l1_or_l2": false,
+    "notes": "No P3 entry in FAIR L2 coil_voltage mapping; no L1 amc/xpc voltage for P3."
+  }
+}

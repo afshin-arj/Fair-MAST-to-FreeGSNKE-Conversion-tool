@@ -1,3 +1,7 @@
+## 11.4.1 — L1 voltage inventory (P3/P6 stay I×R)
+- **Inventory (shot 30201):** Level-1 `amc/` has P3/P6 currents only; no public `xpc` / `XPC_FA DRIVE`; `xma/p6_volts` (~40 mV raw) is **not** usable as FreeGSNKE PF drive. Evidence: `configs/l1_voltage_inventory_30201.json`.
+- **No invented channels:** P3/P6 remain `from_current_ohmic`; honest_limits / README / machine provenance updated. Version **11.4.1**.
+
 ## 11.4.0 — Hardening: optional pf_passive, machine sync, doctor limits, certify
 - **Doctor** prints `honest_limits` from machine provenance (wall≠CAD, no passives without ρ, P3/P6 I×R, copper 1.55e-8).
 - **`optional_groups`**: best-effort `pf_passive` download for audit (non-blocking); `configs/passive_resistivity.json` awaits cited ρ (never invent).

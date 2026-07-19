@@ -13,7 +13,7 @@ Upstream references:
 - [FAIR-MAST](https://github.com/ukaea/fair-mast) — Level-2 Zarr (currents + `coil_voltage` in V)
 - [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke) — Grad–Shafranov + evolutive `nl_solver` / `nlstepper`
 
-Version **11.4.0**.
+Version **11.4.1**.
 
 ---
 
@@ -79,6 +79,7 @@ flowchart TB
 | `machine_authority/` | Classic MAST FreeGSNKE pickles from FAIR-MAST Level-2 filaments + `wall.zarr` EFIT limiter; auto-rebuild on fingerprint change; probe geometry JSON (no invented metrology) |
 | `configs/coil_map.json` | Current channels → FreeGSNKE classic circuits (binding) |
 | `configs/voltage_map.json` | Voltage channels → classic active vector (measured FAIR-MAST V primary; `from_current_ohmic` for P3/P6; no divertors) |
+| `configs/l1_voltage_inventory_30201.json` | Declared L1/L2 inventory: no usable P3/P6 PF drive voltage on public FAIR-MAST |
 | `configs/passive_resistivity.json` | Awaiting cited ρ for FreeGSNKE passives (pf_passive geometry alone is not enough) |
 | `execution_authority` | Grid, profiles, boundary, solver, metrics timebase |
 | `configs/evolutive_authority.json` | `dt`, `cover_window`/`max_steps`, `linear_only`, `scale_paxis_with_ip`, resistivity, timeouts |
@@ -129,7 +130,7 @@ Legacy `SHOTS/` is still ignored by git if present; default `runs_dir` is now **
 ## Honest limitations
 
 - **FAIR-MAST = classic MAST** (not MAST-U). Structural machine pickles are built from Level-2 PF filaments (`scripts/build_classic_mast_machine.py`).
-- Measured voltages `p1`/`p2`/`p4`/`p5` (V) drive Solenoid / P2_inner+P2_outer (same-V) / P4 / P5. **P3 and P6 have no measured V** → `from_current_ohmic` (`V=I×R` only).
+- Measured voltages `p1`/`p2`/`p4`/`p5` (V) drive Solenoid / P2_inner+P2_outer (same-V) / P4 / P5. **P3/P6**: public L1/L2 have no usable measured PF drive V (inventory `configs/l1_voltage_inventory_30201.json`; `xma/p6_volts` is not usable) → `from_current_ohmic` (`V=I×R` only).
 - **Limiter/wall** = FAIR-MAST `wall.zarr` `limiter_r`/`limiter_z` (EFIT limiter geometry) — **≠ surveyed CAD vessel**, and not a flux-loop proxy.
 - **No FreeGSNKE passives**: Level-2 `pf_passive` has parallelogram geometry but **no resistivity**; inventing ρ is forbidden → empty `passive_coils.pickle`.
 - Active-coil **resistivity** = FreeGSNKE copper default **1.55e-8** (declared material constant; Level-2 does not publish coil ρ).

@@ -35,6 +35,10 @@ def test_shipped_voltage_map_valid() -> None:
     assert vmap.circuits["P6"]["current_circuit"] == "P6"
     assert vmap.circuits["P3"]["combine"] == "from_current_ohmic"
     assert "D1" not in vmap.circuits
+    inv = json.loads((REPO / "configs" / "l1_voltage_inventory_30201.json").read_text(encoding="utf-8"))
+    assert inv["verdict"] == "no_usable_measured_P3_or_P6_coil_voltage"
+    assert inv["action"] == "keep_from_current_ohmic"
+    assert inv["level1_xma_p6_volts"]["usable_as_freegsnke_pf_drive"] is False
     assert "PX" not in vmap.circuits
     assert vmap.machine_active_circuit_order == list(CLASSIC_CIRCUIT_ORDER)
     drive = voltage_map_drive_summary(vmap)

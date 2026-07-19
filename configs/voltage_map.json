@@ -1,6 +1,6 @@
 {
-  "version": "2.0",
-  "notes": "FAIR-MAST = classic MAST (not MAST-U). FreeGSNKE active circuits are classic only: Solenoid, P2_inner, P2_outer, P3, P4, P5, P6 — no divertors. Measured voltages p1/p2/p4/p5 (V) are primary drive. One FAIR-MAST p2 channel is applied identically to both P2_inner and P2_outer (declared same-V policy). Level-2 coil_voltage has only four channels for reference shot 30201; P3 and P6 have no measured V in Level-2 (re-checked) → from_current_ohmic using coil_map currents × FreeGSNKE coil_resist after load. Do not invent P3/P6 voltage channels.",
+  "version": "2.1",
+  "notes": "FAIR-MAST = classic MAST (not MAST-U). FreeGSNKE active circuits are classic only: Solenoid, P2_inner, P2_outer, P3, P4, P5, P6 — no divertors. Measured voltages p1/p2/p4/p5 (V) are primary drive. One FAIR-MAST p2 channel is applied identically to both P2_inner and P2_outer (declared same-V policy). Level-2 coil_voltage has only four channels for reference shot 30201; P3 and P6 stay from_current_ohmic (I×R). 2026-07-19 L1 inventory (configs/l1_voltage_inventory_30201.json): amc has P3/P6 currents only; no public xpc group / XPC_FA DRIVE (intended P6 V in fair-mast-ingestion mast.yml but not published); xma/p6_volts is ~40 mV raw — not usable as PF drive without inventing calibration. Do not invent P3/P6 voltage channels.",
   "machine_active_circuit_order": [
     "Solenoid",
     "P2_inner",
@@ -38,7 +38,7 @@
       "current_circuit": "P3",
       "scale": 1.0,
       "sign": 1,
-      "notes": "No FAIR-MAST voltage channel for P3; currents P3L+P3U mapped via coil_map. V(t)=sign*scale*I_P3(t)*R_P3 using FreeGSNKE coil_resist after load."
+      "notes": "No FAIR-MAST voltage channel for P3 (absent from L2 mapping and L1 amc). Currents P3L+P3U via coil_map. V(t)=sign*scale*I_P3(t)*R_P3 using FreeGSNKE coil_resist after load."
     },
     "P4": {
       "voltage_channels": ["p4"],
@@ -60,7 +60,7 @@
       "current_circuit": "P6",
       "scale": 1.0,
       "sign": 1,
-      "notes": "No FAIR-MAST voltage channel for P6; currents P6L+P6U mapped via coil_map. V(t)=sign*scale*I_P6(t)*R_P6 using FreeGSNKE coil_resist after load."
+      "notes": "No published measured P6 PF drive voltage (L2 omits XPC_FA DRIVE; L1 xma/p6_volts unusable). Currents P6L+P6U via coil_map. V(t)=sign*scale*I_P6(t)*R_P6 using FreeGSNKE coil_resist after load."
     }
   }
 }

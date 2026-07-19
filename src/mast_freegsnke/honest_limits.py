@@ -21,7 +21,7 @@ PF_ACTIVE_FINGERPRINT_SUFFIXES: Tuple[str, ...] = ("_r", "_z", "_width", "_heigh
 DEFAULT_HONEST_LIMITS: Tuple[str, ...] = (
     "Limiter/wall = FAIR-MAST wall.zarr EFIT limiter != surveyed CAD vessel",
     "No FreeGSNKE passives: pf_passive geometry exists but resistivity is unpublished",
-    "P3/P6 have no measured FAIR-MAST voltage (evolutive uses I*R only)",
+    "P3/P6: no usable measured FAIR-MAST PF voltage in public L1/L2 (see configs/l1_voltage_inventory_30201.json); evolutive uses I*R only",
     "Active-coil resistivity = FreeGSNKE copper default 1.55e-08 (declared material constant)",
 )
 
