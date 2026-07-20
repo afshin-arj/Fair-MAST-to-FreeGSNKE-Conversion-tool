@@ -81,9 +81,11 @@ def test_inverse_template_uses_full_inverse_multitime_path() -> None:
     assert "forward_gs_at_measured_pf_ip" in tpl  # fallback / overall mode label
     # Must not soft-pedal the stall root cause out of the note.
     assert "fastcrit" in tpl or "new_residual_flag" in tpl
-    # Child-process spawn path was retired (Windows rebuild overhead).
-    assert "_multitime_solve_worker" not in tpl
-    assert "multiprocessing" not in tpl
+    # Child-process hard kill for hung FreeGSNKE residual-resize loops.
+    assert "_multitime_solve_worker" in tpl
+    assert "multiprocessing" in tpl
+    assert "proc.terminate()" in tpl or "terminate()" in tpl
+    assert "_solve_one_sample(" in tpl
 
 
 def test_rendered_inverse_script_keeps_multitime_tokens(tmp_path: Path) -> None:

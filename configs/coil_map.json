@@ -1,6 +1,6 @@
 {
-  "version": "1.4",
-  "notes": "FAIR-MAST Level-2 (classic MAST) current_channel labels → FreeGSNKE classic circuit names. Series-wound U/L FEED pairs (P2–P5, P3) report the same circuit amp → combine=mean (sum would double). P6 is anti-series vertical control → antisym_mean=0.5*(P6L-P6U); FreeGSNKE lower P6 filament polarity=-1.",
+  "version": "1.5",
+  "notes": "FAIR-MAST Level-2 (classic MAST) current_channel labels → FreeGSNKE classic circuit names. Series-wound U/L FEED pairs (P2–P5, P3) report the same circuit amp → combine=mean (sum would double). P6 is anti-series vertical control: FreeGSNKE Circuit applies I_upper=+I_c and I_lower=-I_c (lower filament polarity=-1), so I_c=antisym_mean(P6U,P6L)=0.5*(P6U-P6L).",
   "circuits": {
     "Solenoid": {
       "exp_columns": ["SOL"],
@@ -44,11 +44,11 @@
       "notes": "Series pair; U/L FEED ≈ same I → mean (not sum)."
     },
     "P6": {
-      "exp_columns": ["P6L", "P6U"],
+      "exp_columns": ["P6U", "P6L"],
       "combine": "antisym_mean",
       "scale": 1.0,
       "sign": 1,
-      "notes": "Anti-series vertical-control pair. Do NOT sum (cancels). I=0.5*(P6L-P6U); machine lower filament polarity=-1."
+      "notes": "Anti-series vertical control. Do NOT sum (cancels). Column order is upper then lower: I_c=0.5*(P6U-P6L) so FreeGSNKE I_upper=+I_c and I_lower=-I_c match measured signs."
     }
   }
 }

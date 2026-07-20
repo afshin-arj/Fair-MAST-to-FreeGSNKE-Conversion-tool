@@ -150,7 +150,7 @@ class MultiTimeSolveSpec:
         ``GSstaticsolver.forward_solve`` / ``freegs4e.critical.fastcrit``)
       - continuation seeding from the previous converged ``plasma_psi``
       - declared ``max_solving_iterations`` (FreeGSNKE ``inverse_solve`` knob)
-      - declared wall-clock ``per_time_timeout_s`` (hard kill via child process)
+      - declared wall-clock ``per_time_timeout_s`` (hard kill via spawn child process)
 
     When inverse fails/times out, ``fallback_mode`` selects an honest next
     step: ``forward_gs`` (constrain=None Grad-Shafranov at measured PF/Ip) or

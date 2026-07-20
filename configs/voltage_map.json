@@ -60,7 +60,7 @@
       "current_circuit": "P6",
       "scale": 1.0,
       "sign": 1,
-      "notes": "No published measured P6 PF drive voltage (L2 omits XPC_FA DRIVE; L1 xma/p6_volts unusable). Currents via coil_map antisym_mean 0.5*(P6L-P6U). V(t)=sign*scale*I_P6(t)*R_P6 using FreeGSNKE coil_resist after load."
+      "notes": "No published measured P6 PF drive voltage (L2 omits XPC_FA DRIVE; L1 xma/p6_volts unusable). Currents via coil_map antisym_mean 0.5*(P6U-P6L). V(t)=sign*scale*I_P6(t)*R_P6 using FreeGSNKE coil_resist after load."
     }
   }
 }

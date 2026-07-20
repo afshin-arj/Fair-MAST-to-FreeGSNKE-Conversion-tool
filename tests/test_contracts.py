@@ -141,7 +141,8 @@ def test_apply_coil_map_p6_antisym_mean(tmp_path: Path) -> None:
         mapping={},
         circuits={
             "P6": {
-                "exp_columns": ["P6L", "P6U"],
+                # Upper then lower: matches FreeGSNKE I_upper=+I_c, I_lower=-I_c.
+                "exp_columns": ["P6U", "P6L"],
                 "combine": "antisym_mean",
                 "scale": 1.0,
                 "sign": 1,
@@ -152,10 +153,13 @@ def test_apply_coil_map_p6_antisym_mean(tmp_path: Path) -> None:
     rep = apply_coil_map(raw, out, coil_map)
     assert rep["ok"], rep
     df = pd.read_csv(out)
-    # 0.5*(100-(-80))=90; 0.5*(200-(-180))=190
-    assert list(df["P6"]) == pytest.approx([90.0, 190.0])
+    # 0.5*(-80 - 100)=-90; 0.5*(-180 - 200)=-190
+    # → I_upper=-90≈P6U, I_lower=+90≈P6L (via lower polarity=-1)
+    assert list(df["P6"]) == pytest.approx([-90.0, -190.0])
     # Sum would wrongly cancel toward ~20 / ~20 — antisym must not do that.
     assert abs(df["P6"].iloc[0] - 20.0) > 50.0
+    # Old inverted order 0.5*(P6L-P6U)=+90 must not be used with this machine.
+    assert df["P6"].iloc[0] < 0.0
 
 
 def test_shipped_coil_map_p6_is_antisym() -> None:
@@ -165,7 +169,7 @@ def test_shipped_coil_map_p6_is_antisym() -> None:
     rep = validate_coil_map(cm)
     assert rep["ok"], rep["errors"]
     assert cm.circuits["P6"]["combine"] == "antisym_mean"
-    assert cm.circuits["P6"]["exp_columns"] == ["P6L", "P6U"]
+    assert cm.circuits["P6"]["exp_columns"] == ["P6U", "P6L"]
     for series in ("P2_inner", "P2_outer", "P3", "P4", "P5"):
         assert cm.circuits[series]["combine"] == "mean", series
 

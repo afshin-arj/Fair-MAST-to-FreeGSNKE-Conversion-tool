@@ -13,7 +13,7 @@ Upstream references:
 - [FAIR-MAST](https://github.com/ukaea/fair-mast) — Level-2 Zarr (currents + `coil_voltage` in V)
 - [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke) — Grad–Shafranov + evolutive `nl_solver` / `nlstepper`
 
-Version **11.4.2**.
+Version **11.4.3**.
 
 ---
 
@@ -77,7 +77,7 @@ flowchart TB
 | Authority | Role |
 |-----------|------|
 | `machine_authority/` | Classic MAST FreeGSNKE pickles from FAIR-MAST Level-2 filaments + `wall.zarr` EFIT limiter; auto-rebuild on fingerprint change; probe geometry JSON (no invented metrology) |
-| `configs/coil_map.json` | Current channels → classic circuits (`mean` for series P2–P5/P3; `antisym_mean` for anti-series P6) |
+| `configs/coil_map.json` | Current channels → classic circuits (`mean` for series P2–P5/P3; `antisym_mean` `[P6U,P6L]` → `0.5*(P6U-P6L)` for anti-series P6) |
 | `configs/voltage_map.json` | Voltage channels → classic active vector (measured FAIR-MAST V primary; `from_current_ohmic` for P3/P6; no divertors) |
 | `configs/l1_voltage_inventory_30201.json` | Declared L1/L2 inventory: no usable P3/P6 PF drive voltage on public FAIR-MAST |
 | `configs/passive_resistivity.json` | Awaiting cited ρ for FreeGSNKE passives (pf_passive geometry alone is not enough) |

@@ -1,6 +1,6 @@
 {
   "authority_name": "MAST_FAIRMAST_Level2_MachineAuthority",
-  "authority_version": "1.4.0-fairmast-classic-pf-map",
+  "authority_version": "1.5.0-fairmast-classic-pf-map-p6-sign",
   "files": {
     "coil_geometry": "coil_geometry.json",
     "diagnostic_registry": "diagnostic_registry.json",
@@ -19,7 +19,7 @@
     "source": "FAIR-MAST Level-2 Zarr (classic MAST — not MAST-U)",
     "source_commit": "n/a-level2-archive",
     "source_repo": "https://github.com/ukaea/mast-data",
-    "freegsnke_pickles": "classic_mast_machine + machine_sync; P6 lower polarity=-1 (anti-series); series P2-P5/P3 coil_map mean; P6 antisym_mean; passives empty pending rho; copper 1.55e-8; P3/P6 V=I*R"
+    "freegsnke_pickles": "classic_mast_machine + machine_sync; P6 lower polarity=-1 (anti-series); series P2-P5/P3 coil_map mean; P6 antisym_mean 0.5*(P6U-P6L); passives empty pending rho; copper 1.55e-8; P3/P6 V=I*R"
   },
   "schema_version": "1.0"
 }

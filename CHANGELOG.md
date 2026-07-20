@@ -1,7 +1,13 @@
+## 11.4.3 — P6 antisym sign + hard multi-time timeout
+- **Root cause (Desktop 30201 hang):** coil_map v1.4 used `antisym_mean` with `[P6L,P6U]` → `I_c=0.5*(P6L-P6U)`. FreeGSNKE Circuit applies `I_fil=I_c*polarity` with P6 lower `polarity=-1`, so that order **inverted** vertical control vs measured P6U/P6L and hung the FreeGSNKE residual-resize loop at window sample t≈0.2454. Stale `sum` extracts (near-zero P6) masked the bug on older local runs.
+- **Fix:** coil_map **v1.5** lists `[P6U,P6L]` so `I_c=0.5*(P6U-P6L)` → `I_upper=+I_c`, `I_lower=-I_c` match experiment.
+- **Hard per-sample kill:** multi-time inverse runs each sample in a spawn child; `per_time_timeout_s` terminates the child so `fallback_mode` can still run (soft post-hoc timing cannot escape an uncapped FreeGSNKE hang).
+- Version **11.4.3**.
+
 ## 11.4.2 — Fresh-clone bootstrap + PF current map physics fixes
 - **Bootstrap:** launchers call `scripts/ensure_s5cmd.py` + `scripts/ensure_freegsnke_env.py` (Python **3.11 required**); interactive preflight via `preflight.py`.
 - **Doctor:** zarr extras are **FAIL** (not WARN) when execute is on; validates diagnostic contracts.
-- **P6 anti-series:** `antisym_mean` = `0.5*(P6L-P6U)`; lower filament polarity `-1` (sum wrongly cancelled).
+- **P6 anti-series:** `antisym_mean` = `0.5*(P6U-P6L)` with column order `[P6U,P6L]` (v1.5; v1.4 had inverted order); lower filament polarity `-1` (sum wrongly cancelled).
 - **P2–P5/P3 series:** U/L FEED channels are the same circuit amp → `combine=mean` (sum was **~2×I**).
 - Docs: `HOW_TO_RUN` `SHOTS/` → `SHOT/`. Version **11.4.2**.
 

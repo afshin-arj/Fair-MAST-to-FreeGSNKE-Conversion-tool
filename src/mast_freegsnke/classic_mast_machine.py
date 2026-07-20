@@ -177,7 +177,9 @@ def build_active_coils_from_pf_zarr(
                 resistivity=resistivity,
             )
             # Classic MAST P6 is anti-series (radial field / vertical control):
-            # lower half carries opposite current to the shared circuit amp.
+            # FreeGSNKE Circuit applies I_fil = I_circuit * polarity, so lower
+            # polarity=-1 yields I_upper=+I_c and I_lower=-I_c. Coil map must
+            # set I_c=0.5*(P6U-P6L) (see configs/coil_map.json P6 exp_columns).
             if circuit == "P6" and side == "lower":
                 leaf["polarity"] = -1
             parts[sub] = leaf

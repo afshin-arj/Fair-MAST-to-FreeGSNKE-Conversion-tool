@@ -71,6 +71,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
 import time as _time
+import multiprocessing as _mp
 
 from freegsnke import build_machine
 from freegsnke import equilibrium_update
@@ -202,13 +203,8 @@ def _solve_one_sample_inplace(
 ):
     """In-process inverse or forward_gs solve at one sample time.
 
-    Hard hang protection for the whole script is freegsnke_script_timeout_s in
-    FreeGSNKERunner. Per-time, we enforce max_solving_iterations (FreeGSNKE
-    inverse_solve knob) and record wall-clock duration against
-    per_time_timeout_s (soft: over-budget solves are discarded and fall back).
-    Process-spawn isolation was tried but Windows tokamak-rebuild overhead made
-    five child solves exceed the script budget; the stall mode is avoided by
-    fresh Inverse_optimizer + sample-to-sample continuation (proven in-process).
+    Prefer ``_solve_one_sample`` (hard per-time kill). Soft post-hoc timing
+    cannot interrupt a hung FreeGSNKE ``solver.solve``.
     """
     set_machine_currents(tokamak, pf_i)
     profiles_i = ConstrainPaxisIp(eq=eq, Ip=float(ip_i), **profiles_kwargs)
@@ -323,6 +319,144 @@ def _solve_one_sample_inplace(
         }
 
 
+def _multitime_solve_worker(payload: dict) -> None:
+    """Spawn-child entry for one multi-time sample (hard per_time_timeout_s kill).
+
+    Loads a pickled tokamak (~0.05s) and rebuilds Equilibrium so a hung
+    FreeGSNKE residual-resize loop can be terminated without killing the
+    whole inverse script.
+    """
+    import pickle as _pickle
+
+    tokamak = _pickle.loads(Path(payload["tokamak_pickle"]).read_bytes())
+    grid = payload["grid"]
+    eq = equilibrium_update.Equilibrium(
+        tokamak=tokamak,
+        Rmin=float(grid["Rmin"]), Rmax=float(grid["Rmax"]),
+        Zmin=float(grid["Zmin"]), Zmax=float(grid["Zmax"]),
+        nx=int(grid["nx"]), ny=int(grid["ny"]),
+    )
+    psi = np.load(payload["plasma_psi_in"])
+    eq.plasma_psi = np.array(psi, dtype=float, copy=True)
+    eq.solved = False
+    solver = GSstaticsolver.NKGSsolver(eq)
+    result = _solve_one_sample_inplace(
+        eq=eq,
+        solver=solver,
+        tokamak=tokamak,
+        profiles_kwargs=payload["profiles_kwargs"],
+        solv=payload["solv"],
+        mt_spec=payload["mt_spec"],
+        bnd=payload["bnd"],
+        t_i=float(payload["t_i"]),
+        ip_i=float(payload["ip_i"]),
+        pf_i=payload["pf_i"],
+        mode=str(payload["mode"]),
+        l2_reg=np.array(payload["l2_reg"], dtype=float),
+    )
+    if result.get("ok"):
+        np.save(payload["plasma_psi_out"], np.asarray(eq.plasma_psi, dtype=float))
+    Path(payload["result_json"]).write_text(json.dumps(result) + "\n", encoding="utf-8")
+
+
+def _solve_one_sample(
+    *,
+    eq,
+    solver,
+    tokamak,
+    profiles_kwargs: dict,
+    solv: dict,
+    mt_spec: dict,
+    bnd: dict,
+    grid: dict,
+    t_i: float,
+    ip_i: float,
+    pf_i: dict,
+    mode: str,
+    l2_reg,
+    tokamak_pickle: Path,
+):
+    """Solve one window sample with a hard wall-clock kill (multiprocessing).
+
+    FreeGSNKE 3.0.1 can hang forever inside an uncapped residual-resize loop;
+    soft post-hoc timing cannot escape that. A spawn child is terminated when
+    ``per_time_timeout_s`` elapses so fallback_mode can still run.
+    """
+    import pickle as _pickle
+
+    work = HERE / ".multitime_work"
+    work.mkdir(parents=True, exist_ok=True)
+    if not tokamak_pickle.exists():
+        tokamak_pickle.write_bytes(_pickle.dumps(tokamak, protocol=5))
+
+    tag = f"{mode}_{t_i:.6f}".replace(".", "p")
+    psi_in = work / f"{tag}_psi_in.npy"
+    psi_out = work / f"{tag}_psi_out.npy"
+    result_json = work / f"{tag}_result.json"
+    for pth in (psi_out, result_json):
+        if pth.exists():
+            pth.unlink()
+    np.save(psi_in, np.asarray(eq.plasma_psi, dtype=float))
+
+    payload = {
+        "tokamak_pickle": str(tokamak_pickle),
+        "grid": grid,
+        "profiles_kwargs": profiles_kwargs,
+        "solv": solv,
+        "mt_spec": mt_spec,
+        "bnd": bnd,
+        "t_i": float(t_i),
+        "ip_i": float(ip_i),
+        "pf_i": {k: float(v) for k, v in pf_i.items()},
+        "mode": mode,
+        "l2_reg": [float(x) for x in np.asarray(l2_reg, dtype=float).ravel()],
+        "plasma_psi_in": str(psi_in),
+        "plasma_psi_out": str(psi_out),
+        "result_json": str(result_json),
+    }
+
+    ctx = _mp.get_context("spawn")
+    proc = ctx.Process(target=_multitime_solve_worker, args=(payload,))
+    tic = _time.time()
+    proc.start()
+    proc.join(timeout=float(mt_spec["per_time_timeout_s"]))
+    if proc.is_alive():
+        proc.terminate()
+        proc.join(timeout=5.0)
+        if proc.is_alive():
+            proc.kill()
+            proc.join(timeout=5.0)
+        return {
+            "ok": False,
+            "status": "timeout",
+            "solve_mode": mode,
+            "iterations": None,
+            "rel_change": None,
+            "duration_s": float(_time.time() - tic),
+            "error": (
+                f"hard kill: per-time solve exceeded solver.multitime.per_time_timeout_s="
+                f"{mt_spec['per_time_timeout_s']}s (child process terminated)"
+            ),
+        }
+
+    if not result_json.exists():
+        return {
+            "ok": False,
+            "status": "error",
+            "solve_mode": mode,
+            "iterations": None,
+            "rel_change": None,
+            "duration_s": float(_time.time() - tic),
+            "error": f"child exited without result (exitcode={proc.exitcode})",
+        }
+    result = json.loads(result_json.read_text(encoding="utf-8"))
+    if result.get("ok") and psi_out.exists():
+        eq.plasma_psi = np.load(psi_out)
+        eq.solved = True
+        set_machine_currents(tokamak, pf_i)
+    return result
+
+
 def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, ip_df, t0: float) -> None:
     """Emit multi-time synthetic diagnostics (v10.5.0).
 
@@ -397,7 +531,7 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
                 f"max_iter={mt_spec['max_solving_iterations']})",
                 flush=True,
             )
-            result = _solve_one_sample_inplace(
+            result = _solve_one_sample(
                 eq=eq,
                 solver=solver,
                 tokamak=tokamak,
@@ -405,11 +539,13 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
                 solv=solv,
                 mt_spec=mt_spec,
                 bnd=bnd,
+                grid=ea["grid"],
                 t_i=float(t_i),
                 ip_i=float(ip_i),
                 pf_i=pf_i,
                 mode=mode,
                 l2_reg=l2_reg,
+                tokamak_pickle=HERE / ".multitime_work" / "tokamak.pkl",
             )
             attempted.append({
                 "solve_mode": mode,
@@ -507,7 +643,7 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
                 "one Inverse_optimizer across times stalls in FreeGSNKE 3.0.1 "
                 "(uncapped while new_residual_flag resize loop inside "
                 "GSstaticsolver.forward_solve calling freegs4e.critical.fastcrit). "
-                "Hard pipeline hang protection is freegsnke_script_timeout_s. "
+                "Hard per-sample kill is multiprocessing terminate on per_time_timeout_s; FreeGSNKERunner also enforces freegsnke_script_timeout_s. "
                 "Failed times fall back to forward_gs or are skipped; never fabricated."
             ),
         },

@@ -206,8 +206,11 @@ def apply_coil_map(
         elif combine == "mean":
             vals = mat.mean(axis=1)
         elif combine == "antisym_mean":
-            # Anti-series pair (classic MAST P6): I_circuit = 0.5*(I_pos - I_neg).
-            # FreeGSNKE applies I_circuit to both halves with opposite filament polarity.
+            # Anti-series pair (classic MAST P6): I_circuit = 0.5*(col0 - col1).
+            # FreeGSNKE Circuit sets filament current = I_circuit * polarity, with
+            # P6 upper polarity=+1 and lower polarity=-1, so I_upper=+I_c, I_lower=-I_c.
+            # Shipped coil_map therefore lists [P6U, P6L] so I_c=0.5*(P6U-P6L) matches
+            # measured signs (v1.4 used [P6L, P6U] which inverted vertical control).
             if mat.shape[1] != 2:
                 report["ok"] = False
                 report["errors"].append(f"antisym_mean_requires_two_columns:{coil}")
