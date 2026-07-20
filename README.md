@@ -13,7 +13,7 @@ Upstream references:
 - [FAIR-MAST](https://github.com/ukaea/fair-mast) — Level-2 Zarr (currents + `coil_voltage` in V)
 - [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke) — Grad–Shafranov + evolutive `nl_solver` / `nlstepper`
 
-Version **11.4.3**.
+Version **11.5.0**.
 
 ---
 
@@ -101,6 +101,7 @@ SHOT/30201/
     SUMMARY.md / SUMMARY.json   # status, window, modes, metrics, limits
     timeline.txt
   inputs/                       # experimental CSVs + authority snapshots
+  experimental_data/            # categorized FAIR-MAST CSV + professional plots
   synthetic/                    # FreeGSNKE probe synthetics
   metrics/                      # residual scores
   evolutive/                    # history.csv, snapshots, meta
@@ -116,6 +117,7 @@ flowchart TB
   R --> R0["00_README.txt"]
   R --> R1["01_summary/"]
   R --> IN["inputs/"]
+  R --> ED["experimental_data/"]
   R --> SYN["synthetic/"]
   R --> MET["metrics/"]
   R --> EV["evolutive/"]

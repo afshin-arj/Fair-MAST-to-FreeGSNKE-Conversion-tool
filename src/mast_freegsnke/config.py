@@ -56,6 +56,11 @@ class AppConfig:
     passive_resistivity_path: Optional[str]
     # Enable contract-driven extraction + residual metrics (requires contracts).
     enable_contract_metrics: bool
+    # Categorized experimental FAIR-MAST pack under SHOT/<N>/experimental_data/.
+    enable_experimental_data: bool
+    experimental_data_plots: bool
+    experimental_data_include_l1: bool
+    experimental_data_include_l3: bool
     # If True, generate+execute evolutive_run.py after static inverse (when voltage map + voltages exist).
     execute_evolutive: bool
 
@@ -125,6 +130,10 @@ class AppConfig:
             str(obj["passive_resistivity_path"]) if obj.get("passive_resistivity_path") else None
         )
         enable_contract_metrics = bool(obj.get("enable_contract_metrics", False))
+        enable_experimental_data = bool(obj.get("enable_experimental_data", True))
+        experimental_data_plots = bool(obj.get("experimental_data_plots", True))
+        experimental_data_include_l1 = bool(obj.get("experimental_data_include_l1", True))
+        experimental_data_include_l3 = bool(obj.get("experimental_data_include_l3", True))
         execute_evolutive = bool(obj.get("execute_evolutive", False))
 
         machine_authority_dir = (str(obj["machine_authority_dir"]) if obj.get("machine_authority_dir") else None)
@@ -177,6 +186,10 @@ class AppConfig:
             evolutive_authority_path=evolutive_authority_path,
             passive_resistivity_path=passive_resistivity_path,
             enable_contract_metrics=enable_contract_metrics,
+            enable_experimental_data=enable_experimental_data,
+            experimental_data_plots=experimental_data_plots,
+            experimental_data_include_l1=experimental_data_include_l1,
+            experimental_data_include_l3=experimental_data_include_l3,
             execute_evolutive=execute_evolutive,
             machine_authority_dir=machine_authority_dir,
             require_machine_authority=require_machine_authority,

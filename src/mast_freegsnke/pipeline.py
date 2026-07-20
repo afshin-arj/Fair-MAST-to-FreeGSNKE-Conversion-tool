@@ -47,6 +47,7 @@ from .voltage_map import (
 )
 from .evolutive_authority import load_evolutive_authority, write_evolutive_authority
 from .shot_summary import write_shot_expert_overlay
+from .experimental_data import build_experimental_data
 from .synthetic_extract import extract_synthetic_by_contracts
 from .metrics import compare_from_contracts
 from .execution_authority import write_execution_authority
@@ -603,6 +604,41 @@ class ShotPipeline:
                         report=geom_report,
                         note="allow_missing_geometry=True: continuing without magnetic_probes outputs",
                     )
+
+            # Categorized experimental FAIR-MAST pack (CSV + plots). Non-blocking:
+            # FreeGSNKE path must still run if plotting fails on a headless box.
+            if getattr(self.cfg, "enable_experimental_data", True):
+                try:
+                    ed_report = build_experimental_data(
+                        run_dir,
+                        shot=int(shot),
+                        cache_dir=shot_cache,
+                        machine_dir=ma_root if ma_root is not None else machine_dir,
+                        repo_root=repo_root,
+                        include_l1=bool(getattr(self.cfg, "experimental_data_include_l1", True)),
+                        include_l3=bool(getattr(self.cfg, "experimental_data_include_l3", True)),
+                        plots=bool(getattr(self.cfg, "experimental_data_plots", True)),
+                    )
+                    write_json(run_dir / "experimental_data_report.json", ed_report.to_dict())
+                    _stage(
+                        "experimental_data",
+                        bool(ed_report.ok),
+                        n_files=len(ed_report.files_written),
+                        n_plots=len(ed_report.plots_written),
+                        warnings=list(ed_report.warnings)[:20],
+                        errors=list(ed_report.errors),
+                    )
+                    if not ed_report.ok:
+                        # Soft: record but do not block FreeGSNKE (inputs already extracted).
+                        pass
+                except Exception as e:
+                    _stage("experimental_data", False, error=str(e))
+                    write_json(
+                        run_dir / "experimental_data_report.json",
+                        {"ok": False, "errors": [str(e)]},
+                    )
+            else:
+                _stage("experimental_data", True, note="enable_experimental_data=false")
 
             # Optional: execute FreeGSNKE scripts (inverse/forward) and compute residual metrics.
             exec_summary: Dict[str, Any] = {"enabled": bool(self.cfg.execute_freegsnke), "mode": self.cfg.freegsnke_run_mode}

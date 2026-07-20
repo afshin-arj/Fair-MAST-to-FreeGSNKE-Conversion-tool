@@ -17,6 +17,7 @@ comes from the shipped configs/default.json.
 
 Outputs land under:
   SHOT/<shot_number>/     e.g. SHOT/30201/
+    experimental_data/    categorized FAIR-MAST CSV + plots (default on)
 
 On Windows, run_pipeline.cmd always pauses at the end (success or failure)
 so you can read the console. Set RUN_PIPELINE_NO_PAUSE=1 to skip the pause.

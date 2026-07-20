@@ -127,6 +127,7 @@ def write_shot_expert_overlay(
             "-----------------------",
             "Operational tooling paths (stable; used by pipeline/CLI):",
             "  inputs/              experimental CSVs + authorities snapshots",
+            "  experimental_data/   categorized FAIR-MAST CSV + professional plots",
             "  synthetic/           FreeGSNKE synthetic probe traces",
             "  metrics/             residual scores",
             "  logs/                FreeGSNKE stdout/stderr",

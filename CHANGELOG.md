@@ -1,3 +1,11 @@
+## 11.5.0 — experimental_data pack (categorized CSV + plots)
+- New stage writes `SHOT/<N>/experimental_data/` with professional folders:
+  `00_index` (catalog), `01_plasma`, `02_pf`, `03_magnetics`, `04_geometry`, `05_plots`, `l1/`, `l3/`.
+- L2 measured vs derived (coil_map / voltage_map) labeled in `catalog.json`; audit mirnov/saddle/omaha watermarked uncalibrated.
+- Portable headless plots (matplotlib Agg); no new interactive prompts (config: `enable_experimental_data=true`).
+- L1: inventory + cached sidecars only (no invented channels). L3: status-only until public groups + authority exist.
+- Version **11.5.0**.
+
 ## 11.4.3 — P6 antisym sign + hard multi-time timeout
 - **Root cause (Desktop 30201 hang):** coil_map v1.4 used `antisym_mean` with `[P6L,P6U]` → `I_c=0.5*(P6L-P6U)`. FreeGSNKE Circuit applies `I_fil=I_c*polarity` with P6 lower `polarity=-1`, so that order **inverted** vertical control vs measured P6U/P6L and hung the FreeGSNKE residual-resize loop at window sample t≈0.2454. Stale `sum` extracts (near-zero P6) masked the bug on older local runs.
 - **Fix:** coil_map **v1.5** lists `[P6U,P6L]` so `I_c=0.5*(P6U-P6L)` → `I_upper=+I_c`, `I_lower=-I_c` match experiment.
