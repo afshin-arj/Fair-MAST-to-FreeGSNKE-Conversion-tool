@@ -1,3 +1,10 @@
+## 11.4.2 — Fresh-clone bootstrap + PF current map physics fixes
+- **Bootstrap:** launchers call `scripts/ensure_s5cmd.py` + `scripts/ensure_freegsnke_env.py` (Python **3.11 required**); interactive preflight via `preflight.py`.
+- **Doctor:** zarr extras are **FAIL** (not WARN) when execute is on; validates diagnostic contracts.
+- **P6 anti-series:** `antisym_mean` = `0.5*(P6L-P6U)`; lower filament polarity `-1` (sum wrongly cancelled).
+- **P2–P5/P3 series:** U/L FEED channels are the same circuit amp → `combine=mean` (sum was **~2×I**).
+- Docs: `HOW_TO_RUN` `SHOTS/` → `SHOT/`. Version **11.4.2**.
+
 ## 11.4.1 — L1 voltage inventory (P3/P6 stay I×R)
 - **Inventory (shot 30201):** Level-1 `amc/` has P3/P6 currents only; no public `xpc` / `XPC_FA DRIVE`; `xma/p6_volts` (~40 mV raw) is **not** usable as FreeGSNKE PF drive. Evidence: `configs/l1_voltage_inventory_30201.json`.
 - **No invented channels:** P3/P6 remain `from_current_ohmic`; honest_limits / README / machine provenance updated. Version **11.4.1**.

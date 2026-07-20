@@ -61,7 +61,7 @@
     "reason": "FAIR-MAST Level-2 pf_passive publishes parallelogram geometry (r/z/width/height/shapeAngle1/shapeAngle2) but no resistivity; FreeGSNKE passive pickles require resistivity. Do not invent resistivity \u2014 passive_coils.pickle stays empty.",
     "resistivity_keys_found": []
   },
-  "polarity": "+1 for all filaments (declared)",
+  "polarity": "+1 for all filaments except P6 lower (polarity=-1; classic MAST anti-series vertical control)",
   "resistivity_citation": "FreeGSNKE default copper resistivity used in public machine_configs (value 1.55e-08); material constant \u2014 not invented coil geometry. FAIR-MAST Level-2 pf_active does not publish coil resistivity.",
   "resistivity_ohm_m": 1.55e-08,
   "shot": 30201,

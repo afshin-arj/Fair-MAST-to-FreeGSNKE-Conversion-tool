@@ -140,6 +140,24 @@ if not "%PYPROJECT_HASH%"=="" (
 )
 
 :RUN_INTERACTIVE
+REM Shot-only bootstrap: s5cmd + FreeGSNKE venv (defaults require both).
+REM Skip FreeGSNKE env with RUN_PIPELINE_SKIP_FREEGSNKE_ENV=1.
+echo [INFO] Ensuring s5cmd (tools/s5cmd.exe if not on PATH)
+python scripts\ensure_s5cmd.py
+if errorlevel 1 (
+  echo [FAIL] s5cmd bootstrap failed.
+  set "RC=1"
+  goto :FINISH
+)
+
+echo [INFO] Ensuring FreeGSNKE venv (.venv-freegsnke)
+python scripts\ensure_freegsnke_env.py
+if errorlevel 1 (
+  echo [FAIL] FreeGSNKE env bootstrap failed.
+  set "RC=1"
+  goto :FINISH
+)
+
 echo.
 echo ===========================================================================
 echo Interactive Run

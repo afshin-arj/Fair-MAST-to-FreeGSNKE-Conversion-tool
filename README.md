@@ -13,7 +13,7 @@ Upstream references:
 - [FAIR-MAST](https://github.com/ukaea/fair-mast) — Level-2 Zarr (currents + `coil_voltage` in V)
 - [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke) — Grad–Shafranov + evolutive `nl_solver` / `nlstepper`
 
-Version **11.4.1**.
+Version **11.4.2**.
 
 ---
 
@@ -77,7 +77,7 @@ flowchart TB
 | Authority | Role |
 |-----------|------|
 | `machine_authority/` | Classic MAST FreeGSNKE pickles from FAIR-MAST Level-2 filaments + `wall.zarr` EFIT limiter; auto-rebuild on fingerprint change; probe geometry JSON (no invented metrology) |
-| `configs/coil_map.json` | Current channels → FreeGSNKE classic circuits (binding) |
+| `configs/coil_map.json` | Current channels → classic circuits (`mean` for series P2–P5/P3; `antisym_mean` for anti-series P6) |
 | `configs/voltage_map.json` | Voltage channels → classic active vector (measured FAIR-MAST V primary; `from_current_ohmic` for P3/P6; no divertors) |
 | `configs/l1_voltage_inventory_30201.json` | Declared L1/L2 inventory: no usable P3/P6 PF drive voltage on public FAIR-MAST |
 | `configs/passive_resistivity.json` | Awaiting cited ρ for FreeGSNKE passives (pf_passive geometry alone is not enough) |
@@ -142,16 +142,19 @@ Legacy `SHOTS/` is still ignored by git if present; default `runs_dir` is now **
 ## Install
 
 ```bash
+# Quickest (Windows): clones + bootstraps s5cmd + FreeGSNKE venv automatically
+run_pipeline.cmd
+# Enter shot number only (e.g. 30201)
+
+# Or manual:
 python -m venv .venv
 .venv\Scripts\activate          # Windows
 pip install -e ".[dev,zarr]"
-
-# FreeGSNKE (separate venv recommended)
-python3.11 -m venv .venv-freegsnke
-.venv-freegsnke\Scripts\pip install freegsnke
+python scripts/ensure_s5cmd.py
+python scripts/ensure_freegsnke_env.py   # creates .venv-freegsnke + installs freegsnke
 ```
 
-Set `freegsnke_python` in `configs/default.json` if needed.
+`configs/default.json` expects `.venv-freegsnke` (set `freegsnke_python` if you use another env).
 
 ---
 

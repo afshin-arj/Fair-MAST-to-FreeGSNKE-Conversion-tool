@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from mast_freegsnke.diagnostic_contracts import (
     load_contracts,
@@ -129,6 +130,67 @@ def test_apply_coil_map_circuits_sum(tmp_path: Path) -> None:
     df = pd.read_csv(out)
     assert list(df["P2_inner"]) == [4.0, 6.0]
     assert list(df["Solenoid"]) == [10.0, 20.0]
+
+
+def test_apply_coil_map_p6_antisym_mean(tmp_path: Path) -> None:
+    raw = tmp_path / "pf_active_raw.csv"
+    pd.DataFrame(
+        {"time": [0.0, 1.0], "P6L": [100.0, 200.0], "P6U": [-80.0, -180.0]}
+    ).to_csv(raw, index=False)
+    coil_map = CoilMap(
+        mapping={},
+        circuits={
+            "P6": {
+                "exp_columns": ["P6L", "P6U"],
+                "combine": "antisym_mean",
+                "scale": 1.0,
+                "sign": 1,
+            }
+        },
+    )
+    out = tmp_path / "pf_currents.csv"
+    rep = apply_coil_map(raw, out, coil_map)
+    assert rep["ok"], rep
+    df = pd.read_csv(out)
+    # 0.5*(100-(-80))=90; 0.5*(200-(-180))=190
+    assert list(df["P6"]) == pytest.approx([90.0, 190.0])
+    # Sum would wrongly cancel toward ~20 / ~20 — antisym must not do that.
+    assert abs(df["P6"].iloc[0] - 20.0) > 50.0
+
+
+def test_shipped_coil_map_p6_is_antisym() -> None:
+    from pathlib import Path
+
+    cm = load_coil_map(Path(__file__).resolve().parents[1] / "configs" / "coil_map.json")
+    rep = validate_coil_map(cm)
+    assert rep["ok"], rep["errors"]
+    assert cm.circuits["P6"]["combine"] == "antisym_mean"
+    assert cm.circuits["P6"]["exp_columns"] == ["P6L", "P6U"]
+    for series in ("P2_inner", "P2_outer", "P3", "P4", "P5"):
+        assert cm.circuits[series]["combine"] == "mean", series
+
+
+def test_apply_coil_map_series_mean_not_sum(tmp_path: Path) -> None:
+    raw = tmp_path / "pf_active_raw.csv"
+    pd.DataFrame(
+        {"time": [0.0, 1.0], "P4L FEED": [100.0, 200.0], "P4U FEED": [100.0, 200.0]}
+    ).to_csv(raw, index=False)
+    coil_map = CoilMap(
+        mapping={},
+        circuits={
+            "P4": {
+                "exp_columns": ["P4L FEED", "P4U FEED"],
+                "combine": "mean",
+                "scale": 1.0,
+                "sign": 1,
+            }
+        },
+    )
+    out = tmp_path / "pf_currents.csv"
+    rep = apply_coil_map(raw, out, coil_map)
+    assert rep["ok"], rep
+    df = pd.read_csv(out)
+    assert list(df["P4"]) == pytest.approx([100.0, 200.0])
 
 
 def test_resolve_contracts_for_run(tmp_path: Path) -> None:

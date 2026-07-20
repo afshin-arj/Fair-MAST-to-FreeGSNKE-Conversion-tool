@@ -41,6 +41,8 @@ def test_build_active_coils_classic_keys() -> None:
     assert active["Solenoid"]["resistivity"] == FREEGSNKE_DEFAULT_COPPER_RESISTIVITY
     assert set(active["P4"].keys()) == {"1", "2"}
     assert "R" in active["P4"]["1"]
+    assert active["P6"]["1"]["polarity"] == 1
+    assert active["P6"]["2"]["polarity"] == -1  # anti-series lower half
     for bad in ("D1", "D2", "D3", "Dp", "D5", "D6", "D7", "PX"):
         assert bad not in active
 
@@ -143,6 +145,7 @@ def test_shipped_voltage_map_classic_no_divertors() -> None:
 def test_coil_map_matches_classic_circuits() -> None:
     cm = load_coil_map(REPO / "configs" / "coil_map.json")
     assert set(cm.circuits.keys()) == set(CLASSIC_CIRCUIT_ORDER)
+    assert cm.circuits["P6"]["combine"] == "antisym_mean"
 
 
 def test_apply_voltage_map_classic_columns(tmp_path: Path) -> None:

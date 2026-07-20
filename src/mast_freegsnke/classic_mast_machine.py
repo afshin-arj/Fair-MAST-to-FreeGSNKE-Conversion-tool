@@ -169,13 +169,18 @@ def build_active_coils_from_pf_zarr(
                     raise ClassicMastMachineError(
                         f"circuit {circuit}: missing FAIR-MAST array {k}"
                     )
-            parts[sub] = _filament_leaf(
+            leaf = _filament_leaf(
                 _array(store, r_key),
                 _array(store, z_key),
                 _array(store, w_key),
                 _array(store, h_key),
                 resistivity=resistivity,
             )
+            # Classic MAST P6 is anti-series (radial field / vertical control):
+            # lower half carries opposite current to the shared circuit amp.
+            if circuit == "P6" and side == "lower":
+                leaf["polarity"] = -1
+            parts[sub] = leaf
         out[circuit] = parts
 
     # Fail-closed: exact classic key set, no divertors.
@@ -430,7 +435,9 @@ def write_classic_mast_machine(
             f"(value {resistivity}); material constant — not invented coil geometry. "
             "FAIR-MAST Level-2 pf_active does not publish coil resistivity."
         ),
-        "polarity": "+1 for all filaments (declared)",
+        "polarity": (
+            "+1 for all filaments except P6 lower (polarity=-1; classic MAST anti-series vertical control)"
+        ),
         "limiter": lim_meta,
         "wall": (
             "set equal to wall.zarr limiter contour (EFIT limiter geometry; not CAD vessel)"

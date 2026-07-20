@@ -516,9 +516,42 @@ def main(argv=None) -> int:
                     ok = False
 
         if _has("xarray") and _has("pandas") and _has("zarr") and _has("numpy"):
-            print("[OK] optional zarr stack installed (extraction enabled)")
+            print("[OK] zarr stack installed (FAIR-MAST extract enabled)")
         else:
-            print("[WARN] optional zarr stack missing (extraction will be skipped). Install: pip install -e '.[zarr]'")
+            need = bool(cfg.execute_freegsnke or cfg.execute_evolutive)
+            msg = "[FAIL]" if need else "[WARN]"
+            print(
+                f"{msg} zarr stack missing (xarray/pandas/zarr/numpy). "
+                "Install: pip install -e '.[zarr]'"
+            )
+            if need:
+                print(
+                    "[HINT] Shot-only run requires extract; zarr extras are required "
+                    "when execute_freegsnke/execute_evolutive is true."
+                )
+                ok = False
+
+        if cfg.enable_contract_metrics and cfg.diagnostic_contracts_path:
+            cp = Path(cfg.diagnostic_contracts_path)
+            if not cp.is_absolute():
+                cp = (Path.cwd() / cp).resolve()
+            if not cp.is_file():
+                print(f"[FAIL] diagnostic_contracts_path missing: {cfg.diagnostic_contracts_path}")
+                ok = False
+            else:
+                try:
+                    from .diagnostic_contracts import load_contracts, validate_contracts
+
+                    crep = validate_contracts(load_contracts(cp), require_files=False)
+                    if crep.get("ok"):
+                        print(f"[OK] diagnostic_contracts: {cp.name}")
+                    else:
+                        print(f"[FAIL] diagnostic_contracts invalid: {crep.get('errors')}")
+                        ok = False
+                except Exception as e:
+                    print(f"[FAIL] diagnostic_contracts load error: {e}")
+                    ok = False
+
         return 0 if ok else 2
 
 

@@ -1,6 +1,6 @@
 {
-  "version": "1.2",
-  "notes": "FAIR-MAST Level-2 (classic MAST) current_channel labels → FreeGSNKE classic circuit names (Solenoid, P2_inner, P2_outer, P3–P6). Must match active_coils.pickle keys exactly. Multi-feed circuits use explicit combine=sum (not silent heuristics).",
+  "version": "1.4",
+  "notes": "FAIR-MAST Level-2 (classic MAST) current_channel labels → FreeGSNKE classic circuit names. Series-wound U/L FEED pairs (P2–P5, P3) report the same circuit amp → combine=mean (sum would double). P6 is anti-series vertical control → antisym_mean=0.5*(P6L-P6U); FreeGSNKE lower P6 filament polarity=-1.",
   "circuits": {
     "Solenoid": {
       "exp_columns": ["SOL"],
@@ -10,39 +10,45 @@
     },
     "P2_inner": {
       "exp_columns": ["P2IL FEED", "P2IU FEED"],
-      "combine": "sum",
+      "combine": "mean",
       "scale": 1.0,
-      "sign": 1
+      "sign": 1,
+      "notes": "Series pair; U/L FEED ≈ same I → mean (not sum)."
     },
     "P2_outer": {
       "exp_columns": ["P2OL FEED", "P2OU FEED"],
-      "combine": "sum",
+      "combine": "mean",
       "scale": 1.0,
-      "sign": 1
+      "sign": 1,
+      "notes": "Series pair; U/L FEED ≈ same I → mean (not sum)."
     },
     "P3": {
       "exp_columns": ["P3L FEED", "P3U FEED"],
-      "combine": "sum",
+      "combine": "mean",
       "scale": 1.0,
-      "sign": 1
+      "sign": 1,
+      "notes": "Series pair when energized; U/L FEED ≈ same I → mean (not sum)."
     },
     "P4": {
       "exp_columns": ["P4L FEED", "P4U FEED"],
-      "combine": "sum",
+      "combine": "mean",
       "scale": 1.0,
-      "sign": 1
+      "sign": 1,
+      "notes": "Series pair; U/L FEED ≈ same I → mean (not sum)."
     },
     "P5": {
       "exp_columns": ["P5L FEED", "P5U FEED"],
-      "combine": "sum",
+      "combine": "mean",
       "scale": 1.0,
-      "sign": 1
+      "sign": 1,
+      "notes": "Series pair; U/L FEED ≈ same I → mean (not sum)."
     },
     "P6": {
       "exp_columns": ["P6L", "P6U"],
-      "combine": "sum",
+      "combine": "antisym_mean",
       "scale": 1.0,
-      "sign": 1
+      "sign": 1,
+      "notes": "Anti-series vertical-control pair. Do NOT sum (cancels). I=0.5*(P6L-P6U); machine lower filament polarity=-1."
     }
   }
 }

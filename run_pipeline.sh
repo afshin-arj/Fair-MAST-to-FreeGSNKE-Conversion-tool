@@ -81,6 +81,14 @@ else
   fi
 fi
 
+# Shot-only bootstrap: s5cmd + FreeGSNKE venv (defaults require both).
+# Skip FreeGSNKE env with RUN_PIPELINE_SKIP_FREEGSNKE_ENV=1.
+echo "[INFO] Ensuring s5cmd (tools/s5cmd if not on PATH)"
+python scripts/ensure_s5cmd.py
+
+echo "[INFO] Ensuring FreeGSNKE venv (.venv-freegsnke)"
+python scripts/ensure_freegsnke_env.py
+
 # Shot-only happy path: interactive launcher prompts for one or more shot
 # numbers; every other knob comes from configs/default.json.
 # Outputs land under SHOT/<shot> (e.g. SHOT/30201).

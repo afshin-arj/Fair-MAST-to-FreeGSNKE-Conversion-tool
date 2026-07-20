@@ -1,6 +1,6 @@
 {
   "authority_name": "freegsnke_evolutive_authority",
-  "authority_version": "11.4.1",
+  "authority_version": "11.4.2",
   "full_timestep_s": 0.02,
   "cover_window": true,
   "max_steps": 50,

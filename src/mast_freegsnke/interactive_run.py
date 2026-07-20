@@ -61,6 +61,16 @@ def _prompt_shot_list(msg: str) -> List[int]:
                 print(f"[WARN] Invalid token {bad!r}; use digits only (e.g. 30201 30202).")
 
 
+def _preflight_shot_only(cfg: AppConfig, cwd: Path) -> Optional[str]:
+    """Return a fail message if download/FreeGSNKE defaults cannot run; else None."""
+    from .preflight import collect_happy_path_failures
+
+    fails = collect_happy_path_failures(cfg, cwd)
+    if not fails:
+        return None
+    return "\n".join(fails)
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(prog="mast-freegsnke-interactive")
     ap.add_argument("--default-config", default="configs/default.json")
@@ -78,6 +88,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("[HINT] Use configs/default.json (shipped) or pass --default-config <path>.")
         return 2
 
+    cwd = Path.cwd()
     cfg = AppConfig.load(config_path)
     print(f"[INFO] Using config: {config_path}")
     print(f"[INFO] runs_dir={cfg.runs_dir}  (outputs → {cfg.runs_dir}/<shot>)")
@@ -88,7 +99,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     status_line = contract_metrics_status_line(cfg)
     if status_line:
         print(status_line)
-    print(diagnostic_calibration_status_line(cfg, cwd=config_path.parent if config_path.is_absolute() else Path.cwd()))
+    print(diagnostic_calibration_status_line(cfg, cwd=config_path.parent if config_path.is_absolute() else cwd))
+
+    pre = _preflight_shot_only(cfg, cwd)
+    if pre:
+        print(f"[FAIL] {pre}")
+        return 2
+    print("[OK] preflight: s5cmd + FreeGSNKE python ready")
     print("")
 
     shots = _prompt_shot_list(

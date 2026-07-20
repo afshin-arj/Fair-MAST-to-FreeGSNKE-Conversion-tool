@@ -17,13 +17,14 @@ User input:  shot number(s) (digits; space/comma separated)
 Output:      SHOT/<N>/ with FreeGSNKE results + provenance
 ```
 
-## Current state (v11.4.1)
+## Current state (v11.4.2)
 
 1. **Interactive launcher** (`interactive_run.py`, `run_pipeline.cmd/.sh`)
    - Prompts **only** for shot number(s) (and `q` quit); batch summary + worst exit code
+   - Bootstraps `tools/s5cmd` + `.venv-freegsnke` (Python 3.11) before the prompt
+   - Preflight: s5cmd, zarr extras, machine authority, coil/voltage maps, freegsnke, contracts
    - All other knobs from `configs/default.json`
-   - Executes FreeGSNKE (`both`) + evolutive by default when authorities exist
-   - `RUN_PIPELINE_SKIP_INSTALL=1` skips pip install; otherwise reinstall only when `pyproject.toml` changed (`.venv/.install_marker`)
+   - `RUN_PIPELINE_SKIP_INSTALL=1` / `RUN_PIPELINE_SKIP_FREEGSNKE_ENV=1` for CI/advanced use
 
 2. **CLI** (`mast-freegsnke run --shot N` or `--shots N1 N2 ...`)
    - `--machine` optional (config `machine_authority_dir` is the default)

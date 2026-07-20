@@ -16,7 +16,7 @@ extraction, coil map, machine authority, FreeGSNKE inverse+forward execution)
 comes from the shipped configs/default.json.
 
 Outputs land under:
-  SHOTS/<shot_number>/     e.g. SHOTS/30201/
+  SHOT/<shot_number>/     e.g. SHOT/30201/
 
 On Windows, run_pipeline.cmd always pauses at the end (success or failure)
 so you can read the console. Set RUN_PIPELINE_NO_PAUSE=1 to skip the pause.
@@ -25,6 +25,9 @@ Launcher install hygiene:
   Set RUN_PIPELINE_SKIP_INSTALL=1 to skip pip upgrade+install entirely.
   Otherwise the launchers reinstall only when pyproject.toml changed since the
   last install (SHA256 marker at .venv/.install_marker).
+  Launchers also bootstrap tools/s5cmd (scripts/ensure_s5cmd.py) and
+  .venv-freegsnke (scripts/ensure_freegsnke_env.py). Skip the FreeGSNKE env
+  step with RUN_PIPELINE_SKIP_FREEGSNKE_ENV=1.
 
 Download cache reuse (allow_cache_reuse=true in configs/default.json):
   Re-running a shot reuses non-empty data_cache/shot_<N>/<group>.zarr trees
@@ -127,7 +130,7 @@ contracts authority:
   Metrics:
     interpolate experimental onto the solved synthetic times; score
     RMS/MAE/max_abs across all sample times; write
-    SHOTS/<N>/metrics/reconstruction_metrics.json and residual_*.csv.
+    SHOT/<N>/metrics/reconstruction_metrics.json and residual_*.csv.
     Channels that are all-NaN on the current shot are skipped shot-scoped
     (status skipped_all_nan; n_skipped_all_nan in the summary) -- not a
     blocking failure, never a fabricated zero. Real failures remain
@@ -137,7 +140,7 @@ Excluded by default (honestly, with evidence): mirnov / saddle / omaha families.
 Level-2 attrs give no published V->T / V->Wb factors; some variables have
 self-contradictory unit metadata (units='T' vs label='Tesla/sec' or 'mT').
 Traces ARE extracted verbatim for audit under
-SHOTS/<N>/inputs/audit_other_timebase/ with per-variable evidence in
+SHOT/<N>/inputs/audit_other_timebase/ with per-variable evidence in
 extract_meta.json.
 
 Optional promotion (v10.6.0) — diagnostic calibration authority:
@@ -156,15 +159,15 @@ Validate without a run:
   mast-freegsnke doctor --config configs/default.json
 
 Outputs (on a successful shot run):
-  SHOTS/<N>/contracts/diagnostic_contracts.resolved.json
-  SHOTS/<N>/synthetic/synthetic_fluxloops.csv
-  SHOTS/<N>/synthetic/synthetic_pickups.csv
-  SHOTS/<N>/synthetic/synthetic_times.json
-  SHOTS/<N>/metrics/reconstruction_metrics.json and residual_*.csv
-  SHOTS/<N>/inputs/audit_other_timebase/*.csv (audit-only families)
+  SHOT/<N>/contracts/diagnostic_contracts.resolved.json
+  SHOT/<N>/synthetic/synthetic_fluxloops.csv
+  SHOT/<N>/synthetic/synthetic_pickups.csv
+  SHOT/<N>/synthetic/synthetic_times.json
+  SHOT/<N>/metrics/reconstruction_metrics.json and residual_*.csv
+  SHOT/<N>/inputs/audit_other_timebase/*.csv (audit-only families)
 
 Reruns of the same shot
 -----------------------
-Rerunning a shot archives the previous run into SHOTS/<N>/history/<timestamp>/
-before writing fresh outputs, so the top level of SHOTS/<N>/ is always one
+Rerunning a shot archives the previous run into SHOT/<N>/history/<timestamp>/
+before writing fresh outputs, so the top level of SHOT/<N>/ is always one
 clean, auditable run. Nothing is deleted.

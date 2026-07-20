@@ -94,12 +94,18 @@ def validate_coil_map(coil_map: CoilMap) -> Dict[str, Any]:
             report["ok"] = False
             report["errors"].append(f"circuits.{coil}: exp_columns must be a non-empty string list")
         combine = str(spec.get("combine", "sum" if isinstance(cols, list) and len(cols) > 1 else "identity"))
-        if combine not in {"identity", "sum", "mean"}:
+        if combine not in {"identity", "sum", "mean", "antisym_mean"}:
             report["ok"] = False
-            report["errors"].append(f"circuits.{coil}: combine must be identity|sum|mean")
+            report["errors"].append(f"circuits.{coil}: combine must be identity|sum|mean|antisym_mean")
         if combine == "identity" and isinstance(cols, list) and len(cols) != 1:
             report["ok"] = False
             report["errors"].append(f"circuits.{coil}: identity combine requires exactly one exp column")
+        if combine == "antisym_mean" and isinstance(cols, list) and len(cols) != 2:
+            report["ok"] = False
+            report["errors"].append(
+                f"circuits.{coil}: antisym_mean requires exactly two exp_columns "
+                "(positive leg, negative leg)"
+            )
         sign = spec.get("sign", 1)
         if sign not in (-1, 1):
             report["ok"] = False
@@ -199,6 +205,14 @@ def apply_coil_map(
             vals = mat.sum(axis=1)
         elif combine == "mean":
             vals = mat.mean(axis=1)
+        elif combine == "antisym_mean":
+            # Anti-series pair (classic MAST P6): I_circuit = 0.5*(I_pos - I_neg).
+            # FreeGSNKE applies I_circuit to both halves with opposite filament polarity.
+            if mat.shape[1] != 2:
+                report["ok"] = False
+                report["errors"].append(f"antisym_mean_requires_two_columns:{coil}")
+                continue
+            vals = 0.5 * (mat[:, 0] - mat[:, 1])
         else:
             report["ok"] = False
             report["errors"].append(f"invalid_combine:{coil}:{combine}")

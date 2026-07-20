@@ -166,3 +166,12 @@ def test_run_pipeline_cmd_always_pauses() -> None:
     assert "RUN_PIPELINE_NO_PAUSE" in text
     # Must not gate pause on failure-only.
     assert 'if not "%RC%"=="0"' not in text
+
+
+@pytest.mark.parametrize("launcher", ["run_pipeline.cmd", "run_pipeline.sh"])
+def test_launchers_bootstrap_s5cmd_and_freegsnke_env(launcher: str) -> None:
+    text = (REPO / launcher).read_text(encoding="utf-8")
+    assert "ensure_s5cmd.py" in text
+    assert "ensure_freegsnke_env.py" in text
+    assert "RUN_PIPELINE_SKIP_FREEGSNKE_ENV" in text
+    assert (REPO / "scripts" / "ensure_freegsnke_env.py").is_file()

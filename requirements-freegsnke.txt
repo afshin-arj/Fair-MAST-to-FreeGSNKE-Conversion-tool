@@ -1,7 +1,18 @@
-# FreeGSNKE execution environment (Python 3.11 recommended)
-# Create: py -3.11 -m venv .venv-freegsnke
-# Then:   .venv-freegsnke\Scripts\python -m pip install -r requirements-freegsnke.txt
+# FreeGSNKE execution environment — Python 3.11 REQUIRED
+# (3.12+ / 3.14 may lack compatible scipy / freegs4e wheels.)
+#
+# Preferred (shot-only launcher does this automatically):
+#   python scripts/ensure_freegsnke_env.py
+#
+# Manual:
+#   py -3.11 -m venv .venv-freegsnke
+#   .venv-freegsnke\Scripts\python -m pip install -U pip
+#   .venv-freegsnke\Scripts\python -m pip install -r requirements-freegsnke.txt
+#
+# Also need s5cmd for FAIR-MAST download (launcher runs scripts/ensure_s5cmd.py):
+#   python scripts/ensure_s5cmd.py
+#
 freegsnke[freegs4e]==3.0.1
 pandas>=2.0.0
 matplotlib>=3.6.0
-numpy>=1.23.0
+numpy>=1.23.0,<3
