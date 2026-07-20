@@ -91,6 +91,7 @@ def _mk_cfg(tmp_path: Path, **over) -> AppConfig:
         provenance_hash_data=False,
         allow_cache_reuse=True,
         batch_abort_on_failure=False,
+        enable_shot_suitability_gate=False,
     )
     kw.update(over)
     return AppConfig(**kw)
@@ -290,6 +291,7 @@ def test_run_shot_batch_abort_on_failure(tmp_path: Path, capsys) -> None:
 def test_interactive_batch_abort_on_failure(monkeypatch, tmp_path: Path) -> None:
     """Interactive launcher honors batch_abort_on_failure from config."""
     from mast_freegsnke import interactive_run
+    from mast_freegsnke.shot_suitability import ShotSuitability
 
     base = json.loads((REPO / "configs" / "default.json").read_text())
     base["batch_abort_on_failure"] = True
@@ -305,6 +307,11 @@ def test_interactive_batch_abort_on_failure(monkeypatch, tmp_path: Path) -> None
 
     monkeypatch.setattr("builtins.input", lambda msg: "1 2 3")
     monkeypatch.setattr(interactive_run.cli, "main", fake_cli_main)
+    monkeypatch.setattr(
+        interactive_run,
+        "assess_shot_suitability",
+        lambda cfg, shot, **kw: ShotSuitability(shot=int(shot), suitable=True),
+    )
 
     rc = interactive_run.main(["--default-config", str(cfg_path)])
     assert rc == 11
@@ -339,6 +346,13 @@ def test_cli_run_shots_batch(monkeypatch, tmp_path: Path, capsys) -> None:
             return run_dir
 
     monkeypatch.setattr(cli, "ShotPipeline", FakePipeline)
+    monkeypatch.setattr(
+        cli,
+        "assess_shot_suitability",
+        lambda cfg, shot, **kw: __import__(
+            "mast_freegsnke.shot_suitability", fromlist=["ShotSuitability"]
+        ).ShotSuitability(shot=int(shot), suitable=True),
+    )
     rc = cli.main([
         "run", "--config", str(REPO / "configs" / "default.json"),
         "--shots", "101", "102",
@@ -374,9 +388,15 @@ def test_contract_status_line_fully_wired(tmp_path: Path) -> None:
 
 def test_interactive_prints_contract_status(monkeypatch, capsys) -> None:
     from mast_freegsnke import interactive_run
+    from mast_freegsnke.shot_suitability import ShotSuitability
 
     monkeypatch.setattr("builtins.input", lambda msg: "30201")
     monkeypatch.setattr(interactive_run.cli, "main", lambda args: 0)
+    monkeypatch.setattr(
+        interactive_run,
+        "assess_shot_suitability",
+        lambda cfg, shot, **kw: ShotSuitability(shot=int(shot), suitable=True),
+    )
     rc = interactive_run.main(["--default-config", str(REPO / "configs" / "default.json")])
     out = capsys.readouterr().out
     assert rc == 0

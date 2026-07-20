@@ -48,8 +48,14 @@ def test_interactive_run_prompts_shot_only(monkeypatch) -> None:
         captured["args"] = list(args)
         return 0
 
+    def fake_assess(cfg, shot, **kw):
+        from mast_freegsnke.shot_suitability import ShotSuitability
+
+        return ShotSuitability(shot=int(shot), suitable=True)
+
     monkeypatch.setattr("builtins.input", fake_input)
     monkeypatch.setattr(interactive_run.cli, "main", fake_cli_main)
+    monkeypatch.setattr(interactive_run, "assess_shot_suitability", fake_assess)
 
     rc = interactive_run.main(["--default-config", str(REPO / "configs" / "default.json")])
     assert rc == 0
@@ -71,8 +77,14 @@ def test_interactive_run_multiple_shots(monkeypatch) -> None:
         calls.append(list(args))
         return 0
 
+    def fake_assess(cfg, shot, **kw):
+        from mast_freegsnke.shot_suitability import ShotSuitability
+
+        return ShotSuitability(shot=int(shot), suitable=True)
+
     monkeypatch.setattr("builtins.input", fake_input)
     monkeypatch.setattr(interactive_run.cli, "main", fake_cli_main)
+    monkeypatch.setattr(interactive_run, "assess_shot_suitability", fake_assess)
 
     rc = interactive_run.main(["--default-config", str(REPO / "configs" / "default.json")])
     assert rc == 0
@@ -97,8 +109,14 @@ def test_interactive_run_worst_exit_code(monkeypatch, codes: dict, expected: int
     def fake_cli_main(args):
         return codes[args[args.index("--shot") + 1]]
 
+    def fake_assess(cfg, shot, **kw):
+        from mast_freegsnke.shot_suitability import ShotSuitability
+
+        return ShotSuitability(shot=int(shot), suitable=True)
+
     monkeypatch.setattr("builtins.input", fake_input)
     monkeypatch.setattr(interactive_run.cli, "main", fake_cli_main)
+    monkeypatch.setattr(interactive_run, "assess_shot_suitability", fake_assess)
 
     assert interactive_run.main(["--default-config", str(REPO / "configs" / "default.json")]) == expected
 
@@ -110,8 +128,14 @@ def test_interactive_run_batch_summary_lists_failed_shots(monkeypatch, capsys) -
     def fake_cli_main(args):
         return 11 if args[args.index("--shot") + 1] == "2" else 0
 
+    def fake_assess(cfg, shot, **kw):
+        from mast_freegsnke.shot_suitability import ShotSuitability
+
+        return ShotSuitability(shot=int(shot), suitable=True)
+
     monkeypatch.setattr("builtins.input", fake_input)
     monkeypatch.setattr(interactive_run.cli, "main", fake_cli_main)
+    monkeypatch.setattr(interactive_run, "assess_shot_suitability", fake_assess)
 
     rc = interactive_run.main(["--default-config", str(REPO / "configs" / "default.json")])
     out = capsys.readouterr().out

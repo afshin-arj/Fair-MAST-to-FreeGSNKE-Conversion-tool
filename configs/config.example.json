@@ -2,6 +2,7 @@
   "allow_cache_reuse": true,
   "allow_missing_geometry": false,
   "batch_abort_on_failure": false,
+  "enable_shot_suitability_gate": true,
   "cache_dir": "data_cache",
   "coil_map_path": null,
   "voltage_map_path": null,

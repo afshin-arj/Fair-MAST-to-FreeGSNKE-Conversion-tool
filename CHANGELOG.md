@@ -1,3 +1,9 @@
+## 11.5.1 — Shot suitability gate (skip / re-prompt)
+- Before download/execute, assess whether a shot is suitable: positive shot id, local `data_cache` hit for required Level-2 groups, else MastApp listing + S3 discovery of `required_groups`.
+- **Interactive:** unsuitable single shot → professional message + ask for another; multi-shot queue → skip unsuitable and continue; if none suitable → re-prompt.
+- **CLI `--shots`:** skip unsuitable and move to the next (exit `20` only if every shot is unsuitable).
+- Config: `enable_shot_suitability_gate` (default **true**). Version **11.5.1**.
+
 ## 11.5.0 — experimental_data pack (categorized CSV + plots)
 - New stage writes `SHOT/<N>/experimental_data/` with professional folders:
   `00_index` (catalog), `01_plasma`, `02_pf`, `03_magnetics`, `04_geometry`, `05_plots`, `l1/`, `l3/`.

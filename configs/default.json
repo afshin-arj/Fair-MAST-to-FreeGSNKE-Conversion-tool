@@ -38,6 +38,7 @@
   "provenance_hash_data": false,
   "allow_cache_reuse": true,
   "batch_abort_on_failure": false,
+  "enable_shot_suitability_gate": true,
   "s3_layout_patterns": [
     "{prefix}/{shot}.zarr/{group}",
     "{prefix}/{shot}.zarr/{group}/*",

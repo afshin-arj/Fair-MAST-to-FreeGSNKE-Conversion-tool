@@ -52,6 +52,7 @@ def _cfg(tmp_path: Path) -> AppConfig:
         provenance_hash_data=False,
         allow_cache_reuse=False,
         batch_abort_on_failure=False,
+        enable_shot_suitability_gate=False,
     )
 
 

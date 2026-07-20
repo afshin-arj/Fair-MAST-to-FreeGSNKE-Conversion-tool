@@ -13,6 +13,11 @@ from typing import Optional
 
 from .availability import check_groups
 from .batch import run_shot_batch
+from .shot_suitability import (
+    EXIT_UNSUITABLE,
+    assess_shot_suitability,
+    format_unsuitable_message,
+)
 from .config import AppConfig, run_dir_for_shot
 from .contracts_status import contract_metrics_status_line
 from .download import BulkDownloader
@@ -1005,13 +1010,29 @@ def main(argv=None) -> int:
                 return 11
 
         if args.shots is not None:
+            def _suitability(shot: int):
+                if not bool(getattr(cfg, "enable_shot_suitability_gate", True)):
+                    return True
+                return assess_shot_suitability(cfg, int(shot))
+
             return run_shot_batch(
                 [int(s) for s in args.shots],
                 _run_one,
                 runs_dir=Path(cfg.runs_dir),
                 abort_on_failure=cfg.batch_abort_on_failure,
+                suitability=_suitability,
             )
-        return _run_one(int(args.shot))
+        shot_one = int(args.shot)
+        if bool(getattr(cfg, "enable_shot_suitability_gate", True)):
+            rep = assess_shot_suitability(cfg, shot_one)
+            if not rep.suitable:
+                print(format_unsuitable_message(rep))
+                print(
+                    "[HINT] Choose another shot (CLI: --shot N or --shots N1 N2 …). "
+                    "Interactive launcher will ask again."
+                )
+                return EXIT_UNSUITABLE
+        return _run_one(shot_one)
 
     return 1
 
