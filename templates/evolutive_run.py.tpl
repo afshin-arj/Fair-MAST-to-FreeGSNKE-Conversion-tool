@@ -247,6 +247,20 @@ def main() -> None:
     max_mode_freq = float(ea_evolv["max_mode_frequency"])
     snap_every = int(ea_evolv.get("snapshot_equilibria_every_n", 5))
     min_dIy = ea_evolv.get("min_dIy_dI")
+    # If presentation wants GIFs but authority left snapshots off, enable every step
+    # (declared by presentation_authority.json — not a silent invent).
+    try:
+        from mast_freegsnke.equilibrium_presentation import try_load_presentation_authority
+        _pres0 = try_load_presentation_authority(INPUTS)
+        if _pres0 is not None and _pres0.write_equilibrium_gifs and snap_every <= 0:
+            snap_every = 1
+            print(
+                "[INFO] presentation_authority.write_equilibrium_gifs=true "
+                "→ enabling snapshot_equilibria_every_n=1 for GIF frames",
+                flush=True,
+            )
+    except Exception as _pe:
+        print(f"[WARN] presentation authority check failed: {_pe}", flush=True)
 
     if not DUMP.exists():
         raise FileNotFoundError(
@@ -651,6 +665,35 @@ def main() -> None:
         fig.tight_layout()
         fig.savefig(OUT / "history_overview.png", dpi=150, bbox_inches="tight")
         plt.close(fig)
+
+    # Stitch evolutive equilibrium GIF from step snapshots (when enabled)
+    try:
+        from mast_freegsnke.equilibrium_presentation import (
+            sorted_frame_paths,
+            try_load_presentation_authority,
+            write_gif_from_pngs,
+        )
+        _pres = try_load_presentation_authority(INPUTS)
+        if _pres is not None and _pres.write_equilibrium_gifs:
+            _frames = sorted_frame_paths(OUT, "eq_snapshot_step*.png")
+            _gif_rep = write_gif_from_pngs(
+                _frames,
+                OUT / "evolutive_equilibria.gif",
+                fps=float(_pres.gif_fps),
+            )
+            (OUT / "evolutive_gif_report.json").write_text(
+                json.dumps(_gif_rep, indent=2) + "\n", encoding="utf-8"
+            )
+            if _gif_rep.get("ok"):
+                print(
+                    f"[OK] Wrote evolutive/evolutive_equilibria.gif "
+                    f"({_gif_rep.get('n_frames')} frames)",
+                    flush=True,
+                )
+            else:
+                print(f"[WARN] evolutive GIF not written: {_gif_rep.get('errors')}", flush=True)
+    except Exception as _ge:
+        print(f"[WARN] evolutive GIF stage failed: {_ge}", flush=True)
 
     n_ok = int(sum(1 for x in history["step_ok"] if x))
     if n_ok < 1:

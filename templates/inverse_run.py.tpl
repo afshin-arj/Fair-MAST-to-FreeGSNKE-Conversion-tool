@@ -598,6 +598,26 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
                 f"duration_s={result.get('duration_s')}",
                 flush=True,
             )
+            # Presentation frame (formed-plasma window sample)
+            try:
+                from mast_freegsnke.equilibrium_presentation import (
+                    save_equilibrium_png,
+                    try_load_presentation_authority,
+                )
+                _pres = try_load_presentation_authority(INPUTS)
+                if _pres is not None and _pres.write_eq_frames:
+                    _frames_dir = HERE / "presentation" / "inverse_frames"
+                    _tag = f"eq_t{t_i:.6f}".replace(".", "p")
+                    _png = save_equilibrium_png(
+                        tokamak=tokamak,
+                        eq=eq,
+                        out_path=_frames_dir / f"{_tag}.png",
+                        title=f"Inverse {mode_used}  t={t_i:.4f}s  Ip={ip_i/1e6:.3f}MA",
+                        dpi=int(_pres.gif_dpi),
+                    )
+                    entry["frame_png"] = str(_png.relative_to(HERE)).replace("\\", "/")
+            except Exception as _pe:
+                print(f"[WARN] inverse frame failed at t={t_i:.6f}s: {_pe}", flush=True)
         else:
             err = None if result is None else result.get("error")
             entry.update({
@@ -655,6 +675,31 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
         f"{len(fl_rows)} window sample times "
         f"(inverse={n_inverse}, forward_gs={n_forward}, skipped={n_skipped})"
     )
+
+    # Stitch inverse equilibrium GIF across successful window samples
+    try:
+        from mast_freegsnke.equilibrium_presentation import (
+            sorted_frame_paths,
+            try_load_presentation_authority,
+            write_gif_from_pngs,
+        )
+        _pres = try_load_presentation_authority(INPUTS)
+        if _pres is not None and _pres.write_equilibrium_gifs:
+            _frames = sorted_frame_paths(HERE / "presentation" / "inverse_frames", "eq_t*.png")
+            _gif_rep = write_gif_from_pngs(
+                _frames,
+                HERE / "presentation" / "inverse_equilibria.gif",
+                fps=float(_pres.gif_fps),
+            )
+            (HERE / "presentation" / "inverse_gif_report.json").write_text(
+                json.dumps(_gif_rep, indent=2) + "\n", encoding="utf-8"
+            )
+            if _gif_rep.get("ok"):
+                print(f"[OK] Wrote presentation/inverse_equilibria.gif ({_gif_rep.get('n_frames')} frames)")
+            else:
+                print(f"[WARN] inverse GIF not written: {_gif_rep.get('errors')}")
+    except Exception as _ge:
+        print(f"[WARN] inverse GIF stage failed: {_ge}", flush=True)
 
 
 def set_machine_currents(tokamak, currents_dict):

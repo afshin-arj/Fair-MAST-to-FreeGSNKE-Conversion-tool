@@ -81,6 +81,12 @@ class AppConfig:
     # Number of deterministic window sample times for multi-time synthetic
     # diagnostics / residual scoring (rule: linspace_window_inclusive).
     metrics_n_times: int = 5
+    # PNG frames + animated GIFs across the formed-plasma window (inverse/forward)
+    # and evolutive steps (presentation only; no new interactive prompts).
+    write_equilibrium_gifs: bool = True
+    write_eq_frames: bool = True
+    equilibrium_gif_fps: float = 2.0
+    equilibrium_gif_dpi: int = 100
     # Hard wall-clock limit for each FreeGSNKE script (seconds). None disables.
     # Protects the pipeline from FreeGSNKE's uncapped residual-resize hang.
     freegsnke_script_timeout_s: Optional[float] = 1200.0
@@ -148,6 +154,20 @@ class AppConfig:
         metrics_n_times = int(obj.get("metrics_n_times", 5))
         if metrics_n_times < 1:
             raise ValueError(f"metrics_n_times must be >= 1 (got {metrics_n_times})")
+        write_equilibrium_gifs = bool(obj.get("write_equilibrium_gifs", True))
+        write_eq_frames = bool(obj.get("write_eq_frames", True))
+        if write_equilibrium_gifs and not write_eq_frames:
+            raise ValueError(
+                "write_equilibrium_gifs=true requires write_eq_frames=true"
+            )
+        equilibrium_gif_fps = float(obj.get("equilibrium_gif_fps", 2.0))
+        if equilibrium_gif_fps <= 0.0:
+            raise ValueError(f"equilibrium_gif_fps must be > 0 (got {equilibrium_gif_fps})")
+        equilibrium_gif_dpi = int(obj.get("equilibrium_gif_dpi", 100))
+        if not (50 <= equilibrium_gif_dpi <= 400):
+            raise ValueError(
+                f"equilibrium_gif_dpi must be in [50, 400] (got {equilibrium_gif_dpi})"
+            )
         raw_timeout = obj.get("freegsnke_script_timeout_s", 1200.0)
         if raw_timeout is None:
             freegsnke_script_timeout_s: Optional[float] = None
@@ -202,6 +222,10 @@ class AppConfig:
             batch_abort_on_failure=batch_abort_on_failure,
             enable_shot_suitability_gate=enable_shot_suitability_gate,
             metrics_n_times=metrics_n_times,
+            write_equilibrium_gifs=write_equilibrium_gifs,
+            write_eq_frames=write_eq_frames,
+            equilibrium_gif_fps=equilibrium_gif_fps,
+            equilibrium_gif_dpi=equilibrium_gif_dpi,
             freegsnke_script_timeout_s=freegsnke_script_timeout_s,
         )
 

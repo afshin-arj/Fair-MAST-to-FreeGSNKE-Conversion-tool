@@ -13,7 +13,7 @@ Upstream references:
 - [FAIR-MAST](https://github.com/ukaea/fair-mast) — Level-2 Zarr (currents + `coil_voltage` in V)
 - [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke) — Grad–Shafranov + evolutive `nl_solver` / `nlstepper`
 
-Version **11.5.2**.
+Version **11.6.0**.
 
 ---
 
@@ -103,13 +103,16 @@ SHOT/30201/
   inputs/                       # experimental CSVs + authority snapshots
   experimental_data/            # categorized FAIR-MAST CSV + professional plots
   synthetic/                    # FreeGSNKE probe synthetics
+  presentation/                 # inverse/forward eq frames + GIFs
   metrics/                      # residual scores
-  evolutive/                    # history.csv, snapshots, meta
+  evolutive/                    # history.csv, snapshots, evolutive_equilibria.gif
   logs/
   manifest.json
   inverse_run.py / forward_run.py / evolutive_run.py
   inverse_dump.pkl
 ```
+
+Formed-plasma window samples (`metrics_n_times`, default 5) drive **inverse** and **forward** equilibria GIFs; evolutive steps drive `evolutive/evolutive_equilibria.gif`. Toggle via `write_equilibrium_gifs` in `configs/default.json`.
 
 ```mermaid
 flowchart TB
@@ -119,6 +122,7 @@ flowchart TB
   R --> IN["inputs/"]
   R --> ED["experimental_data/"]
   R --> SYN["synthetic/"]
+  R --> PRES["presentation/"]
   R --> MET["metrics/"]
   R --> EV["evolutive/"]
   R --> LOG["logs/"]

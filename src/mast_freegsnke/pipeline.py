@@ -51,6 +51,7 @@ from .experimental_data import build_experimental_data
 from .synthetic_extract import extract_synthetic_by_contracts
 from .metrics import compare_from_contracts
 from .execution_authority import write_execution_authority
+from .equilibrium_presentation import PresentationAuthority, write_presentation_authority
 
 
 def _resolve_config_path(raw: Optional[str], repo_root: Path) -> Optional[Path]:
@@ -501,6 +502,25 @@ class ShotPipeline:
             except Exception as e:
                 _stage("execution_authority", False, error=str(e))
                 blocking_errors.append(f"execution_authority_write_failed:{e}")
+
+            try:
+                pres = PresentationAuthority(
+                    write_equilibrium_gifs=bool(self.cfg.write_equilibrium_gifs),
+                    write_eq_frames=bool(self.cfg.write_eq_frames),
+                    gif_fps=float(self.cfg.equilibrium_gif_fps),
+                    gif_dpi=int(self.cfg.equilibrium_gif_dpi),
+                )
+                pres_path = write_presentation_authority(inputs_dir, pres)
+                _stage(
+                    "presentation_authority",
+                    True,
+                    path=str(pres_path),
+                    write_equilibrium_gifs=bool(pres.write_equilibrium_gifs),
+                    gif_fps=float(pres.gif_fps),
+                )
+            except Exception as e:
+                _stage("presentation_authority", False, error=str(e))
+                blocking_errors.append(f"presentation_authority_write_failed:{e}")
 
             # Evolutive authority snapshot (fail-closed when execute_evolutive)
             if self.cfg.execute_evolutive:

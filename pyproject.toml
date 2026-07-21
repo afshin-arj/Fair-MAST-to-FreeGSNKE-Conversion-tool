@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mast-freegsnke-pipeline"
-version = "11.5.2"
+version = "11.6.0"
 description = "Shot-only FAIR-MAST (classic MAST) → FreeGSNKE: static inverse/forward + evolutive forward, authorities, residual metrics"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,6 +13,7 @@ dependencies = [
   "numpy>=1.23.0",
   "pandas>=2.0.0",
   "matplotlib>=3.6.0",
+  "pillow>=10.0.0",
 ]
 
 [project.optional-dependencies]

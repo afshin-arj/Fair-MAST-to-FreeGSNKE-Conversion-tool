@@ -17,7 +17,7 @@ User input:  shot number(s) (digits; space/comma separated)
 Output:      SHOT/<N>/ with FreeGSNKE results + provenance
 ```
 
-## Current state (v11.5.2)
+## Current state (v11.6.0)
 
 1. **Interactive launcher** (`interactive_run.py`, `run_pipeline.cmd/.sh`)
    - Prompts **only** for shot number(s) (and `q` quit); batch summary + worst exit code

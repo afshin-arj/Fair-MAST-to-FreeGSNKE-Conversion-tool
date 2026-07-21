@@ -98,6 +98,9 @@ def write_shot_expert_overlay(
     exec_st = _exec_status(manifest)
     blocking = manifest.get("blocking_errors") or []
     stages = manifest.get("stage_log") or []
+    from .equilibrium_presentation import presentation_gifs_under
+
+    gifs = presentation_gifs_under(run_dir)
 
     # Authority hashes (best-effort)
     auth_lines: List[str] = []
@@ -179,9 +182,20 @@ def write_shot_expert_overlay(
             "| PF voltages (raw) | `inputs/pf_voltages_raw.csv` |",
             "| PF voltages (mapped) | `inputs/pf_voltages.csv` |",
             "| Inverse dump | `inverse_dump.pkl` |",
+            "| Inverse GIF | `presentation/inverse_equilibria.gif` |",
+            "| Forward GIF | `presentation/forward_equilibria.gif` |",
             "| Evolutive history | `evolutive/` |",
+            "| Evolutive GIF | `evolutive/evolutive_equilibria.gif` |",
             "| Metrics | `metrics/reconstruction_metrics.json` |",
             "| Logs | `logs/` |",
+            "",
+            "## Presentation GIFs",
+            "",
+            *(
+                [f"- `{k}`: `{v}`" for k, v in sorted(gifs.items())]
+                if gifs
+                else ["- (none yet — appear after successful FreeGSNKE execute with write_equilibrium_gifs=true)"]
+            ),
             "",
             "## Authorities",
             "",
@@ -210,6 +224,7 @@ def write_shot_expert_overlay(
         "created_utc": created,
         "window": {"t_start": t_start, "t_end": t_end},
         "modes": exec_st,
+        "presentation_gifs": gifs,
         "blocking_errors": list(blocking),
         "known_limitations": list(_KNOWN_LIMITATIONS),
     }

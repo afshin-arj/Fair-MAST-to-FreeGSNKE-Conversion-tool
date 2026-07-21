@@ -1,6 +1,6 @@
 {
   "authority_name": "freegsnke_evolutive_authority",
-  "authority_version": "11.4.2",
+  "authority_version": "11.6.0",
   "full_timestep_s": 0.02,
   "cover_window": true,
   "max_steps": 50,
@@ -11,6 +11,6 @@
   "max_mode_frequency": 316.22776601683796,
   "min_dIy_dI": 0.01,
   "script_timeout_s": 1800.0,
-  "snapshot_equilibria_every_n": 0,
-  "notes": "Declared evolutive numerics for FreeGSNKE nl_solver/nlstepper on classic MAST (not MAST-U). cover_window=true sets n_steps=min(max_steps, ceil((t_end-t_start)/dt)); optional n_steps overrides. linear_only=true for robust smoke; script_timeout_s + max_solving_iterations bound runtime. FAIR-MAST Level-2 measured voltages p1/p2/p4/p5 are primary drive; P3 and P6 use from_current_ohmic (I×R) — L1 inventory 30201 found no usable measured PF V (configs/l1_voltage_inventory_30201.json). No divertor circuits on classic machine. Profile alpha_m/alpha_n/fvac held from inverse IC; scale_paxis_with_ip=false by default (enable only when smoke-stable)."
+  "snapshot_equilibria_every_n": 1,
+  "notes": "Declared evolutive numerics for FreeGSNKE nl_solver/nlstepper on classic MAST (not MAST-U). cover_window=true sets n_steps=min(max_steps, ceil((t_end-t_start)/dt)); optional n_steps overrides. linear_only=true for robust smoke; script_timeout_s + max_solving_iterations bound runtime. snapshot_equilibria_every_n=1 writes eq PNGs for evolutive GIF (presentation). FAIR-MAST Level-2 measured voltages p1/p2/p4/p5 are primary drive; P3 and P6 use from_current_ohmic (I×R) — L1 inventory 30201 found no usable measured PF V (configs/l1_voltage_inventory_30201.json). No divertor circuits on classic machine. Profile alpha_m/alpha_n/fvac held from inverse IC; scale_paxis_with_ip=false by default (enable only when smoke-stable)."
 }

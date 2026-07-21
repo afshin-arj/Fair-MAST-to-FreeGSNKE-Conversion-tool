@@ -1,3 +1,8 @@
+## 11.6.0 — Multi-time equilibria GIFs (inverse / forward / evolutive)
+- Across the **formed-plasma window** (`formed_plasma_frac`, default 0.8×max|Ip|): inverse already sampled `metrics_n_times` (default 5); **forward** now also solves Grad–Shafranov at those times; **evolutive** snapshots every step (`snapshot_equilibria_every_n=1`).
+- Animated GIFs (Pillow): `presentation/inverse_equilibria.gif`, `presentation/forward_equilibria.gif`, `evolutive/evolutive_equilibria.gif` (+ PNG frames). Config: `write_equilibrium_gifs`, `write_eq_frames`, `equilibrium_gif_fps`, `equilibrium_gif_dpi` (shot-only defaults on).
+- Presentation authority snapshotted at `inputs/presentation_authority.json`. Version **11.6.0**.
+
 ## 11.5.2 — Optional P6 when FAIR-MAST omits channels (shot 30203)
 - Root cause: shot **30203** Level-2 `pf_active` has no `P6U`/`P6L` current channels → `coil_map_apply` failed → no `pf_currents.csv` → `voltage_map` ohmic path failed.
 - Fix: coil_map **v1.6** marks P6 `optional=true` with `absent_policy=zero` (declared absence → `I_P6=0 A`, recorded in apply report warnings — not invented metrology). Required circuits still fail closed.
