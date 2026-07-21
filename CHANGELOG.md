@@ -1,3 +1,8 @@
+## 11.5.2 — Optional P6 when FAIR-MAST omits channels (shot 30203)
+- Root cause: shot **30203** Level-2 `pf_active` has no `P6U`/`P6L` current channels → `coil_map_apply` failed → no `pf_currents.csv` → `voltage_map` ohmic path failed.
+- Fix: coil_map **v1.6** marks P6 `optional=true` with `absent_policy=zero` (declared absence → `I_P6=0 A`, recorded in apply report warnings — not invented metrology). Required circuits still fail closed.
+- Version **11.5.2**.
+
 ## 11.5.1 — Shot suitability gate (skip / re-prompt)
 - Before download/execute, assess whether a shot is suitable: positive shot id, local `data_cache` hit for required Level-2 groups, else MastApp listing + S3 discovery of `required_groups`.
 - **Interactive:** unsuitable single shot → professional message + ask for another; multi-shot queue → skip unsuitable and continue; if none suitable → re-prompt.

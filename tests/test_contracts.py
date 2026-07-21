@@ -170,8 +170,74 @@ def test_shipped_coil_map_p6_is_antisym() -> None:
     assert rep["ok"], rep["errors"]
     assert cm.circuits["P6"]["combine"] == "antisym_mean"
     assert cm.circuits["P6"]["exp_columns"] == ["P6U", "P6L"]
+    assert cm.circuits["P6"].get("optional") is True
+    assert cm.circuits["P6"].get("absent_policy") == "zero"
     for series in ("P2_inner", "P2_outer", "P3", "P4", "P5"):
         assert cm.circuits[series]["combine"] == "mean", series
+
+
+def test_apply_coil_map_optional_absent_zero(tmp_path: Path) -> None:
+    """Shot 30203-style: P6 channels omitted from FAIR-MAST → declared I_P6=0."""
+    raw = tmp_path / "pf_active_raw.csv"
+    pd.DataFrame(
+        {
+            "time": [0.0, 1.0],
+            "SOL": [1.0, 2.0],
+            "P4L FEED": [10.0, 20.0],
+            "P4U FEED": [10.0, 20.0],
+        }
+    ).to_csv(raw, index=False)
+    coil_map = CoilMap(
+        mapping={},
+        circuits={
+            "Solenoid": {
+                "exp_columns": ["SOL"],
+                "combine": "identity",
+                "scale": 1.0,
+                "sign": 1,
+            },
+            "P4": {
+                "exp_columns": ["P4L FEED", "P4U FEED"],
+                "combine": "mean",
+                "scale": 1.0,
+                "sign": 1,
+            },
+            "P6": {
+                "exp_columns": ["P6U", "P6L"],
+                "combine": "antisym_mean",
+                "scale": 1.0,
+                "sign": 1,
+                "optional": True,
+                "absent_policy": "zero",
+            },
+        },
+    )
+    out = tmp_path / "pf_currents.csv"
+    rep = apply_coil_map(raw, out, coil_map)
+    assert rep["ok"], rep
+    assert any("absent_optional_zero:P6" in w for w in rep.get("warnings", []))
+    df = pd.read_csv(out)
+    assert list(df["P6"]) == pytest.approx([0.0, 0.0])
+    assert list(df["Solenoid"]) == pytest.approx([1.0, 2.0])
+
+
+def test_apply_coil_map_required_missing_still_fails(tmp_path: Path) -> None:
+    raw = tmp_path / "pf_active_raw.csv"
+    pd.DataFrame({"time": [0.0], "SOL": [1.0]}).to_csv(raw, index=False)
+    coil_map = CoilMap(
+        mapping={},
+        circuits={
+            "P6": {
+                "exp_columns": ["P6U", "P6L"],
+                "combine": "antisym_mean",
+                "scale": 1.0,
+                "sign": 1,
+            }
+        },
+    )
+    rep = apply_coil_map(raw, tmp_path / "out.csv", coil_map)
+    assert not rep["ok"]
+    assert any("missing_exp_columns:P6" in e for e in rep["errors"])
 
 
 def test_apply_coil_map_series_mean_not_sum(tmp_path: Path) -> None:

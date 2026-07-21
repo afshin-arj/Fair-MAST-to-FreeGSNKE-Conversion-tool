@@ -115,6 +115,21 @@ def validate_coil_map(coil_map: CoilMap) -> Dict[str, Any]:
         except Exception:
             report["ok"] = False
             report["errors"].append(f"circuits.{coil}: scale must be numeric")
+        if "optional" in spec and not isinstance(spec.get("optional"), bool):
+            report["ok"] = False
+            report["errors"].append(f"circuits.{coil}: optional must be bool")
+        absent = str(spec.get("absent_policy", "fail"))
+        if absent not in {"fail", "zero"}:
+            report["ok"] = False
+            report["errors"].append(
+                f"circuits.{coil}: absent_policy must be fail|zero (got {absent!r})"
+            )
+        if absent == "zero" and not bool(spec.get("optional", False)):
+            report["ok"] = False
+            report["errors"].append(
+                f"circuits.{coil}: absent_policy=zero requires optional=true "
+                "(declared absence must be explicit)"
+            )
     return report
 
 
@@ -124,7 +139,7 @@ def write_resolved_coil_map(run_dir: Path, coil_map: CoilMap) -> Path:
     out_path = out_dir / "coil_map.resolved.json"
     out_path.write_text(
         json.dumps(
-            {"version": "1.1", "mapping": coil_map.mapping, "circuits": coil_map.circuits},
+            {"version": "1.6", "mapping": coil_map.mapping, "circuits": coil_map.circuits},
             indent=2,
             sort_keys=True,
         )
@@ -138,7 +153,13 @@ def apply_coil_map(
     coil_map: CoilMap,
 ) -> Dict[str, Any]:
     """Apply explicit coil_map authority to pf_active_raw.csv → pf_currents.csv."""
-    report: Dict[str, Any] = {"ok": True, "errors": [], "coils": {}, "n_mapped": 0}
+    report: Dict[str, Any] = {
+        "ok": True,
+        "errors": [],
+        "warnings": [],
+        "coils": {},
+        "n_mapped": 0,
+    }
     if not raw_csv.exists():
         report["ok"] = False
         report["errors"].append(f"missing_raw_csv:{raw_csv}")
@@ -191,9 +212,40 @@ def apply_coil_map(
             continue
         cols = list(spec.get("exp_columns") or [])
         missing = [c for c in cols if c not in df.columns]
+        optional = bool(spec.get("optional", False))
+        absent_policy = str(spec.get("absent_policy", "fail"))
         if missing:
+            if optional and absent_policy == "zero":
+                # Declared absence: no published channels for this shot → I=0 A.
+                # Not invented metrology; recorded in the apply report.
+                n = int(len(out))
+                out[coil] = np.zeros(n, dtype=float)
+                report["coils"][coil] = {
+                    "exp_columns": cols,
+                    "combine": str(spec.get("combine", "identity")),
+                    "scale": float(spec.get("scale", 1.0)),
+                    "sign": float(spec.get("sign", 1)),
+                    "optional": True,
+                    "absent_policy": "zero",
+                    "missing_exp_columns": missing,
+                    "filled": "zeros_declared_absence",
+                }
+                report.setdefault("warnings", []).append(
+                    f"absent_optional_zero:{coil}:missing={missing}"
+                )
+                report["n_mapped"] += 1
+                continue
             report["ok"] = False
-            report["errors"].append(f"missing_exp_columns:{coil}:{missing}")
+            report["errors"].append(
+                f"missing_exp_columns:{coil}:{missing}"
+                + (
+                    " (set optional=true and absent_policy=zero in coil_map "
+                    "to declare I=0 when FAIR-MAST omits these channels)"
+                    if not optional
+                    else f" (optional circuit but absent_policy={absent_policy!r} "
+                    "does not allow fill)"
+                )
+            )
             continue
         scale = float(spec.get("scale", 1.0))
         sign = float(spec.get("sign", 1))
@@ -226,7 +278,14 @@ def apply_coil_map(
             report["errors"].append(f"nonfinite_values:{coil}")
             continue
         out[coil] = vals
-        report["coils"][coil] = {"exp_columns": cols, "combine": combine, "scale": scale, "sign": sign}
+        report["coils"][coil] = {
+            "exp_columns": cols,
+            "combine": combine,
+            "scale": scale,
+            "sign": sign,
+            "optional": optional,
+            "absent_policy": absent_policy,
+        }
         report["n_mapped"] += 1
 
     if not report["ok"]:
