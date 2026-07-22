@@ -88,7 +88,7 @@ EOF
 gh pr merge --merge
 ```
 
-**Direct push to `main`** only when the user explicitly demanded it in-session:
+**Direct push to `main`** when the user demands shipping to main (this project: after green pytest on a finished fix/feature, **always** land on `main` without waiting for a second ask):
 
 ```bash
 git checkout main
