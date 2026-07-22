@@ -683,6 +683,7 @@ class ShotPipeline:
                     runner = FreeGSNKERunner(
                         python_exe=self.cfg.freegsnke_python,
                         timeout_s=self.cfg.freegsnke_script_timeout_s,
+                        repo_root=repo_root,
                     )
                     results: List[Dict[str, Any]] = []
                     if mode in {"inverse", "both"}:
@@ -747,6 +748,7 @@ class ShotPipeline:
                             evo_runner = FreeGSNKERunner(
                                 python_exe=self.cfg.freegsnke_python,
                                 timeout_s=evo_timeout,
+                                repo_root=repo_root,
                             )
                             er = evo_runner.run_script(evo_script, run_dir=run_dir, label="evolutive")
                             results.append(er.__dict__)

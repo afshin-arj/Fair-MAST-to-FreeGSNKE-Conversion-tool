@@ -1,3 +1,8 @@
+## 11.6.1 — FreeGSNKE venv can import mast_freegsnke (GIF fix)
+- Root cause (30201): FreeGSNKE scripts run under `.venv-freegsnke`, which did not have `mast_freegsnke` installed → `No module named 'mast_freegsnke'` → presentation frames/GIFs skipped (logs showed WARN only).
+- Fix: `FreeGSNKERunner` prepends repo `src/` to `PYTHONPATH`; `requirements-freegsnke.txt` adds **Pillow**; bootstrap checks Pillow.
+- Version **11.6.1**.
+
 ## 11.6.0 — Multi-time equilibria GIFs (inverse / forward / evolutive)
 - Across the **formed-plasma window** (`formed_plasma_frac`, default 0.8×max|Ip|): inverse already sampled `metrics_n_times` (default 5); **forward** now also solves Grad–Shafranov at those times; **evolutive** snapshots every step (`snapshot_equilibria_every_n=1`).
 - Animated GIFs (Pillow): `presentation/inverse_equilibria.gif`, `presentation/forward_equilibria.gif`, `evolutive/evolutive_equilibria.gif` (+ PNG frames). Config: `write_equilibrium_gifs`, `write_eq_frames`, `equilibrium_gif_fps`, `equilibrium_gif_dpi` (shot-only defaults on).

@@ -58,6 +58,36 @@ def resolve_freegsnke_python(configured: Optional[str], repo_root: Optional[Path
     return str(p)
 
 
+def _prepend_pythonpath(env: Dict[str, str], entries: list[Path]) -> Dict[str, str]:
+    """Prepend existing source trees so FreeGSNKE scripts can import mast_freegsnke."""
+    out = dict(env)
+    parts: list[str] = []
+    for p in entries:
+        if p.is_dir():
+            parts.append(str(p.resolve()))
+    if not parts:
+        return out
+    existing = out.get("PYTHONPATH", "")
+    if existing:
+        parts.append(existing)
+    out["PYTHONPATH"] = os.pathsep.join(parts)
+    return out
+
+
+def resolve_repo_src(repo_root: Optional[Path] = None) -> Optional[Path]:
+    """Locate package ``src/`` so presentation + introspection import in the FreeGSNKE venv."""
+    if repo_root is not None:
+        cand = Path(repo_root) / "src"
+        if (cand / "mast_freegsnke").is_dir():
+            return cand
+    # freegsnke_runner.py → mast_freegsnke → src → repo
+    here = Path(__file__).resolve()
+    pkg_src = here.parents[1]  # .../src
+    if (pkg_src / "mast_freegsnke").is_dir():
+        return pkg_src
+    return None
+
+
 def _detect_import_error(stderr_text: str) -> Optional[str]:
     # Keep this conservative and deterministic.
     if "ModuleNotFoundError" in stderr_text and "freegsnke" in stderr_text:
@@ -76,6 +106,10 @@ class FreeGSNKERunner:
     A hard wall-clock ``timeout_s`` (v10.5.0) prevents indefinite hangs when the
     FreeGSNKE inverse residual-resize loop never returns (known failure mode when
     Inverse_optimizer state is reused across times).
+
+    ``repo_root`` / package ``src`` is prepended to PYTHONPATH so scripts can import
+    ``mast_freegsnke`` (presentation GIFs, solver introspection) even when the
+    FreeGSNKE venv only has freegsnke+deps installed.
     """
 
     def __init__(
@@ -83,14 +117,19 @@ class FreeGSNKERunner:
         python_exe: Optional[str] = None,
         env: Optional[Dict[str, str]] = None,
         timeout_s: Optional[float] = None,
+        repo_root: Optional[Path] = None,
     ):
-        self.python_exe = resolve_freegsnke_python(python_exe)
+        self.python_exe = resolve_freegsnke_python(python_exe, repo_root=repo_root)
         self.env = dict(os.environ)
         # Unbuffered child stdout so long FreeGSNKE inits (nl_solver) appear in logs.
         self.env.setdefault("PYTHONUNBUFFERED", "1")
         if env:
             self.env.update({str(k): str(v) for k, v in env.items()})
+        src = resolve_repo_src(repo_root)
+        if src is not None:
+            self.env = _prepend_pythonpath(self.env, [src])
         self.timeout_s = float(timeout_s) if timeout_s is not None else None
+        self.repo_src = src
 
     def run_script(self, script_path: Path, run_dir: Path, label: str) -> ScriptRunResult:
         script_path = script_path.resolve()

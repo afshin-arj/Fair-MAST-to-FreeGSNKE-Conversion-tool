@@ -71,6 +71,22 @@ def _import_ok(py: Path) -> bool:
         return False
 
 
+def _pillow_ok(py: Path) -> bool:
+    """Pillow is required for equilibrium GIF presentation (v11.6+)."""
+    if not py.is_file():
+        return False
+    try:
+        chk = subprocess.run(
+            [str(py), "-c", "import PIL; print(PIL.__version__)"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        return chk.returncode == 0
+    except Exception:
+        return False
+
+
 def main() -> int:
     if os.environ.get("RUN_PIPELINE_SKIP_FREEGSNKE_ENV", "").strip() == "1":
         print("[INFO] RUN_PIPELINE_SKIP_FREEGSNKE_ENV=1: skipping FreeGSNKE venv bootstrap")
@@ -82,7 +98,7 @@ def main() -> int:
     py = _venv_python()
     want = _req_hash()
     have = MARKER.read_text(encoding="utf-8").strip() if MARKER.is_file() else ""
-    if py.is_file() and have == want and _import_ok(py):
+    if py.is_file() and have == want and _import_ok(py) and _pillow_ok(py):
         print(f"[OK] FreeGSNKE env ready: {py}")
         return 0
 
@@ -114,6 +130,9 @@ def main() -> int:
 
     if not _import_ok(py):
         print(f"[FAIL] freegsnke still not importable in {py}")
+        return 3
+    if not _pillow_ok(py):
+        print(f"[FAIL] pillow still not importable in {py} (needed for equilibrium GIFs)")
         return 3
 
     MARKER.parent.mkdir(parents=True, exist_ok=True)

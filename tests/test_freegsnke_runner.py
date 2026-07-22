@@ -35,6 +35,26 @@ def test_runner_success_records_logs(tmp_path: Path):
     assert r.error_hint is None
 
 
+def test_runner_prepends_repo_src_for_mast_freegsnke_import(tmp_path: Path):
+    """FreeGSNKE venv often lacks pip-installed mast_freegsnke; PYTHONPATH must expose src/."""
+    from mast_freegsnke.freegsnke_runner import resolve_repo_src
+
+    src = resolve_repo_src()
+    assert src is not None
+    assert (src / "mast_freegsnke" / "equilibrium_presentation.py").is_file()
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir(parents=True)
+    script = run_dir / "check_import.py"
+    script.write_text(
+        "from mast_freegsnke.equilibrium_presentation import PresentationAuthority\n"
+        "print(PresentationAuthority().write_equilibrium_gifs)\n"
+    )
+    r = FreeGSNKERunner(repo_root=src.parent).run_script(script, run_dir=run_dir, label="check")
+    assert r.ok is True, (run_dir / r.stderr_path).read_text()
+    assert (run_dir / r.stdout_path).read_text().strip() == "True"
+
+
 def test_resolve_freegsnke_python_falls_back_across_venv_layouts(tmp_path: Path):
     venv = tmp_path / ".venv-freegsnke"
     posix = venv / "bin" / "python"
