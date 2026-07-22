@@ -28,3 +28,7 @@ def test_templates_render_without_format_collisions() -> None:
         assert "__MACHINE_DIR_REPR__" not in inv
         assert "__FORMED_FRAC__" not in inv
         assert "__MACHINE_DIR_REPR__" not in fwd
+        # v11.6.2: forward multi-time must hard-kill hung FreeGSNKE samples
+        assert "_forward_sample_worker" in fwd
+        assert "per_time_timeout_s" in fwd
+        assert "proc.terminate()" in fwd

@@ -1,3 +1,8 @@
+## 11.6.2 — Forward multi-time hard timeout (shot 30201 hang)
+- Root cause: `forward_run` multi-time presentation cold-started each window sample **without** `max_solving_iterations` / hard `per_time_timeout_s` → FreeGSNKE residual-resize hang at last sample (t≈0.378) until the 1200s script timeout → `freegsnke_forward_failed`.
+- Fix: spawn-child per-sample solve with declared multitime caps + psi continuation; skip timed-out samples and still stitch GIF from successful frames. Inverse GIF path already worked (v11.6.1).
+- Version **11.6.2**.
+
 ## 11.6.1 — FreeGSNKE venv can import mast_freegsnke (GIF fix)
 - Root cause (30201): FreeGSNKE scripts run under `.venv-freegsnke`, which did not have `mast_freegsnke` installed → `No module named 'mast_freegsnke'` → presentation frames/GIFs skipped (logs showed WARN only).
 - Fix: `FreeGSNKERunner` prepends repo `src/` to `PYTHONPATH`; `requirements-freegsnke.txt` adds **Pillow**; bootstrap checks Pillow.

@@ -5,7 +5,9 @@
 
 from pathlib import Path
 import json
+import multiprocessing as _mp
 import pickle
+import time as _time
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -98,6 +100,187 @@ def compute_sample_times(ea: dict):
     return times, meta
 
 
+def _load_multitime_spec(solv: dict) -> dict:
+    mt = (solv or {}).get("multitime") or {}
+    return {
+        "preferred_mode": str(mt.get("preferred_mode", "full_inverse")),
+        "max_solving_iterations": int(mt.get("max_solving_iterations", 50)),
+        "per_time_timeout_s": float(mt.get("per_time_timeout_s", 180.0)),
+        "continuation": bool(mt.get("continuation", True)),
+        "fallback_mode": str(mt.get("fallback_mode", "forward_gs")),
+    }
+
+
+def _forward_sample_worker(payload: dict) -> None:
+    """Spawn-child: one forward GS sample (hard per_time_timeout_s kill)."""
+    import pickle as _pickle
+
+    tokamak = _pickle.loads(Path(payload["tokamak_pickle"]).read_bytes())
+    grid = payload["grid"]
+    eq = equilibrium_update.Equilibrium(
+        tokamak=tokamak,
+        Rmin=float(grid["Rmin"]), Rmax=float(grid["Rmax"]),
+        Zmin=float(grid["Zmin"]), Zmax=float(grid["Zmax"]),
+        nx=int(grid["nx"]), ny=int(grid["ny"]),
+    )
+    eq.plasma_psi = np.array(np.load(payload["plasma_psi_in"]), dtype=float, copy=True)
+    eq.solved = False
+    set_active_currents(tokamak, payload["pf_i"])
+    pk = payload["profile_kwargs"]
+    profiles = ConstrainPaxisIp(
+        eq=eq,
+        paxis=float(pk["paxis"]),
+        Ip=float(payload["ip_i"]),
+        fvac=float(pk["fvac"]),
+        alpha_m=float(pk["alpha_m"]),
+        alpha_n=float(pk["alpha_n"]),
+    )
+    solver = GSstaticsolver.NKGSsolver(eq)
+    solv = payload["solv"]
+    mt_spec = payload["mt_spec"]
+    tic = _time.time()
+    result = {
+        "ok": False,
+        "status": "error",
+        "solve_mode": "forward_gs",
+        "iterations": 0,
+        "rel_change": None,
+        "duration_s": 0.0,
+        "error": None,
+    }
+    try:
+        solver.solve(
+            eq=eq,
+            profiles=profiles,
+            constrain=None,
+            target_relative_tolerance=float(solv["forward_target_relative_tolerance"]),
+            max_solving_iterations=int(mt_spec["max_solving_iterations"]),
+            verbose=False,
+        )
+        rel = float(getattr(solver, "relative_change", float("nan")))
+        iters = int(max(0, len(getattr(solver, "norm_rel_change", [])) - 1))
+        duration_s = float(_time.time() - tic)
+        tol = float(solv["forward_target_relative_tolerance"])
+        status = "converged" if (np.isfinite(rel) and rel <= tol) else "completed_max_iter"
+        err = None
+        if status != "converged":
+            err = (
+                f"forward_gs finished without meeting tolerance: "
+                f"rel_change={rel:.3e} vs {tol:.3e} in {iters} iterations"
+            )
+        result.update(
+            {
+                "ok": True,
+                "status": status,
+                "iterations": iters,
+                "rel_change": rel,
+                "duration_s": duration_s,
+                "error": err,
+            }
+        )
+        np.save(payload["plasma_psi_out"], np.asarray(eq.plasma_psi, dtype=float))
+    except Exception as e:
+        result.update(
+            {
+                "ok": False,
+                "status": "error",
+                "duration_s": float(_time.time() - tic),
+                "error": f"{type(e).__name__}: {e}",
+            }
+        )
+    Path(payload["result_json"]).write_text(json.dumps(result) + "\n", encoding="utf-8")
+
+
+def _solve_forward_sample(
+    *,
+    eq,
+    tokamak,
+    grid: dict,
+    solv: dict,
+    mt_spec: dict,
+    profile_kwargs: dict,
+    t_i: float,
+    ip_i: float,
+    pf_i: dict,
+    tokamak_pickle: Path,
+) -> dict:
+    import pickle as _pickle
+
+    work = HERE / ".multitime_work"
+    work.mkdir(parents=True, exist_ok=True)
+    if not tokamak_pickle.exists():
+        tokamak_pickle.write_bytes(_pickle.dumps(tokamak, protocol=5))
+
+    tag = f"fwd_{t_i:.6f}".replace(".", "p")
+    psi_in = work / f"{tag}_psi_in.npy"
+    psi_out = work / f"{tag}_psi_out.npy"
+    result_json = work / f"{tag}_result.json"
+    for pth in (psi_out, result_json):
+        if pth.exists():
+            pth.unlink()
+    np.save(psi_in, np.asarray(eq.plasma_psi, dtype=float))
+
+    payload = {
+        "tokamak_pickle": str(tokamak_pickle),
+        "grid": grid,
+        "solv": solv,
+        "mt_spec": mt_spec,
+        "profile_kwargs": {
+            "paxis": float(profile_kwargs["paxis"]),
+            "fvac": float(profile_kwargs["fvac"]),
+            "alpha_m": float(profile_kwargs["alpha_m"]),
+            "alpha_n": float(profile_kwargs["alpha_n"]),
+        },
+        "t_i": float(t_i),
+        "ip_i": float(ip_i),
+        "pf_i": {k: float(v) for k, v in pf_i.items()},
+        "plasma_psi_in": str(psi_in),
+        "plasma_psi_out": str(psi_out),
+        "result_json": str(result_json),
+    }
+
+    ctx = _mp.get_context("spawn")
+    proc = ctx.Process(target=_forward_sample_worker, args=(payload,))
+    tic = _time.time()
+    proc.start()
+    proc.join(timeout=float(mt_spec["per_time_timeout_s"]))
+    if proc.is_alive():
+        proc.terminate()
+        proc.join(timeout=5.0)
+        if proc.is_alive():
+            proc.kill()
+            proc.join(timeout=5.0)
+        return {
+            "ok": False,
+            "status": "timeout",
+            "solve_mode": "forward_gs",
+            "iterations": None,
+            "rel_change": None,
+            "duration_s": float(_time.time() - tic),
+            "error": (
+                f"hard kill: per-time forward exceeded solver.multitime.per_time_timeout_s="
+                f"{mt_spec['per_time_timeout_s']}s (child process terminated)"
+            ),
+        }
+
+    if not result_json.exists():
+        return {
+            "ok": False,
+            "status": "error",
+            "solve_mode": "forward_gs",
+            "iterations": None,
+            "rel_change": None,
+            "duration_s": float(_time.time() - tic),
+            "error": f"child exited without result (exitcode={proc.exitcode})",
+        }
+    result = json.loads(result_json.read_text(encoding="utf-8"))
+    if result.get("ok") and psi_out.exists():
+        eq.plasma_psi = np.load(psi_out)
+        eq.solved = True
+        set_active_currents(tokamak, pf_i)
+    return result
+
+
 def main():
     with open(DUMP, "rb") as f:
         dump = pickle.load(f)
@@ -107,6 +290,7 @@ def main():
         ea = _load_execution_authority_bundle_fallback()
     grid = ea["grid"]
     solv = ea["solver"]
+    mt_spec = _load_multitime_spec(solv)
 
     tokamak = build_machine.tokamak(
         active_coils_path=str(MACHINE / "active_coils.pickle"),
@@ -124,6 +308,12 @@ def main():
     )
 
     pk = dump["profile_kwargs"]
+    profile_kwargs = {
+        "paxis": float(pk["paxis"]),
+        "fvac": float(dump["fvac"]),
+        "alpha_m": float(pk["alpha_m"]),
+        "alpha_n": float(pk["alpha_n"]),
+    }
     profiles = ConstrainPaxisIp(
         eq=eq,
         paxis=float(pk["paxis"]),
@@ -147,6 +337,7 @@ def main():
         profiles=profiles,
         constrain=None,
         target_relative_tolerance=float(solv["forward_target_relative_tolerance"]),
+        max_solving_iterations=int(mt_spec["max_solving_iterations"]),
         verbose=True,
     )
 
@@ -165,6 +356,7 @@ def main():
     print("Saved forward_equilibrium.png")
 
     # Multi-time forward GS across formed-plasma window → frames + GIF
+    # Hard per-sample kill (same FreeGSNKE hang mode as inverse multi-time).
     try:
         from mast_freegsnke.equilibrium_presentation import (
             save_equilibrium_png,
@@ -181,43 +373,91 @@ def main():
             times, tb_meta = compute_sample_times(ea)
             frames_dir = HERE / "presentation" / "forward_frames"
             per_time = []
+            tokamak_pickle = HERE / ".multitime_work" / "tokamak_fwd.pkl"
+            n_ok = 0
+            n_skip = 0
+            # Continue from the t0 forward solution (cold-start each sample can hang).
+            if not mt_spec["continuation"]:
+                eq.plasma_psi = eq.create_psi_plasma_default(adaptive_centre=True)
+                eq.solved = False
+
             for t_i in times:
                 pf_i = load_pf_currents(float(t_i))
                 ip_i = interp_at_time(ip_df, float(t_i), "ip")
-                set_active_currents(tokamak, pf_i)
-                profiles_i = ConstrainPaxisIp(
-                    eq=eq,
-                    paxis=float(pk["paxis"]),
-                    Ip=float(ip_i),
-                    fvac=float(dump["fvac"]),
-                    alpha_m=float(pk["alpha_m"]),
-                    alpha_n=float(pk["alpha_n"]),
+                if not mt_spec["continuation"]:
+                    eq.plasma_psi = eq.create_psi_plasma_default(adaptive_centre=True)
+                    eq.solved = False
+                print(
+                    f"[..] forward window sample t={float(t_i):.6f}s Ip={ip_i/1e6:.3f}MA "
+                    f"(timeout={mt_spec['per_time_timeout_s']}s, "
+                    f"max_iter={mt_spec['max_solving_iterations']})",
+                    flush=True,
                 )
-                eq.plasma_psi = eq.create_psi_plasma_default(adaptive_centre=True)
-                eq.solved = False
-                solver.solve(
+                result = _solve_forward_sample(
                     eq=eq,
-                    profiles=profiles_i,
-                    constrain=None,
-                    target_relative_tolerance=float(solv["forward_target_relative_tolerance"]),
-                    verbose=False,
+                    tokamak=tokamak,
+                    grid=grid,
+                    solv=solv,
+                    mt_spec=mt_spec,
+                    profile_kwargs=profile_kwargs,
+                    t_i=float(t_i),
+                    ip_i=float(ip_i),
+                    pf_i=pf_i,
+                    tokamak_pickle=tokamak_pickle,
                 )
-                entry = {"t": float(t_i), "ip": float(ip_i), "status": "ok"}
-                if pres.write_eq_frames:
-                    tag = f"eq_t{float(t_i):.6f}".replace(".", "p")
-                    png = save_equilibrium_png(
-                        tokamak=tokamak,
-                        eq=eq,
-                        out_path=frames_dir / f"{tag}.png",
-                        title=f"Forward GS  t={float(t_i):.4f}s  Ip={ip_i/1e6:.3f}MA",
-                        dpi=int(pres.gif_dpi),
+                entry = {
+                    "t": float(t_i),
+                    "ip": float(ip_i),
+                    "status": result.get("status"),
+                    "solve_mode": result.get("solve_mode"),
+                    "iterations": result.get("iterations"),
+                    "rel_change": result.get("rel_change"),
+                    "duration_s": result.get("duration_s"),
+                    "error": result.get("error"),
+                }
+                if result.get("ok"):
+                    n_ok += 1
+                    if pres.write_eq_frames:
+                        tag = f"eq_t{float(t_i):.6f}".replace(".", "p")
+                        png = save_equilibrium_png(
+                            tokamak=tokamak,
+                            eq=eq,
+                            out_path=frames_dir / f"{tag}.png",
+                            title=f"Forward GS  t={float(t_i):.4f}s  Ip={ip_i/1e6:.3f}MA",
+                            dpi=int(pres.gif_dpi),
+                        )
+                        entry["frame_png"] = str(png.relative_to(HERE)).replace("\\", "/")
+                    print(
+                        f"[OK] forward window sample t={float(t_i):.6f}s "
+                        f"status={entry['status']} duration_s={result.get('duration_s')}",
+                        flush=True,
                     )
-                    entry["frame_png"] = str(png.relative_to(HERE)).replace("\\", "/")
+                else:
+                    n_skip += 1
+                    print(
+                        f"[SKIP] forward window sample t={float(t_i):.6f}s: {result.get('error')}",
+                        flush=True,
+                    )
                 per_time.append(entry)
-                print(f"[OK] forward window sample t={float(t_i):.6f}s Ip={ip_i/1e6:.3f}MA", flush=True)
 
             (HERE / "presentation" / "forward_times.json").write_text(
-                json.dumps({**tb_meta, "per_time": per_time, "solve_mode": "forward_gs"}, indent=2)
+                json.dumps(
+                    {
+                        **tb_meta,
+                        "per_time": per_time,
+                        "solve_mode": "forward_gs",
+                        "n_ok": n_ok,
+                        "n_skipped": n_skip,
+                        "multitime_authority": mt_spec,
+                        "note": (
+                            "Multi-time forward uses measured PF/Ip at each window sample, "
+                            "psi continuation from t0 (unless continuation=false), "
+                            "max_solving_iterations + hard per_time_timeout_s kill. "
+                            "Skipped times omit frames; never fabricate equilibria."
+                        ),
+                    },
+                    indent=2,
+                )
                 + "\n",
                 encoding="utf-8",
             )
