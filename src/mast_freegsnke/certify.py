@@ -114,6 +114,38 @@ def certify_run_dir(
                 pass
             break
 
+    # Science gates (v11.7.0): mixed reconstruct / missing Ip residual → YELLOW
+    science = None
+    sa_path = run_dir / "01_summary" / "science_audit.json"
+    if sa_path.exists():
+        try:
+            science = json.loads(sa_path.read_text(encoding="utf-8"))
+        except Exception:
+            science = None
+    if not isinstance(science, dict) and man:
+        science = man.get("science_audit") if isinstance(man.get("science_audit"), dict) else None
+
+    if isinstance(science, dict):
+        rq = science.get("reconstruction_quality") or {}
+        evo = science.get("evolutive_ip") or {}
+        passives = science.get("passive_resistivity") or {}
+        report["checks"]["science_audit"] = {
+            "reconstruction_hint": rq.get("science_tier_hint"),
+            "evolutive_ip_ok": evo.get("ok"),
+            "passive_status": passives.get("status"),
+        }
+        hint = rq.get("science_tier_hint")
+        if hint in {"yellow_mixed_or_partial", "yellow_forward_gs_only"}:
+            report["warnings"].append(f"reconstruction_quality:{hint}")
+        elif hint == "red_no_solved_times":
+            report["blocking"].append("reconstruction_quality_red_no_solved_times")
+        if (run_dir / "evolutive" / "history.csv").exists() and not evo.get("ok"):
+            report["warnings"].append("evolutive_ip_residual_unavailable")
+        if passives.get("status") in {"awaiting_authority", "unknown"}:
+            report["warnings"].append("passive_resistivity_awaiting_authority")
+    elif (run_dir / "synthetic" / "synthetic_times.json").exists():
+        report["warnings"].append("science_audit_missing")
+
     if report["blocking"]:
         report["tier"] = "RED"
         report["ok"] = False

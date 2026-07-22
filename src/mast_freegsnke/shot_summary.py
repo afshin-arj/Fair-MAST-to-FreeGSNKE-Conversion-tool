@@ -2,7 +2,8 @@
 
 Operational paths (inputs/, synthetic/, metrics/, logs/, manifest.json, *.py)
 remain at the run root for tooling stability. This module only adds the
-human/expert overlay.
+human/expert overlay. v11.7.0: science-first SUMMARY (residuals, solve_mode,
+evolutive Ip, ohmic drive uncertainty, phases); GIFs are annex.
 """
 
 from __future__ import annotations
@@ -15,12 +16,13 @@ from typing import Any, Dict, List, Optional
 _KNOWN_LIMITATIONS = [
     "Structural machine is classic MAST built from FAIR-MAST Level-2 filaments (machine_authority/; see FREEGSNKE_MACHINE_PROVENANCE.json) — not FreeGSNKE MAST-U pickles.",
     "Limiter/wall = FAIR-MAST wall.zarr limiter_r/z (EFIT limiter geometry) — not surveyed CAD vessel; not a flux-loop computational proxy.",
-    "No FreeGSNKE passives: Level-2 pf_passive has parallelogram geometry but no resistivity (do not invent resistivity).",
+    "No FreeGSNKE passives: Level-2 pf_passive has parallelogram geometry but no resistivity (do not invent resistivity). Populate configs/passive_resistivity.json only with cited ρ.",
     "FAIR-MAST Level-2 supplies measured voltages (p1/p2/p4/p5 in V) as primary evolutive drive; p2 is applied identically to P2_inner and P2_outer (declared same-V policy).",
-    "P3 and P6: no usable measured PF voltage in public L1/L2 -> from_current_ohmic (I*R with FreeGSNKE coil_resist after load).",
+    "P3 and P6: no usable measured PF voltage in public L1/L2 -> from_current_ohmic (I*R with FreeGSNKE coil_resist after load) — treat as declared uncertainty, not measured V.",
     "Active-coil resistivity is FreeGSNKE copper default 1.55e-8 (declared material constant; Level-2 does not publish coil resistivity).",
     "Profile alpha_m/alpha_n/fvac are held from the inverse IC; optional scale_paxis_with_ip is a declared Ip scaling law (default off) — never invented profile numbers.",
     "Contract residual metrics score only families with honest channel identity + units; uncalibrated mirnov/saddle/omaha stay audit-only until calibration authority is populated.",
+    "Equilibrium GIFs are presentation annexes — not a substitute for residual metrics or Ip match.",
 ]
 
 
@@ -47,29 +49,33 @@ def _exec_status(manifest: Dict[str, Any]) -> Dict[str, str]:
             by_label[label] = "timeout"
         else:
             by_label[label] = "failed"
-    # Also record skip
     if fe.get("skipped"):
         by_label["skipped"] = str(fe.get("skipped"))
     return by_label
 
 
-def _metrics_table(manifest: Dict[str, Any]) -> List[str]:
+def _metrics_rows(manifest: Dict[str, Any], run_dir: Path) -> List[str]:
     lines: List[str] = []
     m = manifest.get("reconstruction_metrics")
     if not isinstance(m, dict):
+        m = _safe_load_json(run_dir / "metrics" / "reconstruction_metrics.json") or {}
+    if not m:
         lines.append("| (none) | — | — |")
         return lines
-    lines.append(f"| n_scored | {m.get('n_scored', '—')} | |")
+    lines.append(f"| n_scored | {m.get('n_scored', '—')} | contracts with finite residuals |")
     lines.append(f"| n_skipped_all_nan | {m.get('n_skipped_all_nan', '—')} | |")
-    ok = m.get("ok")
-    lines.append(f"| metrics_ok | {ok} | |")
-    # Per-family RMS if present
-    families = m.get("families") or m.get("by_family") or {}
-    if isinstance(families, dict):
-        for fam, stats in sorted(families.items()):
-            if isinstance(stats, dict):
-                rms = stats.get("rms") or stats.get("RMS") or stats.get("rms_mean")
-                lines.append(f"| {fam} RMS | {rms if rms is not None else '—'} | |")
+    lines.append(f"| metrics_ok | {m.get('ok')} | |")
+    per = m.get("per_contract") or []
+    if isinstance(per, list):
+        for row in per[:12]:
+            if not isinstance(row, dict):
+                continue
+            name = row.get("name") or row.get("id") or "?"
+            rms = row.get("rms")
+            n = row.get("n")
+            lines.append(f"| `{name}` RMS | {rms if rms is not None else '—'} | n={n} |")
+        if len(per) > 12:
+            lines.append(f"| … | ({len(per) - 12} more contracts) | see metrics/ |")
     return lines
 
 
@@ -78,6 +84,7 @@ def write_shot_expert_overlay(
     *,
     shot: int,
     manifest: Optional[Dict[str, Any]] = None,
+    science_audit: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, str]:
     """Write 00_README.txt and 01_summary/SUMMARY.md (+ timeline.txt).
 
@@ -102,6 +109,19 @@ def write_shot_expert_overlay(
 
     gifs = presentation_gifs_under(run_dir)
 
+    if science_audit is None:
+        science_audit = _safe_load_json(summary_dir / "science_audit.json") or manifest.get(
+            "science_audit"
+        )
+    if not isinstance(science_audit, dict):
+        science_audit = {}
+
+    rq = science_audit.get("reconstruction_quality") or {}
+    evo_ip = science_audit.get("evolutive_ip") or {}
+    ohmic = science_audit.get("ohmic_drive") or {}
+    phases = science_audit.get("phase_timeline") or {}
+    passives = science_audit.get("passive_resistivity") or {}
+
     # Authority hashes (best-effort)
     auth_lines: List[str] = []
     for rel in [
@@ -117,6 +137,30 @@ def write_shot_expert_overlay(
     if vm_hash and vm_hash.get("sha256"):
         auth_lines.append(f"- voltage_map sha256: `{vm_hash['sha256'][:16]}…`")
 
+    phase_lines: List[str] = []
+    if phases.get("available") and isinstance(phases.get("phases"), list):
+        for ph in phases["phases"]:
+            if isinstance(ph, dict):
+                phase_lines.append(
+                    f"| `{ph.get('phase')}` | {ph.get('t_start')} | {ph.get('t_end')} |"
+                )
+    if not phase_lines:
+        phase_lines = ["| (none) | — | — |"]
+
+    ohmic_list = ", ".join(ohmic.get("ohmic_circuits") or []) or "(none)"
+    meas_v = ", ".join(ohmic.get("measured_voltage_circuits") or []) or "(none)"
+
+    evo_ip_lines = [
+        f"| ok | {evo_ip.get('ok')} | |",
+        f"| n | {evo_ip.get('n', '—')} | valid evolutive steps |",
+        f"| RMS [A] | {evo_ip.get('rms_A', '—')} | vs measured ip.csv |",
+        f"| MAE [A] | {evo_ip.get('mae_A', '—')} | |",
+        f"| max‖res‖ [A] | {evo_ip.get('max_abs_A', '—')} | |",
+        f"| RMS rel | {evo_ip.get('rms_rel', '—')} | RMS / mean‖Ip_meas‖ |",
+    ]
+    if evo_ip.get("errors"):
+        evo_ip_lines.append(f"| errors | {'; '.join(evo_ip['errors'])} | |")
+
     readme = "\n".join(
         [
             f"SHOT {shot} — Fair-MAST → FreeGSNKE run index",
@@ -126,21 +170,17 @@ def write_shot_expert_overlay(
             f"Created (UTC): {created}",
             f"Window: {t_start} .. {t_end} s" if t_start is not None else "Window: (see inputs/window.json)",
             "",
+            "Start with 01_summary/SUMMARY.md (science first), then metrics/ and evolutive/ip_residual.csv.",
+            "GIFs under presentation/ and evolutive/ are annex visuals.",
+            "",
             "How to read this folder",
             "-----------------------",
-            "Operational tooling paths (stable; used by pipeline/CLI):",
-            "  inputs/              experimental CSVs + authorities snapshots",
-            "  experimental_data/   categorized FAIR-MAST CSV + professional plots",
-            "  synthetic/           FreeGSNKE synthetic probe traces",
-            "  metrics/             residual scores",
-            "  logs/                FreeGSNKE stdout/stderr",
-            "  manifest.json        stage log + blocking_errors + provenance pointers",
-            "  inverse_run.py / forward_run.py / evolutive_run.py",
-            "  inverse_dump.pkl     IC for forward + evolutive",
-            "",
-            "Expert-facing overlay (this layer):",
-            "  00_README.txt        this index",
-            "  01_summary/          SUMMARY.md + timeline.txt",
+            "  inputs/                         experimental CSVs + authority snapshots",
+            "  01_summary/science_audit.json   reconstruction quality + Ip + ohmic inventory",
+            "  metrics/                        probe residual scores",
+            "  evolutive/ip_residual.csv       evolutive Ip vs measured Ip",
+            "  presentation/                   equilibrium GIFs (annex)",
+            "  manifest.json                   stage log + blocking_errors",
             "",
             "Modes (from freegsnke_execution):",
             *(
@@ -163,39 +203,71 @@ def write_shot_expert_overlay(
             "",
             f"- **Status:** `{status}`",
             f"- **UTC:** `{created}`",
-            f"- **Window:** `{t_start}` … `{t_end}` s",
+            f"- **Formed-plasma window:** `{t_start}` … `{t_end}` s",
             f"- **Modes:** {', '.join(f'{k}={v}' for k, v in sorted(exec_st.items())) or '(none)'}",
+            f"- **Reconstruction solve_mode:** `{rq.get('overall_solve_mode')}` "
+            f"(hint `{rq.get('science_tier_hint')}`; "
+            f"inverse={rq.get('n_inverse_converged')}, "
+            f"forward_gs={rq.get('n_forward_gs_fallback')}, "
+            f"skipped={rq.get('n_skipped')})",
             "",
-            "## Key metrics",
+            "## Science residuals (primary)",
+            "",
+            "### Probe contract metrics",
             "",
             "| Quantity | Value | Notes |",
             "|----------|-------|-------|",
-            *_metrics_table(manifest),
+            *_metrics_rows(manifest, run_dir),
+            "",
+            "### Evolutive Ip vs measured FAIR-MAST Ip",
+            "",
+            "| Quantity | Value | Notes |",
+            "|----------|-------|-------|",
+            *evo_ip_lines,
+            "",
+            "### Ohmic / measured voltage drive inventory",
+            "",
+            f"- **Measured V circuits:** {meas_v}",
+            f"- **from_current_ohmic (I×R):** {ohmic_list}",
+            f"- **Note:** {ohmic.get('uncertainty_note', '')}",
+            "",
+            f"### Passiveives: `{passives.get('status', 'unknown')}` "
+            f"(n_components={passives.get('n_components', 0)})",
+            "",
+            f"{passives.get('note', '')}",
+            "",
+            "## Phase timeline (window-derived)",
+            "",
+            "| Phase | t_start [s] | t_end [s] |",
+            "|-------|-------------|-----------|",
+            *phase_lines,
+            "",
+            f"_{phases.get('note', '')}_",
             "",
             "## Key paths",
             "",
             "| Artifact | Path |",
             "|----------|------|",
+            "| Science audit | `01_summary/science_audit.json` |",
             "| Manifest | `manifest.json` |",
             "| Window | `inputs/window.json` |",
+            "| Phase timeline | `inputs/phase_timeline.json` |",
             "| PF currents | `inputs/pf_currents.csv` |",
-            "| PF voltages (raw) | `inputs/pf_voltages_raw.csv` |",
             "| PF voltages (mapped) | `inputs/pf_voltages.csv` |",
-            "| Inverse dump | `inverse_dump.pkl` |",
-            "| Inverse GIF | `presentation/inverse_equilibria.gif` |",
-            "| Forward GIF | `presentation/forward_equilibria.gif` |",
-            "| Evolutive history | `evolutive/` |",
-            "| Evolutive GIF | `evolutive/evolutive_equilibria.gif` |",
             "| Metrics | `metrics/reconstruction_metrics.json` |",
+            "| Evolutive Ip residual | `evolutive/ip_residual.csv` |",
+            "| Inverse dump | `inverse_dump.pkl` |",
             "| Logs | `logs/` |",
             "",
-            "## Presentation GIFs",
+            "## Presentation annex (GIFs)",
             "",
             *(
                 [f"- `{k}`: `{v}`" for k, v in sorted(gifs.items())]
                 if gifs
-                else ["- (none yet — appear after successful FreeGSNKE execute with write_equilibrium_gifs=true)"]
+                else ["- (none — enable write_equilibrium_gifs)"]
             ),
+            "",
+            "_GIFs are not a substitute for residual metrics._",
             "",
             "## Authorities",
             "",
@@ -217,13 +289,13 @@ def write_shot_expert_overlay(
     )
     (summary_dir / "SUMMARY.md").write_text(summary_md, encoding="utf-8")
 
-    # Compact JSON twin for tooling
     summary_json = {
         "shot": int(shot),
         "status": status,
         "created_utc": created,
         "window": {"t_start": t_start, "t_end": t_end},
         "modes": exec_st,
+        "science_audit": science_audit,
         "presentation_gifs": gifs,
         "blocking_errors": list(blocking),
         "known_limitations": list(_KNOWN_LIMITATIONS),
@@ -244,4 +316,5 @@ def write_shot_expert_overlay(
         "summary_md": "01_summary/SUMMARY.md",
         "summary_json": "01_summary/SUMMARY.json",
         "timeline": "01_summary/timeline.txt",
+        "science_audit": "01_summary/science_audit.json",
     }

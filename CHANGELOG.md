@@ -1,3 +1,9 @@
+## 11.7.0 — Science audit pack (residuals-first SUMMARY, Ip match, certify gates)
+- `01_summary/science_audit.json`: reconstruction solve_mode quality, evolutive **Ip vs measured** (`evolutive/ip_residual.csv`), ohmic I×R inventory, window-derived phase timeline, passive resistivity status.
+- SUMMARY is science-first (probe RMS, Ip residual, ohmic uncertainty); GIFs demoted to annex.
+- Certify: mixed inverse/forward_gs → YELLOW; awaiting passives → YELLOW; no invented ρ/calibration.
+- Version **11.7.0**.
+
 ## 11.6.2 — Forward multi-time hard timeout (shot 30201 hang)
 - Root cause: `forward_run` multi-time presentation cold-started each window sample **without** `max_solving_iterations` / hard `per_time_timeout_s` → FreeGSNKE residual-resize hang at last sample (t≈0.378) until the 1200s script timeout → `freegsnke_forward_failed`.
 - Fix: spawn-child per-sample solve with declared multitime caps + psi continuation; skip timed-out samples and still stitch GIF from successful frames. Inverse GIF path already worked (v11.6.1).

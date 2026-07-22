@@ -832,6 +832,23 @@ class ShotPipeline:
             # Final status
             status = "success" if not blocking_errors else "failed"
 
+            science_audit = None
+            try:
+                from .science_audit import build_science_audit
+
+                science_audit = build_science_audit(run_dir)
+                _stage(
+                    "science_audit",
+                    True,
+                    reconstruction_hint=(science_audit.get("reconstruction_quality") or {}).get(
+                        "science_tier_hint"
+                    ),
+                    evolutive_ip_ok=(science_audit.get("evolutive_ip") or {}).get("ok"),
+                )
+            except Exception as e:
+                _stage("science_audit", False, error=str(e))
+                science_audit = None
+
             _write_manifest(
                 {
                     "cache_dir": str(shot_cache) if shot_cache is not None else None,
@@ -843,6 +860,7 @@ class ShotPipeline:
                     "time_window_consensus": consensus_obj.__dict__ if consensus_obj is not None else None,
                     "freegsnke_execution": exec_summary,
                     "reconstruction_metrics": metrics_summary,
+                    "science_audit": science_audit,
                     "machine_authority_snapshot": machine_snapshot,
                     "diagnostic_calibration_snapshot": calibration_snapshot,
                     "diagnostic_calibration_apply": calibration_apply,
@@ -852,7 +870,12 @@ class ShotPipeline:
             # Expert-facing overlay (00_README + 01_summary); operational paths unchanged
             try:
                 base_for_summary = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
-                overlay = write_shot_expert_overlay(run_dir, shot=shot, manifest=base_for_summary)
+                overlay = write_shot_expert_overlay(
+                    run_dir,
+                    shot=shot,
+                    manifest=base_for_summary,
+                    science_audit=science_audit,
+                )
                 _stage("shot_expert_overlay", True, **overlay)
             except Exception as e:
                 _stage("shot_expert_overlay", False, error=str(e))

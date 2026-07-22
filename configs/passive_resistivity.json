@@ -1,6 +1,6 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "status": "awaiting_authority",
-  "notes": "FAIR-MAST Level-2 pf_passive publishes parallelogram geometry (r/z/width/height/shapeAngle1/shapeAngle2) for classic MAST structures but no resistivity. FreeGSNKE passive pickles require resistivity_ohm_m. Populate components only with cited published values (e.g. EFIT/UDA rho) — never invent. Until then passive_coils.pickle stays empty.",
+  "notes": "FAIR-MAST Level-2 pf_passive publishes parallelogram geometry (r/z/width/height/shapeAngle1/shapeAngle2) for classic MAST structures but no resistivity. FreeGSNKE passive pickles require resistivity_ohm_m. Populate components ONLY with cited published values, e.g. {\"vessel\": {\"resistivity_ohm_m\": <cited>, \"source\": \"EFIT/UDA/paper DOI\"}}. Never invent ρ. Until then passive_coils.pickle stays empty and certify marks passive_resistivity_awaiting_authority (YELLOW). After population: rebuild machine_authority and compare Ip/flux residuals with vs without passives.",
   "components": {}
 }
