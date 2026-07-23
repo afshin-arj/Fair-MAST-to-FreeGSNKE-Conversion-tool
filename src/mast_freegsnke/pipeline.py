@@ -578,6 +578,35 @@ class ShotPipeline:
             else:
                 _stage("torax_geometry_export_authority", True, note="export_torax_geometry=false")
 
+            # ADR-002 optional FAIR-MAST EFIT++ compare authority
+            if self.cfg.compare_efit_archive:
+                from .efit_compare import load_efit_compare_authority, write_efit_compare_authority
+
+                ec_path = _resolve_config_path(self.cfg.efit_compare_authority_path, repo_root)
+                if ec_path is None or not ec_path.exists():
+                    blocking_errors.append(
+                        "efit_compare_authority_required: set efit_compare_authority_path "
+                        "when compare_efit_archive=true (ADR-002 fail-closed)"
+                    )
+                    _stage("efit_compare_authority", False, note="missing_path")
+                else:
+                    try:
+                        ec_auth = load_efit_compare_authority(ec_path)
+                        ec_out = write_efit_compare_authority(inputs_dir, ec_auth)
+                        _stage(
+                            "efit_compare_authority",
+                            True,
+                            path=str(ec_out),
+                            source=str(ec_auth.source),
+                        )
+                    except Exception as e:
+                        blocking_errors.append(
+                            f"efit_compare_authority_failed: {type(e).__name__}: {e}"
+                        )
+                        _stage("efit_compare_authority", False, error=str(e))
+            else:
+                _stage("efit_compare_authority", True, note="compare_efit_archive=false")
+
             # Time window: override > consensus > single-signal inference
             window_override: Optional[Dict[str, Any]] = None
             if tstart is not None and tend is not None:
@@ -918,6 +947,56 @@ class ShotPipeline:
                 _stage("science_audit", False, error=str(e))
                 science_audit = None
 
+            efit_compare_report: Optional[Dict[str, Any]] = None
+            if self.cfg.compare_efit_archive and shot_cache is not None:
+                try:
+                    from .efit_compare import load_efit_compare_authority, run_efit_compare
+
+                    ec_snap = (
+                        inputs_dir / "efit_compare_authority" / "efit_compare_authority.json"
+                    )
+                    if not ec_snap.exists():
+                        raise FileNotFoundError("efit_compare_authority snapshot missing")
+                    ec_auth = load_efit_compare_authority(ec_snap)
+                    ecr = run_efit_compare(
+                        run_dir,
+                        shot=int(shot),
+                        cache_dir=shot_cache,
+                        auth=ec_auth,
+                    )
+                    efit_compare_report = ecr.to_dict()
+                    write_json(run_dir / "04_efit_compare" / "COMPARE.json", efit_compare_report)
+                    if ecr.ok:
+                        _stage(
+                            "efit_compare",
+                            True,
+                            t_efit=ecr.t_efit,
+                            n_plots=len(ecr.plots_written),
+                        )
+                    else:
+                        _stage(
+                            "efit_compare",
+                            False,
+                            errors=list(ecr.errors)[:5],
+                            fix_hint=ecr.fix_hint,
+                        )
+                        if ec_auth.fail_closed_if_missing:
+                            blocking_errors.append(
+                                "efit_compare_failed: "
+                                + ("; ".join(ecr.errors) or "unknown")
+                                + (f" | {ecr.fix_hint}" if ecr.fix_hint else "")
+                            )
+                except Exception as e:
+                    _stage("efit_compare", False, error=str(e))
+                    efit_compare_report = {"ok": False, "errors": [str(e)]}
+                    write_json(run_dir / "04_efit_compare" / "COMPARE.json", efit_compare_report)
+            else:
+                _stage(
+                    "efit_compare",
+                    True,
+                    note="compare_efit_archive=false_or_no_cache",
+                )
+
             _write_manifest(
                 {
                     "cache_dir": str(shot_cache) if shot_cache is not None else None,
@@ -930,13 +1009,14 @@ class ShotPipeline:
                     "freegsnke_execution": exec_summary,
                     "reconstruction_metrics": metrics_summary,
                     "science_audit": science_audit,
+                    "efit_compare": efit_compare_report,
                     "machine_authority_snapshot": machine_snapshot,
                     "diagnostic_calibration_snapshot": calibration_snapshot,
                     "diagnostic_calibration_apply": calibration_apply,
                 }
             )
 
-            # Expert-facing overlay (00_README + 01_summary); operational paths unchanged
+            # Expert overlay (pre-layout paths still valid for metrics/evolutive)
             try:
                 base_for_summary = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
                 overlay = write_shot_expert_overlay(
@@ -949,7 +1029,7 @@ class ShotPipeline:
             except Exception as e:
                 _stage("shot_expert_overlay", False, error=str(e))
 
-            # Reproducibility lock (hash run artifacts + environment capture) and manifest v2.
+            # Provenance before folder rearrange (writes provenance/ at run root)
             try:
                 base_manifest = json.loads((run_dir / "manifest.json").read_text())
                 hash_data_tree = shot_cache if (self.cfg.provenance_hash_data and shot_cache is not None) else None
@@ -965,6 +1045,27 @@ class ShotPipeline:
                 _stage("provenance_lock", False, error=str(e))
                 if self.cfg.require_machine_authority:
                     blocking_errors.append(f"provenance_lock_failed: {type(e).__name__}: {e}")
+
+            # Numbered expert layout last (moves metrics/contracts/provenance/…)
+            try:
+                from .shot_layout import finalize_shot_layout
+
+                layout_index = finalize_shot_layout(run_dir, shot=int(shot))
+                _stage("shot_layout", True, n_moves=len(layout_index.get("moves") or []))
+                # Refresh START_HERE / SUMMARY key paths after moves
+                try:
+                    base_for_summary = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+                    write_shot_expert_overlay(
+                        run_dir,
+                        shot=shot,
+                        manifest=base_for_summary,
+                        science_audit=science_audit,
+                    )
+                except Exception:
+                    pass
+            except Exception as e:
+                _stage("shot_layout", False, error=str(e))
+
             if blocking_errors:
                 raise RuntimeError("Pipeline completed with blocking errors: " + "; ".join(blocking_errors))
 

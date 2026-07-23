@@ -139,7 +139,14 @@ def certify_run_dir(
             report["warnings"].append(f"reconstruction_quality:{hint}")
         elif hint == "red_no_solved_times":
             report["blocking"].append("reconstruction_quality_red_no_solved_times")
-        if (run_dir / "evolutive" / "history.csv").exists() and not evo.get("ok"):
+        from .shot_layout import resolve_run_path
+
+        evo_hist = resolve_run_path(
+            run_dir,
+            "evolutive/history.csv",
+            "03_reconstruction/evolutive/history.csv",
+        )
+        if evo_hist is not None and evo_hist.exists() and not evo.get("ok"):
             report["warnings"].append("evolutive_ip_residual_unavailable")
         if passives.get("status") in {"awaiting_authority", "unknown"}:
             report["warnings"].append("passive_resistivity_awaiting_authority")

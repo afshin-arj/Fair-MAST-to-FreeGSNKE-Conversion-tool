@@ -82,7 +82,7 @@ def test_build_experimental_data_creates_pack(tmp_path: Path) -> None:
         plots=True,
     )
     assert rep.ok, rep.errors
-    root = run_dir / "experimental_data"
+    root = run_dir / "02_measured_data"
     assert (root / "00_index" / "catalog.json").exists()
     assert (root / "01_plasma" / "ip.csv").exists()
     assert (root / "02_pf" / "currents_circuits.csv").exists()
@@ -122,7 +122,7 @@ def test_paths_use_forward_slash_in_catalog(tmp_path: Path) -> None:
     _seed_inputs(run_dir)
     rep = build_experimental_data(run_dir, shot=1, plots=False, include_l1=False, include_l3=False)
     assert rep.ok
-    cat = json.loads((run_dir / "experimental_data" / "00_index" / "catalog.json").read_text(encoding="utf-8"))
+    cat = json.loads((run_dir / "02_measured_data" / "00_index" / "catalog.json").read_text(encoding="utf-8"))
     path = cat["families"]["plasma_ip"]["path"]
     assert "\\" not in path
-    assert path.startswith("experimental_data/")
+    assert path.startswith("02_measured_data/")

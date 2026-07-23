@@ -194,9 +194,27 @@ def sorted_frame_paths(directory: Path, glob_pat: str = "*.png") -> List[Path]:
 def presentation_gifs_under(run_dir: Path) -> Dict[str, str]:
     """Discover written GIFs for expert summary (relative paths)."""
     root = Path(run_dir)
+    from .shot_layout import resolve_run_path
+
     candidates = {
-        "inverse": root / "presentation" / "inverse_equilibria.gif",
-        "forward": root / "presentation" / "forward_equilibria.gif",
-        "evolutive": root / "evolutive" / "evolutive_equilibria.gif",
+        "inverse": resolve_run_path(
+            root,
+            "03_reconstruction/presentation/inverse_equilibria.gif",
+            "presentation/inverse_equilibria.gif",
+        ),
+        "forward": resolve_run_path(
+            root,
+            "03_reconstruction/presentation/forward_equilibria.gif",
+            "presentation/forward_equilibria.gif",
+        ),
+        "evolutive": resolve_run_path(
+            root,
+            "03_reconstruction/evolutive/evolutive_equilibria.gif",
+            "evolutive/evolutive_equilibria.gif",
+        ),
     }
-    return {k: str(p.relative_to(root)).replace("\\", "/") for k, p in candidates.items() if p.exists()}
+    out: Dict[str, str] = {}
+    for k, p in candidates.items():
+        if p is not None and p.exists():
+            out[k] = str(p.relative_to(root)).replace("\\", "/")
+    return out

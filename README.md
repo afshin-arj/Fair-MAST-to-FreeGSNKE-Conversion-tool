@@ -13,7 +13,7 @@ Upstream references:
 - [FAIR-MAST](https://github.com/ukaea/fair-mast) — Level-2 Zarr (currents + `coil_voltage` in V)
 - [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke) — Grad–Shafranov + evolutive `nl_solver` / `nlstepper`
 
-Version **11.8.0**.
+Version **11.9.0**.
 
 ---
 
@@ -31,8 +31,20 @@ mast-freegsnke run --shot 30201 --config configs/default.json
 Requirements: Python 3.11+, `s5cmd`, FreeGSNKE in `.venv-freegsnke`, pipeline package in `.venv`.
 
 ```bash
+# Fresh machine (pipeline venv)
+py -3.11 -m venv .venv
+.venv\Scripts\python -m pip install -U pip
+.venv\Scripts\python -m pip install -r requirements.txt
+python scripts/ensure_s5cmd.py
+python scripts/ensure_freegsnke_env.py
+```
+
+```bash
 mast-freegsnke doctor --config configs/default.json
 ```
+
+After a run, open `SHOT/<N>/00_START_HERE.txt`. EFIT insights are under `04_efit_compare/`
+(FAIR-MAST EFIT++ archive vs FreeGSNKE — not efit-ai Fortran).
 
 ---
 

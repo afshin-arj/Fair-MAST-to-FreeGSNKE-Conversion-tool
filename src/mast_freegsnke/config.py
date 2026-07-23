@@ -90,6 +90,9 @@ class AppConfig:
     # Optional ADR-001 FreeGSNKE → TORAX GEQDSK export (default off; not shot-only happy path).
     export_torax_geometry: bool = False
     torax_geometry_export_authority_path: Optional[str] = None
+    # ADR-002: compare FreeGSNKE to FAIR-MAST EFIT++ archive (default.json sets true).
+    compare_efit_archive: bool = False
+    efit_compare_authority_path: Optional[str] = None
     # Hard wall-clock limit for each FreeGSNKE script (seconds). None disables.
     # Protects the pipeline from FreeGSNKE's uncapped residual-resize hang.
     freegsnke_script_timeout_s: Optional[float] = 1200.0
@@ -182,6 +185,20 @@ class AppConfig:
                 "export_torax_geometry=true requires torax_geometry_export_authority_path "
                 "(ADR-001 fail-closed)"
             )
+        compare_efit_archive = bool(obj.get("compare_efit_archive", False))
+        efit_compare_authority_path = (
+            str(obj["efit_compare_authority_path"])
+            if obj.get("efit_compare_authority_path")
+            else None
+        )
+        if compare_efit_archive and not efit_compare_authority_path:
+            raise ValueError(
+                "compare_efit_archive=true requires efit_compare_authority_path "
+                "(ADR-002 fail-closed)"
+            )
+        # Ensure equilibrium group is downloaded when EFIT compare is enabled
+        if compare_efit_archive and "equilibrium" not in optional_groups:
+            optional_groups = list(optional_groups) + ["equilibrium"]
         raw_timeout = obj.get("freegsnke_script_timeout_s", 1200.0)
         if raw_timeout is None:
             freegsnke_script_timeout_s: Optional[float] = None
@@ -242,6 +259,8 @@ class AppConfig:
             equilibrium_gif_dpi=equilibrium_gif_dpi,
             export_torax_geometry=export_torax_geometry,
             torax_geometry_export_authority_path=torax_geometry_export_authority_path,
+            compare_efit_archive=compare_efit_archive,
+            efit_compare_authority_path=efit_compare_authority_path,
             freegsnke_script_timeout_s=freegsnke_script_timeout_s,
         )
 

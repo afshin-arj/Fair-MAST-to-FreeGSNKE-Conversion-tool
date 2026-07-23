@@ -6,7 +6,8 @@
     "wall"
   ],
   "optional_groups": [
-    "pf_passive"
+    "pf_passive",
+    "equilibrium"
   ],
   "level2_s3_prefix": "s3://mast/level2/shots",
   "s5cmd_path": "s5cmd",
@@ -37,6 +38,8 @@
   "equilibrium_gif_dpi": 100,
   "export_torax_geometry": false,
   "torax_geometry_export_authority_path": "configs/torax_geometry_export_authority.json",
+  "compare_efit_archive": true,
+  "efit_compare_authority_path": "configs/efit_compare_authority.json",
   "freegsnke_script_timeout_s": 1200,
   "machine_authority_dir": "machine_authority",
   "require_machine_authority": true,

@@ -1,0 +1,11 @@
+# Fresh-machine pipeline install (Windows / Linux)
+#   py -3.11 -m venv .venv
+#   .venv\Scripts\python -m pip install -U pip
+#   .venv\Scripts\python -m pip install -e ".[dev]"
+#   .venv\Scripts\python -m pip install -r requirements.txt
+#
+# FreeGSNKE execution env is separate — see requirements-freegsnke.txt
+# Also need s5cmd: python scripts/ensure_s5cmd.py
+#
+-e .
+pytest>=7.4.0

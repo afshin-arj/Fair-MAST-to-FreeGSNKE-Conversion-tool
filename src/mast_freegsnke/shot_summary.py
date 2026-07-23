@@ -23,6 +23,7 @@ _KNOWN_LIMITATIONS = [
     "Profile alpha_m/alpha_n/fvac are held from the inverse IC; optional scale_paxis_with_ip is a declared Ip scaling law (default off) — never invented profile numbers.",
     "Contract residual metrics score only families with honest channel identity + units; uncalibrated mirnov/saddle/omaha stay audit-only until calibration authority is populated.",
     "Equilibrium GIFs are presentation annexes — not a substitute for residual metrics or Ip match.",
+    "04_efit_compare uses FAIR-MAST Level-2 EFIT++ archive products — not a live efit-ai Fortran solve.",
 ]
 
 
@@ -58,7 +59,15 @@ def _metrics_rows(manifest: Dict[str, Any], run_dir: Path) -> List[str]:
     lines: List[str] = []
     m = manifest.get("reconstruction_metrics")
     if not isinstance(m, dict):
-        m = _safe_load_json(run_dir / "metrics" / "reconstruction_metrics.json") or {}
+        from .shot_layout import resolve_run_path
+
+        mp = resolve_run_path(
+            run_dir,
+            "03_reconstruction/metrics/reconstruction_metrics.json",
+            "metrics/reconstruction_metrics.json",
+        )
+        m = _safe_load_json(mp) if mp is not None else {}
+        m = m or {}
     if not m:
         lines.append("| (none) | — | — |")
         return lines
@@ -125,15 +134,21 @@ def write_shot_expert_overlay(
     # Authority hashes (best-effort)
     auth_lines: List[str] = []
     for rel in [
+        "06_authorities/contracts/voltage_map.sha256.json",
         "contracts/voltage_map.sha256.json",
+        "06_authorities/contracts/coil_map.resolved.json",
         "contracts/coil_map.resolved.json",
+        "06_authorities/provenance/hashes.json",
         "provenance/hashes.json",
+        "06_authorities/machine_authority_snapshot/authority_manifest.json",
         "machine_authority_snapshot/authority_manifest.json",
     ]:
         p = run_dir / rel
         if p.exists():
             auth_lines.append(f"- `{rel}` present")
-    vm_hash = _safe_load_json(run_dir / "contracts" / "voltage_map.sha256.json")
+    vm_hash = _safe_load_json(run_dir / "06_authorities" / "contracts" / "voltage_map.sha256.json") or _safe_load_json(
+        run_dir / "contracts" / "voltage_map.sha256.json"
+    )
     if vm_hash and vm_hash.get("sha256"):
         auth_lines.append(f"- voltage_map sha256: `{vm_hash['sha256'][:16]}…`")
 
@@ -170,16 +185,20 @@ def write_shot_expert_overlay(
             f"Created (UTC): {created}",
             f"Window: {t_start} .. {t_end} s" if t_start is not None else "Window: (see inputs/window.json)",
             "",
-            "Start with 01_summary/SUMMARY.md (science first), then metrics/ and evolutive/ip_residual.csv.",
-            "GIFs under presentation/ and evolutive/ are annex visuals.",
+            "Start with 01_summary/SUMMARY.md (science first), then 04_efit_compare/,",
+            "then 03_reconstruction/metrics/ and evolutive Ip residual.",
+            "Primary entry file: 00_START_HERE.txt",
             "",
             "How to read this folder",
             "-----------------------",
-            "  inputs/                         experimental CSVs + authority snapshots",
-            "  01_summary/science_audit.json   reconstruction quality + Ip + ohmic inventory",
-            "  metrics/                        probe residual scores",
-            "  evolutive/ip_residual.csv       evolutive Ip vs measured Ip",
-            "  presentation/                   equilibrium GIFs (annex)",
+            "  00_START_HERE.txt               expert reading order",
+            "  01_summary/                     science audit + SUMMARY",
+            "  02_measured_data/               FAIR-MAST experimental pack",
+            "  03_reconstruction/              FreeGSNKE metrics/GIFs/evolutive/dumps",
+            "  04_efit_compare/                vs FAIR-MAST EFIT++ archive (ADR-002)",
+            "  05_downstream/                  optional TORAX GEQDSK (ADR-001)",
+            "  06_authorities/                 contracts + provenance",
+            "  inputs/                         tooling CSVs (FreeGSNKE scripts)",
             "  manifest.json                   stage log + blocking_errors",
             "",
             "Modes (from freegsnke_execution):",
@@ -196,6 +215,8 @@ def write_shot_expert_overlay(
         ]
     )
     (run_dir / "00_README.txt").write_text(readme, encoding="utf-8")
+    if not (run_dir / "00_START_HERE.txt").exists():
+        (run_dir / "00_START_HERE.txt").write_text(readme, encoding="utf-8")
 
     summary_md = "\n".join(
         [
@@ -248,16 +269,25 @@ def write_shot_expert_overlay(
             "",
             "| Artifact | Path |",
             "|----------|------|",
+            "| Start here | `00_START_HERE.txt` |",
             "| Science audit | `01_summary/science_audit.json` |",
+            "| EFIT++ compare | `04_efit_compare/COMPARE.md` |",
             "| Manifest | `manifest.json` |",
             "| Window | `inputs/window.json` |",
             "| Phase timeline | `inputs/phase_timeline.json` |",
             "| PF currents | `inputs/pf_currents.csv` |",
             "| PF voltages (mapped) | `inputs/pf_voltages.csv` |",
-            "| Metrics | `metrics/reconstruction_metrics.json` |",
-            "| Evolutive Ip residual | `evolutive/ip_residual.csv` |",
-            "| Inverse dump | `inverse_dump.pkl` |",
+            "| Metrics | `03_reconstruction/metrics/reconstruction_metrics.json` |",
+            "| Evolutive Ip residual | `03_reconstruction/evolutive/ip_residual.csv` |",
+            "| Inverse dump | `inverse_dump.pkl` (run root) |",
+            "| Measured data | `02_measured_data/` |",
+            "| Authorities | `06_authorities/` |",
             "| Logs | `logs/` |",
+            "",
+            "## EFIT++ archive compare (ADR-002)",
+            "",
+            "See `04_efit_compare/COMPARE.md` when `compare_efit_archive=true`.",
+            "Labels are FreeGSNKE vs FAIR-MAST EFIT++ archive — not efit-ai Fortran.",
             "",
             "## Presentation annex (GIFs)",
             "",
@@ -271,7 +301,7 @@ def write_shot_expert_overlay(
             "",
             "## Authorities",
             "",
-            *(auth_lines or ["- (see contracts/ and provenance/)"]),
+            *(auth_lines or ["- (see 06_authorities/ and inputs/)"]),
             "",
             "## Blocking errors",
             "",

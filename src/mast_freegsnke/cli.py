@@ -214,6 +214,16 @@ def main(argv=None) -> int:
         action="store_true",
         help="ADR-001: enable optional FreeGSNKE→TORAX GEQDSK export (requires torax_geometry_export_authority_path)",
     )
+    r.add_argument(
+        "--compare-efit-archive",
+        action="store_true",
+        help="ADR-002: compare FreeGSNKE to FAIR-MAST EFIT++ equilibrium archive",
+    )
+    r.add_argument(
+        "--no-compare-efit-archive",
+        action="store_true",
+        help="Disable ADR-002 FAIR-MAST EFIT++ compare stage",
+    )
 
     cert = sub.add_parser(
         "certify",
@@ -960,6 +970,22 @@ def main(argv=None) -> int:
                     "torax_geometry_export_authority_path",
                     "configs/torax_geometry_export_authority.json",
                 )
+        if getattr(args, "compare_efit_archive", False):
+            object.__setattr__(cfg, "compare_efit_archive", True)
+            if not cfg.efit_compare_authority_path:
+                object.__setattr__(
+                    cfg,
+                    "efit_compare_authority_path",
+                    "configs/efit_compare_authority.json",
+                )
+            if "equilibrium" not in list(cfg.optional_groups or []):
+                object.__setattr__(
+                    cfg,
+                    "optional_groups",
+                    list(cfg.optional_groups or []) + ["equilibrium"],
+                )
+        if getattr(args, "no_compare_efit_archive", False):
+            object.__setattr__(cfg, "compare_efit_archive", False)
 
         status_line = contract_metrics_status_line(cfg)
         if status_line:

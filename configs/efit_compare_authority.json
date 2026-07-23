@@ -1,0 +1,32 @@
+{
+  "authority_name": "efit_compare",
+  "authority_version": "1.0",
+  "source": "fairmast_level2_equilibrium",
+  "label": "FAIR-MAST EFIT++ archive (not efit-ai Fortran)",
+  "tokamark_reference": "https://github.com/UKAEA-IBM-STFC-Fusion-FMs/tokamark",
+  "fairmast_docs": "https://mastapp.site/level2-data.html",
+  "equilibrium_group": "equilibrium",
+  "output_relpath": "04_efit_compare",
+  "fail_closed_if_missing": false,
+  "shape_scalars": [
+    "elongation",
+    "elongation_axis",
+    "triangularity_upper",
+    "triangularity_lower",
+    "minor_radius",
+    "magnetic_axis_r",
+    "magnetic_axis_z",
+    "x_point_r",
+    "x_point_z",
+    "q95",
+    "beta_tor",
+    "beta_pol",
+    "beta_normal",
+    "li",
+    "wmhd"
+  ],
+  "lcfs_vars": ["lcfs_r", "lcfs_z"],
+  "psi_var": "psi",
+  "time_policy": "nearest_to_window_midpoint",
+  "notes": "ADR-002. Compares FreeGSNKE outputs to archived EFIT++ in FAIR-MAST L2 equilibrium. Does not run efit-ai."
+}

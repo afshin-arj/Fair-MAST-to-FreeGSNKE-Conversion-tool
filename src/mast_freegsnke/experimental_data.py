@@ -1,8 +1,9 @@
-"""Categorized experimental FAIR-MAST data pack under SHOT/<N>/experimental_data/.
+"""Categorized experimental FAIR-MAST data pack under SHOT/<N>/02_measured_data/.
 
 Portable (pathlib, matplotlib Agg, no display, no drive-letter assumptions).
 Shot-only: enabled from config with no new interactive prompts.
 Never invents calibrations, units, or missing Level-1/3 channels.
+Legacy path ``experimental_data/`` is accepted by shot_layout resolvers.
 """
 
 from __future__ import annotations
@@ -59,7 +60,7 @@ class ExperimentalDataReport:
             "errors": list(self.errors),
             "n_files": len(self.files_written),
             "n_plots": len(self.plots_written),
-            "catalog_path": "experimental_data/00_index/catalog.json",
+            "catalog_path": "02_measured_data/00_index/catalog.json",
         }
 
 
@@ -312,11 +313,11 @@ def _write_readme(path: Path, shot: int) -> None:
     path.write_text(
         "\n".join(
             [
-                f"experimental_data — shot {shot}",
+                f"02_measured_data — shot {shot}",
                 "=" * 40,
                 "",
                 "Professionally categorized FAIR-MAST experimental traces and plots.",
-                "Sibling to inputs/ (tooling) and synthetic/ (FreeGSNKE).",
+                "Sibling to inputs/ (tooling) and 03_reconstruction/ (FreeGSNKE).",
                 "",
                 "Folders:",
                 "  00_index/      catalog.json + this README",
@@ -355,8 +356,8 @@ def build_experimental_data(
     """
     run_dir = Path(run_dir)
     inputs = run_dir / "inputs"
-    root = run_dir / "experimental_data"
-    report = ExperimentalDataReport(root=_rel(run_dir, root) if root.exists() or True else "experimental_data")
+    root = run_dir / "02_measured_data"
+    report = ExperimentalDataReport(root=_rel(run_dir, root) if root.exists() or True else "02_measured_data")
     report.root = "experimental_data"
 
     if not inputs.exists():

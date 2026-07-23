@@ -44,9 +44,13 @@ def score_evolutive_ip(run_dir: Path) -> Dict[str, Any]:
         "rms_rel": None,
         "errors": [],
     }
-    hist = run_dir / "evolutive" / "history.csv"
+    from .shot_layout import evolutive_dir, resolve_run_path
+
+    hist = resolve_run_path(
+        run_dir, "evolutive/history.csv", "03_reconstruction/evolutive/history.csv"
+    )
     ip_path = run_dir / "inputs" / "ip.csv"
-    if not hist.exists():
+    if hist is None or not hist.exists():
         report["errors"].append("missing_evolutive_history_csv")
         return report
     if not ip_path.exists():
@@ -88,7 +92,9 @@ def score_evolutive_ip(run_dir: Path) -> Dict[str, Any]:
     max_abs = float(np.max(np.abs(resid)))
     scale = float(np.mean(np.abs(ip_meas)))
     rms_rel = float(rms / scale) if scale > 0.0 else None
-    out_csv = run_dir / "evolutive" / "ip_residual.csv"
+    evo_root = evolutive_dir(run_dir)
+    evo_root.mkdir(parents=True, exist_ok=True)
+    out_csv = evo_root / "ip_residual.csv"
     pd.DataFrame(
         {
             "t_abs": t_h,
@@ -97,6 +103,10 @@ def score_evolutive_ip(run_dir: Path) -> Dict[str, Any]:
             "residual_A": resid,
         }
     ).to_csv(out_csv, index=False)
+    try:
+        residual_rel = str(out_csv.resolve().relative_to(Path(run_dir).resolve())).replace("\\", "/")
+    except Exception:
+        residual_rel = "evolutive/ip_residual.csv"
     report.update(
         {
             "ok": True,
@@ -105,7 +115,7 @@ def score_evolutive_ip(run_dir: Path) -> Dict[str, Any]:
             "mae_A": mae,
             "max_abs_A": max_abs,
             "rms_rel": rms_rel,
-            "residual_csv": "evolutive/ip_residual.csv",
+            "residual_csv": residual_rel,
             "note": (
                 "Ip_measured is FAIR-MAST Level-2 ip.csv interpolated to evolutive t_abs; "
                 "not an invented metrology channel."
@@ -269,7 +279,8 @@ def build_science_audit(run_dir: Path) -> Dict[str, Any]:
         "phase_timeline": phase_timeline_from_window(run_dir),
         "passive_resistivity": passive_resistivity_status(run_dir),
         "presentation_note": (
-            "Equilibrium GIFs under presentation/ and evolutive/ are annex visuals; "
+            "Equilibrium GIFs under 03_reconstruction/presentation/ and "
+            "03_reconstruction/evolutive/ (or legacy presentation/, evolutive/) are annex visuals; "
             "scientific review should start from residuals, Ip match, and solve_mode."
         ),
     }

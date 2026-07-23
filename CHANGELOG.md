@@ -1,3 +1,11 @@
+## 11.9.0 — FAIR-MAST EFIT++ compare + expert SHOT layout (ADR-002)
+- After FreeGSNKE: optional stage compares to **FAIR-MAST Level-2 `equilibrium`** (archived EFIT++), not efit-ai Fortran — Windows-friendly.
+- Outputs: `SHOT/<N>/04_efit_compare/` (shape timeseries, LCFS, ψ, plots, COMPARE.md). Default **on** in `configs/default.json`; authority-gated.
+- Downloads `equilibrium` via `optional_groups`. Soft-fail if archive missing unless `fail_closed_if_missing`.
+- Expert folder layout: `00_START_HERE`, `01_summary`, `02_measured_data`, `03_reconstruction`, `04_efit_compare`, `05_downstream`, `06_authorities` (scripts/dumps stay at run root).
+- Fresh-install: `xarray`/`zarr`/`s3fs` are core deps; `requirements.txt` for new machines.
+- Version **11.9.0**.
+
 ## 11.8.0 — Optional TORAX GEQDSK export (ADR-001)
 - Authority-gated FreeGSNKE → GEQDSK export for TORAX ingest (`export_torax_geometry`, default **false**).
 - Declared `rcentr_m` + `cocos_declared` (never silent freegs4e R0=1.0); parametric profiles labeled `ConstrainPaxisIp`.

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mast-freegsnke-pipeline"
-version = "11.8.0"
+version = "11.9.0"
 description = "Shot-only FAIR-MAST (classic MAST) → FreeGSNKE: static inverse/forward + evolutive forward, authorities, residual metrics"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -14,15 +14,19 @@ dependencies = [
   "pandas>=2.0.0",
   "matplotlib>=3.6.0",
   "pillow>=10.0.0",
+  # FAIR-MAST Level-2 Zarr (required for fresh installs / EFIT archive compare)
+  "xarray>=2023.12.0",
+  "fsspec>=2023.12.0",
+  "zarr>=3.1.0",
+  "s3fs>=2023.12.0",
 ]
 
 [project.optional-dependencies]
 zarr = [
   "xarray>=2023.12.0",
   "fsspec>=2023.12.0",
-  # FAIR-MAST Level-2 Zarr v3 stores use fixed_length_utf32 arrays, which
-  # zarr-python only understands from 3.1.0 (requires Python >= 3.11).
   "zarr>=3.1.0",
+  "s3fs>=2023.12.0",
 ]
 dev = ["pytest>=7.4.0"]
 
