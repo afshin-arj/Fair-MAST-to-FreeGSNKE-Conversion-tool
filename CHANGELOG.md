@@ -1,3 +1,9 @@
+## 11.8.0 — Optional TORAX GEQDSK export (ADR-001)
+- Authority-gated FreeGSNKE → GEQDSK export for TORAX ingest (`export_torax_geometry`, default **false**).
+- Declared `rcentr_m` + `cocos_declared` (never silent freegs4e R0=1.0); parametric profiles labeled `ConstrainPaxisIp`.
+- Output: `downstream/torax/geqdsk_t0.eqdsk` + `export_manifest.json`. CLI: `--export-torax-geometry`. Does **not** run TORAX.
+- Version **11.8.0**.
+
 ## 11.7.0 — Science audit pack (residuals-first SUMMARY, Ip match, certify gates)
 - `01_summary/science_audit.json`: reconstruction solve_mode quality, evolutive **Ip vs measured** (`evolutive/ip_residual.csv`), ohmic I×R inventory, window-derived phase timeline, passive resistivity status.
 - SUMMARY is science-first (probe RMS, Ip residual, ohmic uncertainty); GIFs demoted to annex.

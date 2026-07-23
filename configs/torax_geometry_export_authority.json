@@ -1,0 +1,19 @@
+{
+  "authority_name": "torax_geometry_export",
+  "authority_version": "1.0",
+  "source": "freegsnke_inverse_equilibrium",
+  "format": "geqdsk",
+  "writer": "mast_freegsnke.torax_geometry_export.write_geqdsk_declared_rcentr",
+  "timeslices": "t0_inverse_only",
+  "output_relpath": "downstream/torax/geqdsk_t0.eqdsk",
+  "label_template": "MAST shot {shot} FreeGSNKE inverse t0={t0:.6f}s",
+  "rcentr_m": 0.85,
+  "rcentr_source": "Declared classic MAST geometric major radius ~0.85 m (device overview literature). Replace with cited EFIT/device authority R0 before production TORAX ingest.",
+  "cocos_declared": "freegs4e_geqdsk_native",
+  "cocos_note": "FreeGS/freegs4e-native GEQDSK layout; no automatic COCOS conversion. Confirm against TORAX COCOS expectations (often COCOS=2 for CHEASE-style) before transport runs.",
+  "profile_provenance": "execution_authority.ConstrainPaxisIp",
+  "profile_note": "p/f profiles are parametric GS closure knobs — not measured kinetic profiles.",
+  "forbid_chease": true,
+  "forbid_invented_kinetic_profiles": true,
+  "notes": "ADR-001. Used only when configs/default.json export_torax_geometry=true (default false). Does not run TORAX."
+}

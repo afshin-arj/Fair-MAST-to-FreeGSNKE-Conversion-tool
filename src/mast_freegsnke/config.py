@@ -87,6 +87,9 @@ class AppConfig:
     write_eq_frames: bool = True
     equilibrium_gif_fps: float = 2.0
     equilibrium_gif_dpi: int = 100
+    # Optional ADR-001 FreeGSNKE → TORAX GEQDSK export (default off; not shot-only happy path).
+    export_torax_geometry: bool = False
+    torax_geometry_export_authority_path: Optional[str] = None
     # Hard wall-clock limit for each FreeGSNKE script (seconds). None disables.
     # Protects the pipeline from FreeGSNKE's uncapped residual-resize hang.
     freegsnke_script_timeout_s: Optional[float] = 1200.0
@@ -168,6 +171,17 @@ class AppConfig:
             raise ValueError(
                 f"equilibrium_gif_dpi must be in [50, 400] (got {equilibrium_gif_dpi})"
             )
+        export_torax_geometry = bool(obj.get("export_torax_geometry", False))
+        torax_geometry_export_authority_path = (
+            str(obj["torax_geometry_export_authority_path"])
+            if obj.get("torax_geometry_export_authority_path")
+            else None
+        )
+        if export_torax_geometry and not torax_geometry_export_authority_path:
+            raise ValueError(
+                "export_torax_geometry=true requires torax_geometry_export_authority_path "
+                "(ADR-001 fail-closed)"
+            )
         raw_timeout = obj.get("freegsnke_script_timeout_s", 1200.0)
         if raw_timeout is None:
             freegsnke_script_timeout_s: Optional[float] = None
@@ -226,6 +240,8 @@ class AppConfig:
             write_eq_frames=write_eq_frames,
             equilibrium_gif_fps=equilibrium_gif_fps,
             equilibrium_gif_dpi=equilibrium_gif_dpi,
+            export_torax_geometry=export_torax_geometry,
+            torax_geometry_export_authority_path=torax_geometry_export_authority_path,
             freegsnke_script_timeout_s=freegsnke_script_timeout_s,
         )
 

@@ -64,3 +64,15 @@ Coupling is a plausible future export path. It must not erode the north star or 
 - Repo north star / laws: [`AGENTS.md`](../../AGENTS.md)
 - TORAX source (pinned tree): https://github.com/google-deepmind/torax/tree/b371a8513feef9323f338c8f623531597ecc11ef
 - TORAX roadmap: https://torax.readthedocs.io/en/latest/roadmap.html#development-roadmap
+
+## Implementation status (v11.8.0)
+
+| Piece | Status |
+|-------|--------|
+| Config `export_torax_geometry` (default **false**) | done |
+| Authority `configs/torax_geometry_export_authority.json` | done |
+| Snapshot under `inputs/torax_geometry_export_authority/` | done |
+| Inverse-time GEQDSK write with **declared** `rcentr_m` | done (`downstream/torax/geqdsk_t0.eqdsk` + `export_manifest.json`) |
+| CLI `--export-torax-geometry` | done |
+| Run TORAX / QLKNN / kinetic ICs | **not** implemented (still out of scope) |
+| CHEASE writer / COCOS conversion | **not** implemented (fail-closed) |

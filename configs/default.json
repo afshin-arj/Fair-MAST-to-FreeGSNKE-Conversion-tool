@@ -35,6 +35,8 @@
   "write_eq_frames": true,
   "equilibrium_gif_fps": 2.0,
   "equilibrium_gif_dpi": 100,
+  "export_torax_geometry": false,
+  "torax_geometry_export_authority_path": "configs/torax_geometry_export_authority.json",
   "freegsnke_script_timeout_s": 1200,
   "machine_authority_dir": "machine_authority",
   "require_machine_authority": true,

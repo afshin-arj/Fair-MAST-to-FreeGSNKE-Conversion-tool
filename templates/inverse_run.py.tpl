@@ -855,6 +855,29 @@ def main():
     fig.savefig(HERE/"inverse_equilibrium.png", dpi=250, bbox_inches="tight")
     print("Saved inverse_equilibrium.png")
 
+    # ADR-001 optional TORAX GEQDSK export (authority-gated; default off)
+    try:
+        from mast_freegsnke.torax_geometry_export import (
+            export_torax_geqdsk_from_equilibrium,
+            try_load_torax_geometry_export_authority,
+        )
+        _tg = try_load_torax_geometry_export_authority(INPUTS)
+        if _tg is not None:
+            _shot = int(HERE.name) if str(HERE.name).isdigit() else None
+            _rep = export_torax_geqdsk_from_equilibrium(
+                HERE, eq, _tg, shot=_shot, t0=float(t0)
+            )
+            print(
+                f"[OK] TORAX geometry export: {_rep.get('path')} "
+                f"sha256={str(_rep.get('sha256'))[:16]}… "
+                f"rcentr={_rep.get('rcentr_m')} "
+                f"(profiles={_rep.get('profile_provenance')})",
+                flush=True,
+            )
+    except Exception as _tge:
+        print(f"[WARN] torax geometry export failed: {_tge}", flush=True)
+        raise
+
     # Multi-time synthetic probe diagnostics (contract metrics input, v10.5.0).
     # Runs LAST in child processes so the t0 inverse dump/plots stay pristine.
     write_synthetic_probe_csvs(

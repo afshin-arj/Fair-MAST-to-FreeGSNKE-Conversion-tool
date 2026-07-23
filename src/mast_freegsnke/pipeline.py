@@ -542,6 +542,42 @@ class ShotPipeline:
             else:
                 _stage("evolutive_authority", True, note="execute_evolutive=false")
 
+            # ADR-001 optional TORAX GEQDSK export authority (default off)
+            if self.cfg.export_torax_geometry:
+                from .torax_geometry_export import (
+                    load_torax_geometry_export_authority,
+                    write_torax_geometry_export_authority,
+                )
+
+                tg_path = _resolve_config_path(
+                    self.cfg.torax_geometry_export_authority_path, repo_root
+                )
+                if tg_path is None or not tg_path.exists():
+                    blocking_errors.append(
+                        "torax_geometry_export_authority_required: set "
+                        "torax_geometry_export_authority_path when export_torax_geometry=true "
+                        "(ADR-001 fail-closed)"
+                    )
+                    _stage("torax_geometry_export_authority", False, note="missing_path")
+                else:
+                    try:
+                        tg_auth = load_torax_geometry_export_authority(tg_path)
+                        tg_out = write_torax_geometry_export_authority(inputs_dir, tg_auth)
+                        _stage(
+                            "torax_geometry_export_authority",
+                            True,
+                            path=str(tg_out),
+                            rcentr_m=float(tg_auth.rcentr_m),
+                            cocos_declared=str(tg_auth.cocos_declared),
+                        )
+                    except Exception as e:
+                        blocking_errors.append(
+                            f"torax_geometry_export_authority_failed: {type(e).__name__}: {e}"
+                        )
+                        _stage("torax_geometry_export_authority", False, error=str(e))
+            else:
+                _stage("torax_geometry_export_authority", True, note="export_torax_geometry=false")
+
             # Time window: override > consensus > single-signal inference
             window_override: Optional[Dict[str, Any]] = None
             if tstart is not None and tend is not None:
@@ -711,6 +747,39 @@ class ShotPipeline:
                     exec_summary.update({"results": results})
                     write_execution_report(run_dir, exec_summary)
                     _stage("freegsnke_execute", all(bool(x.get("ok")) for x in results) if results else False, n_scripts=len(results))
+
+                    if self.cfg.export_torax_geometry and mode in {"inverse", "both"}:
+                        tg_auth_snap = (
+                            inputs_dir
+                            / "torax_geometry_export_authority"
+                            / "torax_geometry_export_authority.json"
+                        )
+                        geqdsk_ok = False
+                        geqdsk_path = None
+                        if tg_auth_snap.exists():
+                            try:
+                                from .torax_geometry_export import load_torax_geometry_export_authority
+
+                                _tg = load_torax_geometry_export_authority(tg_auth_snap)
+                                geqdsk_path = run_dir / _tg.output_relpath
+                                geqdsk_ok = geqdsk_path.is_file() and geqdsk_path.stat().st_size > 0
+                            except Exception as e:
+                                blocking_errors.append(
+                                    f"torax_geometry_export_verify_failed: {type(e).__name__}: {e}"
+                                )
+                        if geqdsk_ok:
+                            _stage(
+                                "torax_geometry_export",
+                                True,
+                                path=str(geqdsk_path),
+                            )
+                        else:
+                            blocking_errors.append(
+                                "torax_geometry_export_missing: expected GEQDSK under "
+                                "downstream/torax/ after inverse (ADR-001 fail-closed when "
+                                "export_torax_geometry=true)"
+                            )
+                            _stage("torax_geometry_export", False, path=str(geqdsk_path))
 
                     # Evolutive forward (FAIR-MAST voltages) after successful inverse IC
                     if self.cfg.execute_evolutive:

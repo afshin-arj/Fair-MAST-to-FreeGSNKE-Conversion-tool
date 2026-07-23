@@ -209,6 +209,11 @@ def main(argv=None) -> int:
     r.add_argument("--contracts", type=str, default=None, help="Override config diagnostic_contracts_path")
     r.add_argument("--coil-map", type=str, default=None, help="Override config coil_map_path")
     r.add_argument("--enable-contract-metrics", action="store_true", help="Enable contract-driven synthetic extraction and residual scoring")
+    r.add_argument(
+        "--export-torax-geometry",
+        action="store_true",
+        help="ADR-001: enable optional FreeGSNKE→TORAX GEQDSK export (requires torax_geometry_export_authority_path)",
+    )
 
     cert = sub.add_parser(
         "certify",
@@ -947,6 +952,14 @@ def main(argv=None) -> int:
             object.__setattr__(cfg, "coil_map_path", str(args.coil_map))
         if args.enable_contract_metrics:
             object.__setattr__(cfg, "enable_contract_metrics", True)
+        if getattr(args, "export_torax_geometry", False):
+            object.__setattr__(cfg, "export_torax_geometry", True)
+            if not cfg.torax_geometry_export_authority_path:
+                object.__setattr__(
+                    cfg,
+                    "torax_geometry_export_authority_path",
+                    "configs/torax_geometry_export_authority.json",
+                )
 
         status_line = contract_metrics_status_line(cfg)
         if status_line:
