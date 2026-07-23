@@ -13,7 +13,7 @@ Upstream references:
 - [FAIR-MAST](https://github.com/ukaea/fair-mast) — Level-2 Zarr (currents + `coil_voltage` in V)
 - [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke) — Grad–Shafranov + evolutive `nl_solver` / `nlstepper`
 
-Version **11.9.0**.
+Version **11.9.1**.
 
 ---
 
@@ -44,7 +44,7 @@ mast-freegsnke doctor --config configs/default.json
 ```
 
 After a run, open `SHOT/<N>/00_START_HERE.txt`. EFIT insights are under `04_efit_compare/`
-(FAIR-MAST EFIT++ archive vs FreeGSNKE — not efit-ai Fortran).
+(FAIR-MAST EFIT++ archive vs FreeGSNKE — not a live efit-ai / Py-EFIT solve; see ADR-002/003).
 
 ---
 

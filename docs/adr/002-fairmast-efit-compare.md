@@ -54,8 +54,13 @@ signals as reconstruction targets — confirming they are the open, citeable EFI
 | Soft-continue with synthetic EFIT fields | Invents metrology |
 | Leave experts to open MastApp manually | Fails “easy for fusion experts” goal |
 
+## Related
+
+- [ADR-003](003-reject-pyefit-windows-path.md) — Py-EFIT / efit-ai / eqtools-as-solver are **not** the Windows path; FreeGSNKE + this archive compare remain.
+
 ## References
 
 - FAIR-MAST Level-2 equilibrium docs: https://mastapp.site/level2-data.html
 - TokaMark: https://arxiv.org/abs/2602.10132
 - EFIT++ (Appel & Lupelli 2018) as FAIR-MAST derived provenance
+- FreeGSNKE validated vs EFIT++ (MAST-U): https://arxiv.org/html/2407.12432v4

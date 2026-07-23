@@ -1,3 +1,8 @@
+## 11.9.1 — ADR-003: reject Py-EFIT / efit-ai on Windows path
+- Document decision: Windows reconstruction stays FreeGSNKE; EFIT insight via FAIR-MAST archive (ADR-002).
+- Do not integrate Py-EFIT, efit-ai, OMFIT-EFIT, or treat eqtools as a solver.
+- `AGENTS.md` equilibrium-stack section. Version **11.9.1**.
+
 ## 11.9.0 — FAIR-MAST EFIT++ compare + expert SHOT layout (ADR-002)
 - After FreeGSNKE: optional stage compares to **FAIR-MAST Level-2 `equilibrium`** (archived EFIT++), not efit-ai Fortran — Windows-friendly.
 - Outputs: `SHOT/<N>/04_efit_compare/` (shape timeseries, LCFS, ψ, plots, COMPARE.md). Default **on** in `configs/default.json`; authority-gated.

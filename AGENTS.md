@@ -45,8 +45,15 @@ mast-freegsnke run --shot <N>
 
 using shipped `configs/default.json` + populated `machine_authority/` + contracts/coil map resolved automatically for that shot.
 
+## Equilibrium stack (Windows)
+
+- **Solver:** FreeGSNKE only (shot-only happy path).
+- **EFIT insight:** FAIR-MAST Level-2 `equilibrium` archive compare (ADR-002) — labeled FreeGSNKE vs archived EFIT++, not a live EFIT++ run.
+- **Do not** add Py-EFIT, efit-ai Fortran, or OMFIT-EFIT to the Windows happy path (ADR-003). `eqtools` is a g/a-file reader, not a reconstruction engine.
+
 ## Out of scope unless asked
 
 - Inventing probe metrology numbers
+- Inventing Green’s tables / MAST EFIT namelists to force Py-EFIT or efit-ai
 - Force-push / destructive git
 - Committing secrets or large cached Zarr trees
