@@ -1,3 +1,8 @@
+## 11.10.0 — Shape scorecard from arXiv:2407.12432 metric family
+- `04_efit_compare/shape_scorecard.{json,csv}`: magnetic axis, X-point, midplane Rin/Rout, LCFS mean NN distance.
+- Declared `psi_convention=Wb_per_2pi` and `compare_mode=reconstruction_vs_archive` (honest vs Pentland forward-replay).
+- Authority `efit_compare` v1.1 + `validation_reference` → arXiv:2407.12432. Version **11.10.0**.
+
 ## 11.9.1 — ADR-003: reject Py-EFIT / efit-ai on Windows path
 - Document decision: Windows reconstruction stays FreeGSNKE; EFIT insight via FAIR-MAST archive (ADR-002).
 - Do not integrate Py-EFIT, efit-ai, OMFIT-EFIT, or treat eqtools as a solver.

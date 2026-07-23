@@ -72,12 +72,20 @@ def _write_mini_equilibrium_zarr(path: Path) -> None:
     xr = pytest.importorskip("xarray")
     pytest.importorskip("zarr")
     t = np.linspace(0.0, 1.0, 5)
+    th = np.linspace(0, 2 * np.pi, 20)
+    lcfs_r = np.tile(0.9 + 0.3 * np.cos(th), (5, 1))
+    lcfs_z = np.tile(0.35 * np.sin(th), (5, 1))
     ds = xr.Dataset(
         {
             "elongation": ("time", np.linspace(1.5, 1.8, 5)),
             "q95": ("time", np.linspace(4.0, 5.0, 5)),
-            "lcfs_r": (("time", "n"), np.tile(np.linspace(0.5, 1.2, 20), (5, 1))),
-            "lcfs_z": (("time", "n"), np.tile(np.sin(np.linspace(0, 2 * np.pi, 20)), (5, 1))),
+            "magnetic_axis_r": ("time", np.full(5, 0.9)),
+            "magnetic_axis_z": ("time", np.zeros(5)),
+            "x_point_r": ("time", np.full(5, 0.7)),
+            "x_point_z": ("time", np.full(5, -0.8)),
+            "minor_radius": ("time", np.full(5, 0.55)),
+            "lcfs_r": (("time", "n"), lcfs_r),
+            "lcfs_z": (("time", "n"), lcfs_z),
             "psi": (("time", "i", "j"), np.random.default_rng(0).normal(size=(5, 8, 8))),
         },
         coords={"time": t, "major_radius": np.linspace(0.2, 1.5, 8), "height": np.linspace(-1, 1, 8)},
@@ -94,6 +102,12 @@ def test_efit_compare_with_synthetic_zarr(tmp_path: Path) -> None:
     (run_dir / "inputs" / "window.json").write_text(
         json.dumps({"t_start": 0.2, "t_end": 0.6}), encoding="utf-8"
     )
+    pd = pytest.importorskip("pandas")
+    (run_dir / "presentation").mkdir(parents=True, exist_ok=True)
+    theta = np.linspace(0, 2 * np.pi, 40)
+    pd.DataFrame(
+        {"R": 0.85 + 0.35 * np.cos(theta), "Z": 0.4 * np.sin(theta)}
+    ).to_csv(run_dir / "presentation" / "freegsnke_lcfs.csv", index=False)
     auth = write_efit_compare_authority(
         run_dir / "inputs",
         load_efit_compare_authority(
@@ -101,11 +115,33 @@ def test_efit_compare_with_synthetic_zarr(tmp_path: Path) -> None:
         ),
     )
     auth_obj = load_efit_compare_authority(auth)
+    assert auth_obj.compare_mode == "reconstruction_vs_archive"
+    assert auth_obj.psi_convention == "Wb_per_2pi"
     rep = run_efit_compare(run_dir, shot=30201, cache_dir=cache, auth=auth_obj)
     assert rep.ok is True
     assert (run_dir / "04_efit_compare" / "efit_shape_timeseries.csv").exists()
     assert (run_dir / "04_efit_compare" / "efit_lcfs.csv").exists()
     assert (run_dir / "04_efit_compare" / "COMPARE.md").exists()
+    assert (run_dir / "04_efit_compare" / "shape_scorecard.csv").exists()
+    sc = json.loads((run_dir / "04_efit_compare" / "shape_scorecard.json").read_text(encoding="utf-8"))
+    assert sc["psi_convention"] == "Wb_per_2pi"
+    assert sc["compare_mode"] == "reconstruction_vs_archive"
+    assert any(r["quantity"] == "R_in_midplane" for r in sc["rows"])
+    assert any(r["quantity"] == "lcfs_mean_nn_symmetric" for r in sc["rows"])
+
+
+def test_midplane_and_lcfs_distance_helpers() -> None:
+    from mast_freegsnke.shape_scorecard import midplane_radii, polyline_mean_nearest_distance_m
+
+    th = np.linspace(0, 2 * np.pi, 60)
+    r = 1.0 + 0.4 * np.cos(th)
+    z = 0.5 * np.sin(th)
+    mid = midplane_radii(r, z, z_ref=0.0, z_tol=0.08)
+    assert mid["R_in_m"] is not None and mid["R_out_m"] is not None
+    assert mid["R_out_m"] > mid["R_in_m"]
+    d = polyline_mean_nearest_distance_m(r, z, r * 1.01, z)
+    assert d["mean_nn_symmetric_m"] is not None
+    assert d["mean_nn_symmetric_m"] > 0.0
 
 
 def test_finalize_shot_layout_moves(tmp_path: Path) -> None:

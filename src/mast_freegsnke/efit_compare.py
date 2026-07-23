@@ -41,11 +41,14 @@ class EfitCompareError(ValueError):
 @dataclass(frozen=True)
 class EfitCompareAuthority:
     authority_name: str = "efit_compare"
-    authority_version: str = "1.0"
+    authority_version: str = "1.1"
     source: str = "fairmast_level2_equilibrium"
     label: str = "FAIR-MAST EFIT++ archive (not efit-ai Fortran)"
     tokamark_reference: str = "https://github.com/UKAEA-IBM-STFC-Fusion-FMs/tokamark"
     fairmast_docs: str = "https://mastapp.site/level2-data.html"
+    validation_reference: str = "https://arxiv.org/html/2407.12432v4"
+    compare_mode: str = "reconstruction_vs_archive"
+    psi_convention: str = "Wb_per_2pi"
     equilibrium_group: str = "equilibrium"
     output_relpath: str = "04_efit_compare"
     fail_closed_if_missing: bool = False
@@ -69,7 +72,11 @@ class EfitCompareAuthority:
     lcfs_vars: Tuple[str, ...] = ("lcfs_r", "lcfs_z")
     psi_var: str = "psi"
     time_policy: str = "nearest_to_window_midpoint"
-    notes: str = "ADR-002"
+    notes: str = (
+        "ADR-002/v11.10. Shape scorecard metrics follow Pentland et al. arXiv:2407.12432 "
+        "(axis, midplane R, X-point, LCFS distance). Mode is reconstruction_vs_archive, "
+        "not EFIT++→FreeGSNKE forward replay."
+    )
 
     def validate(self) -> None:
         if self.source != "fairmast_level2_equilibrium":
@@ -86,10 +93,23 @@ class EfitCompareAuthority:
                 f"unsupported time_policy {self.time_policy!r} "
                 "(v1: nearest_to_window_midpoint)"
             )
+        if self.compare_mode != "reconstruction_vs_archive":
+            raise EfitCompareError(
+                f"unsupported compare_mode {self.compare_mode!r} "
+                "(v1.1: reconstruction_vs_archive only; forward_replay needs EFIT profile "
+                "coeff authority — out of scope until cited)"
+            )
+        if self.psi_convention != "Wb_per_2pi":
+            raise EfitCompareError(
+                f"unsupported psi_convention {self.psi_convention!r} "
+                "(declare Wb_per_2pi per FreeGSNKE/EFIT++ / arXiv:2407.12432)"
+            )
         if not str(self.output_relpath).strip():
             raise EfitCompareError("output_relpath required")
         if not self.shape_scalars:
             raise EfitCompareError("shape_scalars must be non-empty (declare which EFIT fields to export)")
+        if not str(self.validation_reference).strip():
+            raise EfitCompareError("validation_reference required (cite arXiv:2407.12432 or successor)")
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -106,7 +126,7 @@ def load_efit_compare_authority(path: Path) -> EfitCompareAuthority:
         raise EfitCompareError("authority root must be an object")
     auth = EfitCompareAuthority(
         authority_name=str(obj.get("authority_name", "efit_compare")),
-        authority_version=str(obj.get("authority_version", "1.0")),
+        authority_version=str(obj.get("authority_version", "1.1")),
         source=str(obj.get("source", "fairmast_level2_equilibrium")),
         label=str(obj.get("label", "FAIR-MAST EFIT++ archive (not efit-ai Fortran)")),
         tokamark_reference=str(
@@ -116,6 +136,11 @@ def load_efit_compare_authority(path: Path) -> EfitCompareAuthority:
             )
         ),
         fairmast_docs=str(obj.get("fairmast_docs", "https://mastapp.site/level2-data.html")),
+        validation_reference=str(
+            obj.get("validation_reference", "https://arxiv.org/html/2407.12432v4")
+        ),
+        compare_mode=str(obj.get("compare_mode", "reconstruction_vs_archive")),
+        psi_convention=str(obj.get("psi_convention", "Wb_per_2pi")),
         equilibrium_group=str(obj.get("equilibrium_group", "equilibrium")),
         output_relpath=str(obj.get("output_relpath", "04_efit_compare")),
         fail_closed_if_missing=bool(obj.get("fail_closed_if_missing", False)),
@@ -123,7 +148,7 @@ def load_efit_compare_authority(path: Path) -> EfitCompareAuthority:
         lcfs_vars=tuple(obj.get("lcfs_vars") or ("lcfs_r", "lcfs_z")),
         psi_var=str(obj.get("psi_var", "psi")),
         time_policy=str(obj.get("time_policy", "nearest_to_window_midpoint")),
-        notes=str(obj.get("notes", "ADR-002")),
+        notes=str(obj.get("notes", EfitCompareAuthority().notes)),
     )
     auth.validate()
     return auth
@@ -143,6 +168,8 @@ class EfitCompareReport:
     ok: bool = False
     output_dir: str = ""
     label: str = ""
+    compare_mode: str = "reconstruction_vs_archive"
+    psi_convention: str = "Wb_per_2pi"
     equilibrium_path: str = ""
     t_query: Optional[float] = None
     t_efit: Optional[float] = None
@@ -151,6 +178,7 @@ class EfitCompareReport:
     available_vars: List[str] = field(default_factory=list)
     missing_vars: List[str] = field(default_factory=list)
     freegsnke_boundary_available: bool = False
+    shape_scorecard: Optional[Dict[str, Any]] = None
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
     fix_hint: str = ""
@@ -295,29 +323,37 @@ def _extract_psi_at(ds: Any, idx: int, psi_name: str) -> Optional[Dict[str, Any]
     }
 
 
-def _try_freegsnke_boundary(run_dir: Path) -> Optional[Tuple[np.ndarray, np.ndarray]]:
-    """Best-effort LCFS from FreeGSNKE dumps / CSVs — never invent."""
-    # Optional CSV if a future exporter writes it
+def _try_freegsnke_products(
+    run_dir: Path,
+) -> Tuple[Optional[Tuple[np.ndarray, np.ndarray]], Optional[Dict[str, Any]]]:
+    """Best-effort LCFS + shape targets from FreeGSNKE dumps / CSVs — never invent."""
+    from .shape_scorecard import extract_freegsnke_shape_targets
+
+    boundary: Optional[Tuple[np.ndarray, np.ndarray]] = None
+    shape: Optional[Dict[str, Any]] = None
+
     for rel in (
         "03_reconstruction/freegsnke_lcfs.csv",
         "synthetic/freegsnke_lcfs.csv",
         "presentation/freegsnke_lcfs.csv",
     ):
         p = Path(run_dir) / rel
-        if p.exists():
-            try:
-                df = pd.read_csv(p)
-                if {"R", "Z"}.issubset(df.columns) or {"r", "z"}.issubset({c.lower() for c in df.columns}):
-                    cols = {c.lower(): c for c in df.columns}
-                    rr = df[cols.get("r", "R")].to_numpy(dtype=float)
-                    zz = df[cols.get("z", "Z")].to_numpy(dtype=float)
-                    m = np.isfinite(rr) & np.isfinite(zz)
-                    if m.sum() >= 3:
-                        return rr[m], zz[m]
-            except Exception:
-                pass
-    # Pickle introspection (optional)
-    for dump_name in ("inverse_dump.pkl", "03_reconstruction/inverse_dump.pkl"):
+        if not p.exists():
+            continue
+        try:
+            df = pd.read_csv(p)
+            cols = {c.lower(): c for c in df.columns}
+            if "r" in cols and "z" in cols:
+                rr = df[cols["r"]].to_numpy(dtype=float)
+                zz = df[cols["z"]].to_numpy(dtype=float)
+                m = np.isfinite(rr) & np.isfinite(zz)
+                if m.sum() >= 3:
+                    boundary = (rr[m], zz[m])
+                    break
+        except Exception:
+            pass
+
+    for dump_name in ("inverse_dump.pkl", "forward_dump.pkl"):
         dump = Path(run_dir) / dump_name
         if not dump.exists():
             continue
@@ -330,22 +366,30 @@ def _try_freegsnke_boundary(run_dir: Path) -> Optional[Tuple[np.ndarray, np.ndar
         eq = None
         if isinstance(obj, dict):
             eq = obj.get("eq") or obj.get("equilibrium") or obj.get("tokamak")
+            if eq is None and "equilibria" in obj and isinstance(obj["equilibria"], list) and obj["equilibria"]:
+                eq = obj["equilibria"][0]
         else:
             eq = getattr(obj, "eq", None) or obj
-        for attr in ("rboundary", "zboundary", "Rbound", "Zbound"):
-            pass
-        r = getattr(eq, "rboundary", None) if eq is not None else None
-        z = getattr(eq, "zboundary", None) if eq is not None else None
-        if r is None and eq is not None:
-            r = getattr(eq, "Rbound", None)
-            z = getattr(eq, "Zbound", None)
-        if r is not None and z is not None:
-            rr = np.asarray(r, dtype=float).ravel()
-            zz = np.asarray(z, dtype=float).ravel()
-            m = np.isfinite(rr) & np.isfinite(zz)
-            if m.sum() >= 3:
-                return rr[m], zz[m]
-    return None
+        if eq is None:
+            continue
+        shape = extract_freegsnke_shape_targets(eq)
+        if boundary is None:
+            r = getattr(eq, "rboundary", None) or getattr(eq, "Rbound", None)
+            z = getattr(eq, "zboundary", None) or getattr(eq, "Zbound", None)
+            if r is not None and z is not None:
+                rr = np.asarray(r, dtype=float).ravel()
+                zz = np.asarray(z, dtype=float).ravel()
+                m = np.isfinite(rr) & np.isfinite(zz)
+                if m.sum() >= 3:
+                    boundary = (rr[m], zz[m])
+        if boundary is not None or shape is not None:
+            break
+    return boundary, shape
+
+
+def _try_freegsnke_boundary(run_dir: Path) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    b, _ = _try_freegsnke_products(run_dir)
+    return b
 
 
 def run_efit_compare(
@@ -362,6 +406,8 @@ def run_efit_compare(
     report = EfitCompareReport(
         output_dir=_rel(run_dir, out),
         label=auth.label,
+        compare_mode=auth.compare_mode,
+        psi_convention=auth.psi_convention,
     )
 
     readme = "\n".join(
@@ -369,12 +415,15 @@ def run_efit_compare(
             f"Shot {shot} — FreeGSNKE vs FAIR-MAST EFIT++ archive",
             "=" * 56,
             "",
-            "This folder does NOT run efit-ai Fortran.",
+            "This folder does NOT run efit-ai / Py-EFIT.",
             "Source: FAIR-MAST Level-2 group `equilibrium` (EFIT++ derived).",
+            f"Compare mode: {auth.compare_mode}",
+            f"ψ convention: {auth.psi_convention} (Wb/2π)",
+            f"Metrics family: {auth.validation_reference}",
             f"TokaMark reference: {auth.tokamark_reference}",
             f"Docs: {auth.fairmast_docs}",
             "",
-            "Start with COMPARE.md and plots/.",
+            "Start with COMPARE.md, shape_scorecard.csv, and plots/.",
             "",
         ]
     )
@@ -488,9 +537,31 @@ def run_efit_compare(
         np.savez_compressed(npz_path, **save_kw)
         report.files_written.append(_rel(run_dir, npz_path))
 
-    # FreeGSNKE boundary overlay
-    fg = _try_freegsnke_boundary(run_dir)
+    # FreeGSNKE boundary + shape targets
+    fg, fg_shape = _try_freegsnke_products(run_dir)
     report.freegsnke_boundary_available = fg is not None
+    report.compare_mode = auth.compare_mode
+    report.psi_convention = auth.psi_convention
+
+    from .shape_scorecard import build_shape_scorecard
+
+    scorecard = build_shape_scorecard(
+        efit_scalars=snap.get("scalars") or {},
+        efit_lcfs=lcfs,
+        freegsnke_lcfs=fg,
+        freegsnke_shape=fg_shape,
+        psi_convention=auth.psi_convention,
+        compare_mode=auth.compare_mode,
+        validation_reference=auth.validation_reference,
+    )
+    report.shape_scorecard = scorecard
+    score_path = out / "shape_scorecard.json"
+    score_path.write_text(json.dumps(scorecard, indent=2) + "\n", encoding="utf-8")
+    report.files_written.append(_rel(run_dir, score_path))
+    # CSV rows for experts
+    score_csv = out / "shape_scorecard.csv"
+    pd.DataFrame(scorecard.get("rows") or []).to_csv(score_csv, index=False)
+    report.files_written.append(_rel(run_dir, score_csv))
 
     plots_dir = out / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
@@ -555,14 +626,20 @@ def run_efit_compare(
                     im = ax.imshow(psi, origin="lower", aspect="auto")
             else:
                 im = ax.imshow(psi, origin="lower", aspect="auto")
-            fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="ψ (EFIT++ archive)")
+            fig.colorbar(
+                im,
+                ax=ax,
+                fraction=0.046,
+                pad=0.04,
+                label="ψ (EFIT++ archive, Wb/2π)",
+            )
             if lcfs is not None:
                 ax.plot(lcfs[0], lcfs[1], "w-", lw=1.2, label="EFIT++ LCFS")
             if fg is not None:
                 ax.plot(fg[0], fg[1], "r--", lw=1.2, label="FreeGSNKE")
             ax.set_xlabel("R (m)" if extent else "i")
             ax.set_ylabel("Z (m)" if extent else "j")
-            ax.set_title(f"Shot {shot}: EFIT++ ψ map (archive)")
+            ax.set_title(f"Shot {shot}: EFIT++ ψ map (archive, Wb/2π)")
             ax.legend(loc="best", fontsize=7, frameon=False)
             fig.tight_layout()
             p = plots_dir / "efit_psi.png"
@@ -575,9 +652,39 @@ def run_efit_compare(
         f"# Shot {shot}: FreeGSNKE vs FAIR-MAST EFIT++",
         "",
         f"- **Archive label:** {auth.label}",
+        f"- **Compare mode:** `{auth.compare_mode}`",
+        f"- **ψ convention:** `{auth.psi_convention}` (FreeGSNKE & EFIT++: Wb/2π)",
+        f"- **Validation metrics reference:** {auth.validation_reference}",
         f"- **t_query (window mid):** `{report.t_query}`",
         f"- **t_efit (nearest):** `{report.t_efit}`",
         f"- **FreeGSNKE boundary available:** `{report.freegsnke_boundary_available}`",
+        "",
+        "## Mode honesty",
+        "",
+        scorecard.get("compare_mode_note", ""),
+        "",
+        scorecard.get("psi_convention_note", ""),
+        "",
+        "## Shape scorecard (Pentland et al. metric family)",
+        "",
+        "| Quantity | EFIT++ archive | FreeGSNKE | Δ (FG−EFIT) | Unit |",
+        "|----------|----------------|-----------|-------------|------|",
+    ]
+    for row in scorecard.get("rows") or []:
+        md_lines.append(
+            "| `{q}` | {e} | {f} | {d} | {u} |".format(
+                q=row.get("quantity"),
+                e=row.get("efit_archive") if row.get("efit_archive") is not None else "—",
+                f=row.get("freegsnke") if row.get("freegsnke") is not None else "—",
+                d=row.get("delta_freegsnke_minus_efit")
+                if row.get("delta_freegsnke_minus_efit") is not None
+                else "—",
+                u=row.get("unit") or "",
+            )
+        )
+    md_lines += [
+        "",
+        f"_Rows with both sides populated: {scorecard.get('n_rows_with_both', 0)}_",
         "",
         "## Snapshot scalars (EFIT++ archive)",
         "",
@@ -590,6 +697,7 @@ def run_efit_compare(
         "",
         "## Files",
         "",
+        "- `shape_scorecard.json` / `shape_scorecard.csv`",
         "- `efit_shape_timeseries.csv`",
         "- `efit_snapshot.json`",
         "- `efit_lcfs.csv` (when available)",
@@ -598,8 +706,10 @@ def run_efit_compare(
         "",
         "## Honesty",
         "",
-        "These products are **archived EFIT++** from FAIR-MAST Level-2, not a fresh efit-ai solve.",
+        "These products are **archived EFIT++** from FAIR-MAST Level-2, not a fresh efit-ai / Py-EFIT solve.",
         "TokaMark uses the same derived equilibrium signals as ML targets.",
+        "Shape metrics follow the family used in arXiv:2407.12432; agreement like that paper requires",
+        "matched EFIT++ currents+profiles into FreeGSNKE **forward** (not enabled here).",
         "",
     ]
     if report.warnings:

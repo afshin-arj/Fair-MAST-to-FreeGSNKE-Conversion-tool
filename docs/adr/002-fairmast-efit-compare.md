@@ -54,6 +54,16 @@ signals as reconstruction targets — confirming they are the open, citeable EFI
 | Soft-continue with synthetic EFIT fields | Invents metrology |
 | Leave experts to open MastApp manually | Fails “easy for fusion experts” goal |
 
+## Implementation status (v11.10.0)
+
+| Piece | Status |
+|-------|--------|
+| Archive extract + LCFS/ψ plots | done |
+| Shape scorecard (axis, midplane R, X-point, LCFS NN distance) | done (`shape_scorecard.csv`) |
+| Declared ψ convention Wb/2π | done |
+| Mode label `reconstruction_vs_archive` | done |
+| Forward replay (EFIT currents+profiles → FreeGSNKE) | **not** implemented (needs cited profile-coeff authority) |
+
 ## Related
 
 - [ADR-003](003-reject-pyefit-windows-path.md) — Py-EFIT / efit-ai / eqtools-as-solver are **not** the Windows path; FreeGSNKE + this archive compare remain.
@@ -64,3 +74,4 @@ signals as reconstruction targets — confirming they are the open, citeable EFI
 - TokaMark: https://arxiv.org/abs/2602.10132
 - EFIT++ (Appel & Lupelli 2018) as FAIR-MAST derived provenance
 - FreeGSNKE validated vs EFIT++ (MAST-U): https://arxiv.org/html/2407.12432v4
+  (Pentland et al.; shape-control metric family used in our scorecard)
