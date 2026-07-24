@@ -6,10 +6,12 @@ from typing import Any, Dict, List, Optional
 
 from mast_freegsnke_ui import artifacts as art
 
-_MAX_RESIDUAL_CHARTS = 4
-_MAX_PLOT_POINTS = 600
-_MAX_GALLERY = 12
-_MAX_CSV_PREVIEW = 3
+_MAX_RESIDUAL_CHARTS = 3
+_MAX_PLOT_POINTS = 400
+_MAX_GALLERY = 8
+_MAX_CSV_PREVIEW = 2
+_MAX_SUMMARY_CHARS = 5000
+_MAX_GIFS = 4
 
 
 def _require() -> tuple[Any, Any, Any]:
@@ -34,6 +36,7 @@ def _fmt_kpi(value: Any) -> str:
 def empty_state(title: str, body: str, *, steps: Optional[List[str]] = None) -> Any:
     html, _, dbc = _require()
     kids: List[Any] = [
+        html.Div("No shot context", className="empty-kicker"),
         html.H5(title, className="empty-title"),
         html.P(body, className="empty-body mb-0"),
     ]
@@ -55,6 +58,91 @@ def tab_banner(title: str, note: str) -> Any:
             html.P(note, className="tab-banner-note"),
         ],
         className="tab-banner",
+    )
+
+
+def chip(label: str, value: Any, *, tone: str = "") -> Any:
+    html, _, _ = _require()
+    cls = "fg-chip" + (f" fg-chip-{tone}" if tone else "")
+    return html.Span(
+        [html.Span(str(label), className="fg-chip-k"), html.Span(_fmt_kpi(value), className="fg-chip-v")],
+        className=cls,
+    )
+
+
+def shot_dossier(
+    shot: Optional[int],
+    run_dir: Optional[Path],
+    *,
+    cache_ready: Optional[bool] = None,
+    cache_note: str = "",
+) -> Any:
+    """Compact science context strip for fusion experts."""
+    html, _, _ = _require()
+    if shot is None or run_dir is None or not Path(run_dir).is_dir():
+        return html.Div(
+            [
+                html.Span("No active shot", className="dossier-empty"),
+                html.Span("Open a library entry or Start a reconstruction", className="dossier-hint"),
+            ],
+            className="shot-dossier shot-dossier-empty",
+        )
+    k = art.overview_kpis(run_dir)
+    st = str(k.get("status") or "?").lower()
+    tone = "ok" if st in {"success", "ok", "completed"} else ("fail" if st in {"failed", "error"} else "warn")
+    window = "—"
+    if k.get("t_start") is not None or k.get("t_end") is not None:
+        window = f"{_fmt_kpi(k.get('t_start'))} → {_fmt_kpi(k.get('t_end'))} s"
+    modes = k.get("modes") or {}
+    mode_txt = " · ".join(f"{a}={b}" for a, b in list(modes.items())[:4]) if modes else "—"
+    cache_tone = ""
+    cache_val = "—"
+    if cache_ready is True:
+        cache_val, cache_tone = "ready", "ok"
+    elif cache_ready is False:
+        cache_val, cache_tone = "partial/empty", "warn"
+    chips = [
+        chip("Shot", int(shot)),
+        chip("Status", k.get("status"), tone=tone),
+        chip("Window", window),
+        chip("Modes", mode_txt),
+        chip("Contracts", k.get("n_scored")),
+        chip("EFIT", k.get("efit_ok")),
+        chip("Evol. Ip", k.get("evolutive_ok")),
+        chip("L2 cache", cache_val, tone=cache_tone),
+    ]
+    if k.get("blocking_n"):
+        chips.append(chip("Blocking", k.get("blocking_n"), tone="fail"))
+    return html.Div(
+        [
+            html.Div(chips, className="dossier-chips"),
+            html.Div(cache_note, className="dossier-note") if cache_note else None,
+        ],
+        className="shot-dossier",
+    )
+
+
+def quick_links(shot: int, run_dir: Path) -> Any:
+    """One-click access to the files experts open first."""
+    html, _, _ = _require()
+    links = []
+    for rel, label in (
+        ("01_summary/SUMMARY.md", "SUMMARY"),
+        ("manifest.json", "manifest"),
+        ("03_reconstruction/metrics/reconstruction_metrics.json", "metrics"),
+        ("04_efit_compare/COMPARE.json", "COMPARE"),
+        ("02_measured_data/00_index/catalog.json", "L2 catalog"),
+        ("02_measured_data/00_index/optional_diagnostics.json", "optional L2"),
+    ):
+        if art.safe_resolve_under(run_dir, rel):
+            links.append(
+                html.A(label, href=art.file_url(shot, rel), target="_blank", className="fg-quick-link")
+            )
+    if not links:
+        return None
+    return html.Div(
+        [html.Span("Open", className="fg-quick-label"), html.Div(links, className="fg-quick-links")],
+        className="fg-quick-bar mb-3",
     )
 
 
@@ -225,11 +313,16 @@ def media_card(shot: int, path: Path, run_dir: Path) -> Any:
     return html.Div(
         [
             html.Div(
-                html.Img(src=img_src, alt=rel, className="media-img"),
+                html.Img(
+                    src=img_src,
+                    alt=Path(rel).name,
+                    className="media-img",
+                ),
                 className="media-frame",
             ),
             html.Div(
                 [
+                    html.Div(Path(rel).name, className="media-basename", title=rel),
                     html.Div(rel, className="media-caption text-truncate", title=rel),
                     html.Div(
                         [
@@ -341,12 +434,48 @@ def overview_panel(shot: int, run_dir: Path) -> Any:
     html, dcc, dbc = _require()
     kpis = art.overview_kpis(run_dir)
     md = art.load_summary_markdown(run_dir)
-    if md and len(md) > 16000:
-        md = md[:16000] + "\n\n… truncated for UI speed — download SUMMARY.md for the full file."
     blocking = kpis.get("blocking") or []
+    # Compact SUMMARY: excerpt + download — avoid huge Markdown DOM (theme H1s + lag).
     summary_body: Any
     if md:
-        summary_body = dcc.Markdown(md, className="summary-md")
+        excerpt = md.strip()
+        truncated = len(excerpt) > _MAX_SUMMARY_CHARS
+        if truncated:
+            excerpt = excerpt[:_MAX_SUMMARY_CHARS].rstrip() + "\n\n… truncated in UI — open SUMMARY.md for the full write-up."
+        # Soften heading levels so browser theme H1/H2 do not dominate
+        soft_lines = []
+        for line in excerpt.splitlines():
+            if line.startswith("# "):
+                soft_lines.append("### " + line[2:])
+            elif line.startswith("## "):
+                soft_lines.append("#### " + line[3:])
+            else:
+                soft_lines.append(line)
+        soft_md = "\n".join(soft_lines)
+        summary_body = html.Div(
+            [
+                dcc.Markdown(soft_md, className="summary-md", dangerously_allow_html=False),
+                html.Div(
+                    [
+                        html.A(
+                            "Open SUMMARY.md",
+                            href=art.file_url(shot, "01_summary/SUMMARY.md"),
+                            target="_blank",
+                            className="btn btn-sm btn-outline-secondary me-1",
+                        ),
+                        html.A(
+                            "Download",
+                            href=art.file_url(shot, "01_summary/SUMMARY.md", download=True),
+                            className="btn btn-sm btn-outline-secondary",
+                        ),
+                    ],
+                    className="mt-2",
+                )
+                if art.safe_resolve_under(run_dir, "01_summary/SUMMARY.md")
+                else None,
+            ],
+            className="summary-wrap",
+        )
     else:
         summary_body = html.Pre(art.overview_text(run_dir), className="overview-pre")
     blocking_body = None
@@ -359,13 +488,15 @@ def overview_panel(shot: int, run_dir: Path) -> Any:
         [
             tab_banner(
                 "Science overview",
-                "KPIs and SUMMARY for this reconstruction. Expand sections as needed — nothing is hidden behind a second shot run.",
+                "Status, formed-plasma window, and SUMMARY for this reconstruction. "
+                "Expand a section only when you need detail.",
             ),
+            quick_links(shot, run_dir),
             accordion(
                 [
-                    ("Key performance indicators", kpi_strip(kpis), True),
-                    ("Blocking errors", blocking_body, bool(blocking)),
-                    ("Downloads", export_bar(shot, run_dir), True),
+                    ("Key performance indicators", kpi_strip(kpis), False),
+                    ("Blocking errors", blocking_body, False),
+                    ("Downloads", export_bar(shot, run_dir), False),
                     ("SUMMARY.md", summary_body, False),
                 ]
             ),
@@ -820,8 +951,33 @@ def level2_panel(shot: int, run_dir: Path) -> Any:
             tab_banner(
                 "FAIR-MAST Level-2 measured data",
                 "Plasma · PF · magnetics · geometry plus optional diagnostics "
-                "(summary, Soft X-rays, Thomson, CXRS, gas, …) from mastapp.site/level2-data.html. "
-                "Missing optional groups are warnings only. Expand a family for plots and CSV.",
+                "(summary, Soft X-rays, Thomson, CXRS, gas, …). "
+                "Missing optional groups are warnings only — expand a family for plots and CSV.",
+            ),
+            html.Div(
+                [
+                    html.Span("Families", className="fg-quick-label"),
+                    html.Div(
+                        [
+                            html.Span(lab, className="fg-family-pill")
+                            for lab, key in (
+                                ("Plasma", "plasma"),
+                                ("PF", "pf"),
+                                ("Magnetics", "magnetics"),
+                                ("Geometry", "geometry"),
+                                ("Summary", "summary"),
+                                ("SXR", "soft_x_rays"),
+                                ("Thomson", "thomson"),
+                                ("CXRS", "cxrs"),
+                                ("Gas", "gas"),
+                            )
+                            if grouped.get(key) or any(i.get("section") == key for i in csvs)
+                        ]
+                        or [html.Span("Core pack only — optional diagnostics not exported yet", className="small text-muted")],
+                        className="fg-family-pills",
+                    ),
+                ],
+                className="fg-quick-bar mb-3",
             ),
             accordion(sections, always_open=True),
         ]
@@ -887,20 +1043,20 @@ TAB_DEFS = (
     ("level2", "Level-2"),
     ("residuals", "Residuals"),
     ("efit", "EFIT"),
-    ("gifs", "GIFs"),
+    ("gifs", "Equilibria"),
     ("auth", "Authorities"),
     ("files", "Files"),
 )
 
 TAB_META = {
-    "overview": "SUMMARY, KPIs, and the download pack for the active shot.",
-    "level2": "FAIR-MAST Level-2 measured pack — plasma, PF, magnetics, geometry (plots + CSV).",
-    "measured": "FAIR-MAST Level-2 measured pack — plasma, PF, magnetics, geometry (plots + CSV).",
-    "residuals": "Contract residual tables, CSV traces, and key residual PNGs.",
-    "efit": "FreeGSNKE vs FAIR-MAST EFIT++ archive compare (ADR-002).",
-    "gifs": "Presentation / evolutive equilibrium GIFs (annex visuals).",
-    "auth": "Snapshotted authorities and provenance hashes for this run.",
-    "files": "Browsable download list for plots, CSV, JSON, and markdown.",
+    "overview": "Run status, formed-plasma window, KPIs, and SUMMARY.",
+    "level2": "FAIR-MAST measured pack — plasma, PF, magnetics, SXR, Thomson, CXRS, … (plots + CSV).",
+    "measured": "FAIR-MAST measured pack — plasma, PF, magnetics, SXR, Thomson, CXRS, … (plots + CSV).",
+    "residuals": "Contract residuals: synthetic vs experimental traces.",
+    "efit": "FreeGSNKE vs FAIR-MAST EFIT++ archive (ADR-002) — not a live EFIT solve.",
+    "gifs": "Inverse / forward / evolutive equilibrium GIFs.",
+    "auth": "Snapshotted authorities and provenance hashes (fail-fast if missing).",
+    "files": "Browse and download plots, CSV, JSON, and markdown.",
 }
 
 _TAB_LABELS = {k: v for k, v in TAB_DEFS}
@@ -917,11 +1073,11 @@ def fill_one_tab(tab_id: Optional[str], shot: Optional[int], run_dir: Optional[P
         label = _TAB_LABELS.get(tid, "Overview")
         return empty_state(
             f"{label} — no shot loaded",
-            "Expert path: enter a MAST shot, Open an existing SHOT folder, or Start a full reconstruction.",
+            "Open an existing SHOT folder to inspect products, or Reconstruct to run the full Fair-MAST → FreeGSNKE pipeline.",
             steps=[
-                "Type a shot number and press Enter / Open (browse only)",
-                "Or Start run — prior SHOT output is archived; local data_cache Level-2 groups are reused",
-                f"Inspect {label} once artifacts exist under SHOT/<N>/",
+                "Enter a MAST shot number and press Enter / Open (browse only)",
+                "Or Reconstruct — prior SHOT output is archived; cached Level-2 Zarrs are reused",
+                f"Use {label} once artifacts exist under SHOT/<N>/",
             ],
         )
     shot_i = int(shot)
@@ -932,14 +1088,16 @@ def fill_one_tab(tab_id: Optional[str], shot: Optional[int], run_dir: Optional[P
     if tid == "efit":
         return efit_panel(shot_i, run_dir)
     if tid == "gifs":
+        gifs = art.gif_paths(run_dir)[:_MAX_GIFS]
         return html.Div(
             [
                 tab_banner(
                     "Equilibrium GIFs",
-                    "Presentation annexes — not a substitute for residual metrics or Ip match.",
+                    "Presentation annexes — not a substitute for residual metrics or Ip match. "
+                    f"Showing up to {_MAX_GIFS} GIFs for UI speed.",
                 ),
                 media_gallery(
-                    shot_i, art.gif_paths(run_dir), run_dir, "No presentation/evolutive GIFs yet."
+                    shot_i, gifs, run_dir, "No presentation/evolutive GIFs yet."
                 ),
             ]
         )
@@ -955,29 +1113,33 @@ def fill_one_tab(tab_id: Optional[str], shot: Optional[int], run_dir: Optional[P
     return overview_panel(shot_i, run_dir)
 
 
-def results_heading(shot: Optional[int], tab_id: Optional[str] = None) -> Any:
+def results_heading(shot: Optional[int], tab_id: Optional[str] = None, *, cache_ready: Optional[bool] = None, cache_note: str = "") -> Any:
     html, _, _ = _require()
     tid = (tab_id or "overview").lower()
     if tid == "measured":
         tid = "level2"
     label = _TAB_LABELS.get(tid, "Overview")
     meta = TAB_META.get(tid, "")
+    run_dir = None
+    # Caller may pass shot only; dossier needs run_dir from app — optional strip without path
+    kids: List[Any] = []
     if shot is None:
-        return html.Div(
-            [
-                html.Div("Results", className="results-title"),
-                html.Div(meta or "Load a shot to browse reconstruction products.", className="results-meta"),
-            ],
-            className="results-heading-wrap",
-        )
-    return html.Div(
-        [
-            html.Div(label, className="results-title"),
-            html.Div(f"SHOT / {int(shot)}", className="results-shot"),
+        kids = [
+            html.Div("Results browser", className="results-title"),
+            html.Div(meta or "Open a shot to inspect reconstruction products.", className="results-meta"),
+        ]
+    else:
+        kids = [
+            html.Div(
+                [
+                    html.Span(label, className="results-title"),
+                    html.Span(f"SHOT/{int(shot)}", className="results-shot-pill"),
+                ],
+                className="results-title-row",
+            ),
             html.Div(meta, className="results-meta") if meta else None,
-        ],
-        className="results-heading-wrap",
-    )
+        ]
+    return html.Div(kids, className="results-heading-wrap")
 
 
 def fill_all_tabs(shot: Optional[int], run_dir: Optional[Path]) -> Dict[str, Any]:

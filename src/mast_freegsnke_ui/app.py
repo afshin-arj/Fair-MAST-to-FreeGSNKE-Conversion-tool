@@ -22,7 +22,8 @@ _Output = None
 _State = None
 _no_update = None
 
-_POLL_IDLE_MS = 2500
+_POLL_IDLE_MS = 4000
+_POLL_RUN_MS = 1100
 
 
 def _require_dash() -> None:
@@ -166,18 +167,20 @@ def create_app(
                 [
                     html.Div(
                         [
-                            html.P("MAST reconstruction console", className="fg-eyebrow"),
+                            html.P("Fusion reconstruction console", className="fg-eyebrow"),
                             html.H1(["Fair-MAST ", html.Span("→ FreeGSNKE")], className="fg-brand"),
                             html.P(
-                                "Shot-only workflow: enter a MAST shot number. Download, authorities, FreeGSNKE, "
-                                "residuals, and EFIT archive compare run automatically.",
+                                "Shot-only MAST equilibrium workflow for fusion experts: "
+                                "Level-2 ingest, declared authorities, FreeGSNKE inverse/forward/evolutive, "
+                                "contract residuals, and EFIT++ archive compare.",
                                 className="fg-sub",
                             ),
                             html.Div(
                                 [
                                     html.Span([html.Strong("Solver"), " FreeGSNKE"], className="fg-meta-chip"),
-                                    html.Span([html.Strong("EFIT"), " archive compare · ADR-002"], className="fg-meta-chip"),
+                                    html.Span([html.Strong("EFIT"), " archive · ADR-002"], className="fg-meta-chip"),
                                     html.Span([html.Strong("Authority"), " fail-fast"], className="fg-meta-chip"),
+                                    html.Span([html.Strong("Cache"), " reuse Zarrs"], className="fg-meta-chip"),
                                 ],
                                 className="fg-meta-row",
                             ),
@@ -194,6 +197,11 @@ def create_app(
                 ],
                 className="fg-header",
             ),
+            html.Div(
+                id="shot-dossier",
+                children=panels.shot_dossier(None, None),
+                className="mb-3",
+            ),
             dbc.Row(
                 [
                     dbc.Col(
@@ -201,14 +209,14 @@ def create_app(
                             [
                                 html.Div(
                                     [
-                                        html.Span("1", className="step-num"),
-                                        html.H6("Select shot", className="mb-0"),
+                                        html.Span("Workflow", className="side-kicker"),
+                                        html.H6("Shot control", className="mb-0 side-title"),
                                     ],
                                     className="section-head",
                                 ),
                                 html.Div(
                                     [
-                                        dbc.Label("Shot number", html_for="shot-input", className="fg-label"),
+                                        dbc.Label("MAST shot number", html_for="shot-input", className="fg-label"),
                                         dbc.InputGroup(
                                             [
                                                 dbc.Input(
@@ -220,25 +228,45 @@ def create_app(
                                                     debounce=True,
                                                     n_submit=0,
                                                 ),
-                                                dbc.Button("Open", id="btn-open", color="secondary", outline=True),
+                                                dbc.Button(
+                                                    "Open",
+                                                    id="btn-open",
+                                                    color="secondary",
+                                                    outline=True,
+                                                    title="Browse existing SHOT/<N>/ without re-running",
+                                                ),
                                             ],
                                             className="mb-2",
                                         ),
-                                        dbc.Label("Local library", html_for="shot-picker", className="fg-label"),
+                                        dbc.Label("Local SHOT library", html_for="shot-picker", className="fg-label"),
                                         dcc.Dropdown(
                                             id="shot-picker",
                                             options=library_opts,
-                                            placeholder="Browse existing SHOT folders…",
+                                            placeholder="Select an existing reconstruction…",
                                             clearable=True,
-                                            className="mb-1 shot-dropdown",
-                                        ),
-                                        html.P(
-                                            "Open browses artifacts without re-running. Start archives prior SHOT output into history/, "
-                                            "then runs the pipeline — local data_cache Level-2 groups are reused (only missing Zarrs sync).",
-                                            className="fg-hint",
+                                            className="mb-2 shot-dropdown",
                                         ),
                                         html.Div(
-                                            ["Press ", html.Kbd("Enter"), " in the shot field to Open"],
+                                            [
+                                                html.Div(
+                                                    [
+                                                        html.Strong("Open"),
+                                                        " — inspect artifacts only",
+                                                    ],
+                                                    className="action-hint",
+                                                ),
+                                                html.Div(
+                                                    [
+                                                        html.Strong("Reconstruct"),
+                                                        " — archive prior output, run pipeline (cache reused)",
+                                                    ],
+                                                    className="action-hint",
+                                                ),
+                                            ],
+                                            className="action-hints mb-2",
+                                        ),
+                                        html.Div(
+                                            ["Enter", html.Kbd("⏎"), "opens · Start reconstructs"],
                                             className="kbd-hint",
                                         ),
                                     ],
@@ -246,17 +274,16 @@ def create_app(
                                 ),
                                 html.Div(
                                     [
-                                        html.Span("2", className="step-num"),
-                                        html.H6("Run", className="mb-0"),
-                                    ],
-                                    className="section-head mt-3",
-                                ),
-                                html.Div(
-                                    [
-                                        dbc.Button("Start run", id="btn-start", color="primary", className="me-2 flex-grow-1"),
+                                        dbc.Button(
+                                            "Reconstruct",
+                                            id="btn-start",
+                                            color="primary",
+                                            className="me-2 flex-grow-1",
+                                            title="Run full Fair-MAST → FreeGSNKE pipeline for this shot",
+                                        ),
                                         dbc.Button("Cancel", id="btn-cancel", color="danger", outline=True),
                                     ],
-                                    className="d-flex mb-2",
+                                    className="d-flex mb-2 run-actions",
                                 ),
                                 html.Div(id="run-alert"),
                                 html.Div(id="blocking-banner"),
@@ -264,8 +291,8 @@ def create_app(
                                 html.Hr(className="fg-hr"),
                                 html.Div(
                                     [
-                                        html.Span("3", className="step-num"),
-                                        html.H6("Progress", className="mb-0"),
+                                        html.Span("Stages", className="side-kicker"),
+                                        html.H6("Progress", className="mb-0 side-title"),
                                         html.Span(id="stage-count", className="stage-count ms-auto"),
                                     ],
                                     className="section-head mb-2",
@@ -276,7 +303,13 @@ def create_app(
                                     children=panels.stage_timeline(None, False),
                                     className="stage-scroll",
                                 ),
-                                html.H6("Operator log", className="section-title mt-3"),
+                                html.Div(
+                                    [
+                                        html.Span("Log", className="side-kicker"),
+                                        html.H6("Operator output", className="mb-0 side-title"),
+                                    ],
+                                    className="section-head mt-3 mb-2",
+                                ),
                                 html.Pre(id="log-panel", children="Waiting for pipeline output…", className="log-panel p-2"),
                             ],
                             className="fg-panel fg-side",
@@ -302,12 +335,14 @@ def create_app(
                                                     outline=True,
                                                     size="sm",
                                                     className="me-1",
+                                                    title="Reload artifacts from disk",
                                                 ),
                                                 html.A(
                                                     "Download ZIP",
                                                     id="btn-zip-link",
                                                     href="#",
                                                     className="btn btn-sm btn-success disabled",
+                                                    title="Pack plots, CSV, JSON for this shot",
                                                 ),
                                             ],
                                             className="d-flex results-toolbar",
@@ -356,7 +391,7 @@ def create_app(
                         f"config {config_path.as_posix()}  ·  library {runs_dir.as_posix()}"
                     ),
                     html.Div(
-                        "shot-only happy path  ·  EFIT = FAIR-MAST archive compare (ADR-002)  ·  Enter opens  ·  Start reconstructs",
+                        "Open = browse  ·  Reconstruct = pipeline  ·  EFIT = FAIR-MAST archive (ADR-002)  ·  optional L2 = warn-only",
                         className="fg-footer-keys",
                     ),
                 ],
@@ -372,9 +407,9 @@ def create_app(
         """
         function(status) {
             if (status === 'running' || status === 'started') {
-                return 900;
+                return 1100;
             }
-            return 2500;
+            return 4000;
         }
         """,
         Output("poll", "interval"),
@@ -403,6 +438,27 @@ def create_app(
                 pass
         return None
 
+    def _dossier_for(shot: Optional[int]) -> Any:
+        if shot is None:
+            return panels.shot_dossier(None, None)
+        rd = art.run_dir_for(runs_dir, int(shot))
+        if not rd.is_dir():
+            return panels.shot_dossier(None, None)
+        from mast_freegsnke_ui.level2 import shot_cache_status
+
+        cache_st = shot_cache_status(cache_dir, int(shot), required=required_groups)
+        if cache_st.get("ready"):
+            note = "Level-2 required groups cached — Reconstruct skips S3 for those Zarrs"
+            ready = True
+        elif cache_st.get("partial"):
+            miss = ", ".join(cache_st.get("missing_required") or [])
+            note = f"Level-2 cache partial — missing: {miss or '?'}"
+            ready = False
+        else:
+            note = "Level-2 cache empty — Reconstruct will download required groups"
+            ready = False
+        return panels.shot_dossier(int(shot), rd, cache_ready=ready, cache_note=note)
+
     def _open_shot(shot: int):
         rd = art.run_dir_for(runs_dir, shot)
         if not rd.is_dir():
@@ -410,7 +466,7 @@ def create_app(
                 dbc.Alert(
                     [
                         html.Strong(f"No folder at {rd.as_posix()}"),
-                        html.Div("Start a run to download & reconstruct, or pick another shot from the library."),
+                        html.Div("Reconstruct to download & solve, or pick another shot from the library."),
                     ],
                     color="danger",
                 ),
@@ -419,38 +475,30 @@ def create_app(
                 manager.is_running,
                 shot,
                 "",
+                panels.shot_dossier(None, None),
             )
         man = art.load_manifest(rd) or {}
         st = str(man.get("status") or "?")
-        from mast_freegsnke_ui.level2 import shot_cache_status
-
-        cache_st = shot_cache_status(cache_dir, shot, required=required_groups)
-        if cache_st.get("ready"):
-            cache_txt = "Level-2 cache ready (Start will skip S3 for cached groups)"
-        elif cache_st.get("partial"):
-            miss = ", ".join(cache_st.get("missing_required") or [])
-            cache_txt = f"Level-2 cache partial — missing: {miss or '?'}"
-        else:
-            cache_txt = "Level-2 cache empty — Start will download required groups"
+        dossier = _dossier_for(shot)
         return (
             dbc.Alert(
                 [
                     html.Strong(f"Opened SHOT/{shot}"),
                     html.Span(f" · status={st}"),
                     html.Div(
-                        "Tabs: Overview · Level-2 (plots+CSV) · Residuals · EFIT · GIFs · Authorities · Files.",
+                        "Tabs: Overview · Level-2 · Residuals · EFIT · Equilibria · Authorities · Files.",
                         className="small mt-1",
                     ),
-                    html.Div(cache_txt, className="small text-muted"),
                 ],
                 color="info",
-                duration=5000,
+                duration=4200,
             ),
             shot,
             "idle",
             manager.is_running,
             shot,
             rd.as_posix(),
+            dossier,
         )
 
     @app.callback(
@@ -460,12 +508,13 @@ def create_app(
         Output("btn-start", "disabled"),
         Output("shot-input", "value"),
         Output("shot-path", "children"),
+        Output("shot-dossier", "children"),
         Input("shot-picker", "value"),
         prevent_initial_call=True,
     )
     def on_picker(picker_val):
         if picker_val is None:
-            return no_update, no_update, no_update, no_update, no_update, no_update
+            return no_update, no_update, no_update, no_update, no_update, no_update, no_update
         return _open_shot(int(picker_val))
 
     @app.callback(
@@ -475,6 +524,7 @@ def create_app(
         Output("btn-start", "disabled", allow_duplicate=True),
         Output("shot-input", "value", allow_duplicate=True),
         Output("shot-path", "children", allow_duplicate=True),
+        Output("shot-dossier", "children", allow_duplicate=True),
         Input("btn-open", "n_clicks"),
         Input("btn-start", "n_clicks"),
         Input("btn-cancel", "n_clicks"),
@@ -488,7 +538,7 @@ def create_app(
     def on_buttons(n_open, n_start, n_cancel, n_submit, shot_val, picker_val, active_shot, ui_status):
         ctx = dash.callback_context
         if not ctx.triggered:
-            return (no_update,) * 6
+            return (no_update,) * 7
         tid = ctx.triggered[0]["prop_id"].split(".")[0]
 
         if tid == "btn-cancel":
@@ -501,12 +551,14 @@ def create_app(
                     False,
                     no_update,
                     no_update,
+                    _dossier_for(active_shot) if active_shot is not None else no_update,
                 )
             return (
                 dbc.Alert("Nothing to cancel.", color="secondary", duration=2200),
                 active_shot,
                 ui_status,
                 False,
+                no_update,
                 no_update,
                 no_update,
             )
@@ -520,13 +572,14 @@ def create_app(
                 manager.is_running,
                 no_update,
                 no_update,
+                no_update,
             )
 
         if tid in {"btn-open", "shot-input"}:
             return _open_shot(shot)
 
         if tid != "btn-start":
-            return (no_update,) * 6
+            return (no_update,) * 7
 
         if manager.is_running:
             return (
@@ -536,6 +589,7 @@ def create_app(
                 True,
                 shot,
                 no_update,
+                _dossier_for(active_shot) if active_shot is not None else no_update,
             )
         try:
             manager.start(shot, config=config_path, cwd=repo_root)
@@ -547,13 +601,17 @@ def create_app(
                 False,
                 shot,
                 no_update,
+                no_update,
             )
         rd = art.run_dir_for(runs_dir, shot)
         return (
             dbc.Alert(
                 [
-                    html.Strong(f"Pipeline started for shot {shot}"),
-                    html.Div("Watch Progress and Live log. Results refresh when the run finishes.", className="small mt-1"),
+                    html.Strong(f"Reconstructing shot {shot}"),
+                    html.Div(
+                        "Watch Stages and Operator output. Results refresh when the run finishes. Cached Level-2 Zarrs are reused.",
+                        className="small mt-1",
+                    ),
                 ],
                 color="primary",
                 duration=4500,
@@ -563,6 +621,7 @@ def create_app(
             True,
             shot,
             rd.as_posix(),
+            _dossier_for(shot),
         )
 
     @app.callback(
@@ -582,6 +641,7 @@ def create_app(
         Output("btn-zip-link", "href"),
         Output("btn-zip-link", "className"),
         Output("shot-path", "children", allow_duplicate=True),
+        Output("shot-dossier", "children", allow_duplicate=True),
         Output("poll-cache", "data"),
         Output("library-fp", "data"),
         Input("poll", "n_intervals"),
@@ -731,6 +791,12 @@ def create_app(
         out_path = path_txt if cache.get("path") != path_txt else no_update
         out_lib_fp = new_lib_fp if new_lib_fp != library_fp else no_update
 
+        dossier_sig = f"{shot}|{status_label}|{stage_sig}"
+        if cache.get("dossier_sig") != dossier_sig:
+            out_dossier = _dossier_for(int(shot)) if shot is not None else panels.shot_dossier(None, None)
+        else:
+            out_dossier = no_update
+
         new_cache = {
             "status": status_label,
             "detail": detail,
@@ -743,6 +809,7 @@ def create_app(
             "zip_cls": zip_cls,
             "path": path_txt,
             "lib_check": lib_check,
+            "dossier_sig": dossier_sig,
         }
 
         return (
@@ -762,6 +829,7 @@ def create_app(
             out_zip_href,
             out_zip_cls,
             out_path,
+            out_dossier,
             new_cache,
             out_lib_fp,
         )
