@@ -741,7 +741,6 @@ body {
   max-height: 220px;
   object-fit: contain;
   display: block;
-  content-visibility: auto;
 }
 
 .media-meta {

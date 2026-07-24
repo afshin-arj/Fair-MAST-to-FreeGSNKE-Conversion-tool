@@ -23,7 +23,6 @@ _State = None
 _no_update = None
 
 _POLL_IDLE_MS = 4000
-_POLL_RUN_MS = 1100
 
 
 def _require_dash() -> None:

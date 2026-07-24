@@ -1,3 +1,1 @@
-"""Shot-only Dash UI for Fair-MAST → FreeGSNKE (optional extra)."""
-
-__version__ = "0.1.0"
+"""Shot-only Dash UI for Fair-MAST → FreeGSNKE (optional ``[ui]`` extra)."""

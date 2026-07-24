@@ -1113,18 +1113,15 @@ def fill_one_tab(tab_id: Optional[str], shot: Optional[int], run_dir: Optional[P
     return overview_panel(shot_i, run_dir)
 
 
-def results_heading(shot: Optional[int], tab_id: Optional[str] = None, *, cache_ready: Optional[bool] = None, cache_note: str = "") -> Any:
+def results_heading(shot: Optional[int], tab_id: Optional[str] = None) -> Any:
     html, _, _ = _require()
     tid = (tab_id or "overview").lower()
     if tid == "measured":
         tid = "level2"
     label = _TAB_LABELS.get(tid, "Overview")
     meta = TAB_META.get(tid, "")
-    run_dir = None
-    # Caller may pass shot only; dossier needs run_dir from app — optional strip without path
-    kids: List[Any] = []
     if shot is None:
-        kids = [
+        kids: List[Any] = [
             html.Div("Results browser", className="results-title"),
             html.Div(meta or "Open a shot to inspect reconstruction products.", className="results-meta"),
         ]
@@ -1140,11 +1137,3 @@ def results_heading(shot: Optional[int], tab_id: Optional[str] = None, *, cache_
             html.Div(meta, className="results-meta") if meta else None,
         ]
     return html.Div(kids, className="results-heading-wrap")
-
-
-def fill_all_tabs(shot: Optional[int], run_dir: Optional[Path]) -> Dict[str, Any]:
-    """Compatibility helper used by tests / tooling — prefer fill_one_tab in the app."""
-    return {
-        "tab-body": fill_one_tab("overview", shot, run_dir),
-        "results-heading": results_heading(shot, "overview"),
-    }
