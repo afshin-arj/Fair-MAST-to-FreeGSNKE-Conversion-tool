@@ -365,15 +365,10 @@ def create_app(
                                         for tid, label in panels.TAB_DEFS
                                     ],
                                 ),
-                                dcc.Loading(
-                                    id="tab-loading",
-                                    type="dot",
-                                    color="#2fb9a8",
-                                    children=html.Div(
-                                        id="tab-body",
-                                        children=empty_body,
-                                        className="tab-pane-body",
-                                    ),
+                                html.Div(
+                                    id="tab-body",
+                                    children=empty_body,
+                                    className="tab-pane-body",
                                 ),
                             ],
                             className="fg-panel fg-results",
@@ -836,27 +831,15 @@ def create_app(
     @app.callback(
         Output("results-heading", "children"),
         Output("tab-body", "children"),
-        Input("active-shot", "data"),
         Input("results-tabs", "value"),
         Input("refresh-token", "data"),
         Input("btn-refresh", "n_clicks"),
+        State("active-shot", "data"),
         prevent_initial_call=False,
     )
-    def on_results(active_shot, active_tab, _refresh_token, _n_refresh):
-        """Fill the active tab from the current shot.
-
-        When the shot changes, always render Overview even if the tab widget
-        has not flipped yet (avoids showing Residuals/etc. for the new shot).
-        """
-        triggered = None
-        try:
-            triggered = dash.callback_context.triggered_id
-        except Exception:
-            triggered = None
-
+    def on_results(active_tab, _refresh_token, _n_refresh, active_shot):
+        """Fill only the active tab. Shot changes flip the tab to Overview (separate callback)."""
         tid = (active_tab or "overview").strip().lower()
-        if triggered == "active-shot":
-            tid = "overview"
         valid = {k for k, _ in panels.TAB_DEFS}
         if tid not in valid:
             tid = "overview"

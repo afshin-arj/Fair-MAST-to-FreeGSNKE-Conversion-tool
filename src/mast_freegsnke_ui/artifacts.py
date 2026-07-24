@@ -220,7 +220,7 @@ def measured_plot_paths(run_dir: Path) -> List[Path]:
             run_dir / "experimental_data",
         ],
         exts={".png"},
-        limit=48,
+        limit=32,
     )
 
 
@@ -233,7 +233,7 @@ def residual_plot_paths(run_dir: Path) -> List[Path]:
             run_dir / "metrics" / "report" / "key_plots",
         ],
         exts={".png"},
-        limit=48,
+        limit=32,
     )
 
 
@@ -245,7 +245,7 @@ def efit_plot_paths(run_dir: Path) -> List[Path]:
             run_dir / "efit_compare" / "plots",
         ],
         exts={".png"},
-        limit=48,
+        limit=32,
     )
 
 

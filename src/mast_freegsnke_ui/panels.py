@@ -6,12 +6,10 @@ from typing import Any, Dict, List, Optional
 
 from mast_freegsnke_ui import artifacts as art
 
-_MAX_RESIDUAL_CHARTS = 3
-_MAX_PLOT_POINTS = 400
-_MAX_GALLERY = 8
-_MAX_CSV_PREVIEW = 2
-_MAX_SUMMARY_CHARS = 5000
-_MAX_GIFS = 4
+_MAX_GALLERY = 4
+_MAX_CSV_PREVIEW = 1
+_MAX_GIFS = 3
+_MAX_FILE_LINKS = 20
 
 
 def _require() -> tuple[Any, Any, Any]:
@@ -299,22 +297,12 @@ def media_card(shot: int, path: Path, run_dir: Path) -> Any:
     view = art.file_url_for_path(shot, path, run_dir, download=False)
     dl = art.file_url_for_path(shot, path, run_dir, download=True)
     is_gif = path.suffix.lower() == ".gif"
-    # Verify the URL path is servable; if not, fall back to data URI for small images.
-    img_src = view
-    if art.safe_resolve_under(run_dir, rel) is None:
-        try:
-            small = Path(path).stat().st_size < 2_500_000
-        except OSError:
-            small = False
-        if small:
-            uri = art.file_to_data_uri(path)
-            if uri:
-                img_src = uri
+    # Always use the file server URL — never inline data-URIs (slow + huge payloads).
     return html.Div(
         [
             html.Div(
                 html.Img(
-                    src=img_src,
+                    src=view,
                     alt=Path(rel).name,
                     className="media-img",
                 ),
@@ -345,13 +333,40 @@ def media_gallery(shot: int, paths: List[Path], run_dir: Path, empty: str) -> An
         return html.P(empty, className="text-muted")
     shown = paths[:_MAX_GALLERY]
     cols = [dbc.Col(media_card(shot, p, run_dir), xs=12, md=6, xl=4) for p in shown]
-    extra = ""
+    extra = None
     if len(paths) > _MAX_GALLERY:
         extra = html.P(
             f"Showing {_MAX_GALLERY} of {len(paths)} — download the ZIP for the full set.",
             className="small text-muted mt-2 mb-0",
         )
     return html.Div([dbc.Row(cols, className="g-3"), extra])
+
+
+def file_link_list(shot: int, paths: List[Path], run_dir: Path, *, empty: str, limit: int = 24) -> Any:
+    """Fast expert list: open/download links only (no embedded images)."""
+    html, _, _ = _require()
+    if not paths:
+        return html.P(empty, className="text-muted small mb-0")
+    items = []
+    for p in paths[:limit]:
+        rel = art.rel_posix(p, run_dir)
+        items.append(
+            html.Li(
+                [
+                    html.Code(Path(rel).name, className="me-2"),
+                    html.A("Open", href=art.file_url_for_path(shot, p, run_dir), target="_blank", className="me-2"),
+                    html.A("Download", href=art.file_url_for_path(shot, p, run_dir, download=True)),
+                    html.Span(f"  {rel}", className="text-muted small ms-2 d-none d-md-inline"),
+                ],
+                className="file-link-item",
+            )
+        )
+    kids: List[Any] = [html.Ul(items, className="file-link-list mb-1")]
+    if len(paths) > limit:
+        kids.append(
+            html.P(f"Showing {limit} of {len(paths)} — use Files tab or ZIP for the rest.", className="small text-muted mb-0")
+        )
+    return html.Div(kids)
 
 
 def export_bar(shot: int, run_dir: Path) -> Any:
@@ -396,8 +411,35 @@ def export_bar(shot: int, run_dir: Path) -> Any:
 
 def downloads_table(shot: int, run_dir: Path) -> Any:
     html, _, dbc = _require()
+    # Prefer quick catalog + capped image/csv lists — avoid full tree walks.
+    items = list(art.catalog_quick(run_dir))
+    seen = {it["rel"] for it in items}
+    for group, paths in (
+        ("plots", art.measured_plot_paths(run_dir)[:24]),
+        ("residuals", art.residual_plot_paths(run_dir)[:16]),
+        ("efit", art.efit_plot_paths(run_dir)[:16]),
+        ("gifs", art.gif_paths(run_dir)[:8]),
+        ("csv", art.residual_csv_paths(run_dir)[:24]),
+    ):
+        for p in paths:
+            rel = art.rel_posix(p, run_dir)
+            if rel in seen or rel.startswith("..") or art.safe_resolve_under(run_dir, rel) is None:
+                continue
+            seen.add(rel)
+            try:
+                nbytes = p.stat().st_size
+            except OSError:
+                nbytes = 0
+            items.append(
+                {
+                    "rel": rel,
+                    "kind": p.suffix.lstrip(".").lower() or "file",
+                    "bytes": nbytes,
+                    "group": group,
+                }
+            )
     rows = []
-    for item in art.catalog_downloadables(run_dir)[:200]:
+    for item in items[:120]:
         rel = item["rel"]
         rows.append(
             html.Tr(
@@ -405,7 +447,7 @@ def downloads_table(shot: int, run_dir: Path) -> Any:
                     html.Td(item["group"]),
                     html.Td(item["kind"]),
                     html.Td(html.Code(rel, className="small")),
-                    html.Td(f"{item['bytes']:,}"),
+                    html.Td(f"{int(item['bytes']):,}"),
                     html.Td(
                         [
                             html.A("View", href=art.file_url(shot, rel), target="_blank", className="me-2"),
@@ -417,67 +459,69 @@ def downloads_table(shot: int, run_dir: Path) -> Any:
         )
     if not rows:
         return html.P("No downloadable artifacts yet.", className="text-muted")
-    return dbc.Table(
+    return html.Div(
         [
-            html.Thead(html.Tr([html.Th(h) for h in ("Group", "Type", "Path", "Bytes", "Actions")])),
-            html.Tbody(rows),
-        ],
-        bordered=False,
-        hover=True,
-        size="sm",
-        responsive=True,
-        className="downloads-table",
+            html.P(
+                "Capped listing for speed — Download ZIP for the full pack.",
+                className="small text-muted mb-2",
+            ),
+            dbc.Table(
+                [
+                    html.Thead(html.Tr([html.Th(h) for h in ("Group", "Type", "Path", "Bytes", "Actions")])),
+                    html.Tbody(rows),
+                ],
+                bordered=False,
+                hover=True,
+                size="sm",
+                responsive=True,
+                className="downloads-table",
+            ),
+        ]
     )
 
 
 def overview_panel(shot: int, run_dir: Path) -> Any:
     html, dcc, dbc = _require()
     kpis = art.overview_kpis(run_dir)
-    md = art.load_summary_markdown(run_dir)
     blocking = kpis.get("blocking") or []
-    # Compact SUMMARY: excerpt + download — avoid huge Markdown DOM (theme H1s + lag).
-    summary_body: Any
-    if md:
-        excerpt = md.strip()
-        truncated = len(excerpt) > _MAX_SUMMARY_CHARS
-        if truncated:
-            excerpt = excerpt[:_MAX_SUMMARY_CHARS].rstrip() + "\n\n… truncated in UI — open SUMMARY.md for the full write-up."
-        # Soften heading levels so browser theme H1/H2 do not dominate
-        soft_lines = []
-        for line in excerpt.splitlines():
-            if line.startswith("# "):
-                soft_lines.append("### " + line[2:])
-            elif line.startswith("## "):
-                soft_lines.append("#### " + line[3:])
-            else:
-                soft_lines.append(line)
-        soft_md = "\n".join(soft_lines)
-        summary_body = html.Div(
-            [
-                dcc.Markdown(soft_md, className="summary-md", dangerously_allow_html=False),
-                html.Div(
-                    [
-                        html.A(
-                            "Open SUMMARY.md",
-                            href=art.file_url(shot, "01_summary/SUMMARY.md"),
-                            target="_blank",
-                            className="btn btn-sm btn-outline-secondary me-1",
-                        ),
-                        html.A(
-                            "Download",
-                            href=art.file_url(shot, "01_summary/SUMMARY.md", download=True),
-                            className="btn btn-sm btn-outline-secondary",
-                        ),
-                    ],
-                    className="mt-2",
-                )
-                if art.safe_resolve_under(run_dir, "01_summary/SUMMARY.md")
-                else None,
-            ],
-            className="summary-wrap",
-        )
-    else:
-        summary_body = html.Pre(art.overview_text(run_dir), className="overview-pre")
+    # Keep Overview instant: no Markdown parse/render — link out to SUMMARY.md.
+    summary_body = html.Div(
+        [
+            html.P(
+                "SUMMARY is opened as a file for speed. Use the links below (or KPIs above) instead of in-page Markdown.",
+                className="small text-muted mb-2",
+            ),
+            html.Div(
+                [
+                    html.A(
+                        "Open SUMMARY.md",
+                        href=art.file_url(shot, "01_summary/SUMMARY.md"),
+                        target="_blank",
+                        className="btn btn-sm btn-outline-secondary me-1",
+                    )
+                    if art.safe_resolve_under(run_dir, "01_summary/SUMMARY.md")
+                    else None,
+                    html.A(
+                        "SUMMARY.json",
+                        href=art.file_url(shot, "01_summary/SUMMARY.json"),
+                        target="_blank",
+                        className="btn btn-sm btn-outline-secondary me-1",
+                    )
+                    if art.safe_resolve_under(run_dir, "01_summary/SUMMARY.json")
+                    else None,
+                    html.A(
+                        "Download SUMMARY.md",
+                        href=art.file_url(shot, "01_summary/SUMMARY.md", download=True),
+                        className="btn btn-sm btn-outline-secondary",
+                    )
+                    if art.safe_resolve_under(run_dir, "01_summary/SUMMARY.md")
+                    else None,
+                ]
+            ),
+            html.Pre(art.overview_text(run_dir), className="overview-pre mt-3"),
+        ],
+        className="summary-wrap",
+    )
     blocking_body = None
     if blocking:
         blocking_body = dbc.Alert(
@@ -488,8 +532,7 @@ def overview_panel(shot: int, run_dir: Path) -> Any:
         [
             tab_banner(
                 "Science overview",
-                "Status, formed-plasma window, and SUMMARY for this reconstruction. "
-                "Expand a section only when you need detail.",
+                "Status, formed-plasma window, and KPIs. Expand only what you need — SUMMARY opens as a file for speed.",
             ),
             quick_links(shot, run_dir),
             accordion(
@@ -497,19 +540,11 @@ def overview_panel(shot: int, run_dir: Path) -> Any:
                     ("Key performance indicators", kpi_strip(kpis), False),
                     ("Blocking errors", blocking_body, False),
                     ("Downloads", export_bar(shot, run_dir), False),
-                    ("SUMMARY.md", summary_body, False),
+                    ("SUMMARY (file links + text digest)", summary_body, False),
                 ]
             ),
         ]
     )
-
-
-def _downsample_df(df: Any, max_points: int = _MAX_PLOT_POINTS) -> Any:
-    n = len(df)
-    if n <= max_points:
-        return df
-    step = max(1, n // max_points)
-    return df.iloc[::step].copy()
 
 
 def residuals_panel(shot: int, run_dir: Path) -> Any:
@@ -517,7 +552,6 @@ def residuals_panel(shot: int, run_dir: Path) -> Any:
     metrics = art.load_metrics(run_dir)
     rows = art.metrics_table_rows(metrics)
     table_body: Any = None
-    charts_body: List[Any] = []
     if metrics:
         table_body = [
             html.P(
@@ -552,7 +586,7 @@ def residuals_panel(shot: int, run_dir: Path) -> Any:
             )
         )
         csv_links = []
-        for csv_path in art.residual_csv_paths(run_dir):
+        for csv_path in art.residual_csv_paths(run_dir)[:24]:
             rel = art.rel_posix(csv_path, run_dir)
             csv_links.append(
                 html.A(
@@ -564,100 +598,30 @@ def residuals_panel(shot: int, run_dir: Path) -> Any:
         if csv_links:
             table_body.append(html.Div([html.Span("CSV: ", className="small text-muted")] + csv_links))
 
-    try:
-        import pandas as pd
-        import plotly.graph_objects as go
-        from plotly.subplots import make_subplots
-    except ImportError:
-        pd = None  # type: ignore
-        go = None  # type: ignore
-        make_subplots = None  # type: ignore
+    pngs = file_link_list(
+        shot,
+        art.residual_plot_paths(run_dir),
+        run_dir,
+        empty="No residual PNGs under report/key_plots/.",
+        limit=_MAX_FILE_LINKS,
+    )
+    # One small gallery only (optional visual) — avoids Plotly parse cost on every tab open.
+    preview_paths = art.residual_plot_paths(run_dir)[:_MAX_GALLERY]
+    charts_body = media_gallery(shot, preview_paths, run_dir, "No residual preview plots.") if preview_paths else None
 
-    csvs = art.residual_csv_paths(run_dir)
-    if pd is not None and go is not None and csvs:
-        plot_cfg = {
-            "displaylogo": False,
-            "responsive": True,
-            "modeBarButtonsToRemove": ["lasso2d", "select2d"],
-            "toImageButtonOptions": {"format": "png"},
-        }
-        for csv_path in csvs[:_MAX_RESIDUAL_CHARTS]:
-            try:
-                df = pd.read_csv(csv_path)
-            except Exception:
-                continue
-            if "time" not in df.columns:
-                continue
-            df = _downsample_df(df)
-            layout_kw = dict(
-                height=360,
-                margin=dict(l=48, r=20, t=40, b=36),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02),
-                template="plotly_dark",
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(11,16,23,0.45)",
-                font=dict(size=11),
-                uirevision=csv_path.name,
-            )
-            if "exp" in df.columns and "syn" in df.columns and make_subplots is not None:
-                fig = make_subplots(
-                    rows=2,
-                    cols=1,
-                    shared_xaxes=True,
-                    subplot_titles=("exp vs syn", "residual"),
-                    vertical_spacing=0.1,
-                )
-                fig.add_trace(
-                    go.Scattergl(x=df["time"], y=df["exp"], name="exp", mode="lines", line=dict(width=1.4)),
-                    row=1,
-                    col=1,
-                )
-                fig.add_trace(
-                    go.Scattergl(x=df["time"], y=df["syn"], name="syn", mode="lines", line=dict(width=1.4)),
-                    row=1,
-                    col=1,
-                )
-                if "residual" in df.columns:
-                    fig.add_trace(
-                        go.Scattergl(
-                            x=df["time"],
-                            y=df["residual"],
-                            name="residual",
-                            mode="lines",
-                            line=dict(width=1.2, color="#c45c26"),
-                        ),
-                        row=2,
-                        col=1,
-                    )
-                fig.update_layout(title_text=csv_path.name, **layout_kw)
-            else:
-                fig = go.Figure()
-                ycol = "residual" if "residual" in df.columns else df.columns[1]
-                fig.add_trace(go.Scattergl(x=df["time"], y=df[ycol], name=ycol, mode="lines"))
-                fig.update_layout(title=csv_path.name, **layout_kw)
-            charts_body.append(dcc.Graph(figure=fig, config=plot_cfg, className="residual-graph"))
-        if len(csvs) > _MAX_RESIDUAL_CHARTS:
-            charts_body.append(
-                html.P(
-                    f"Showing {_MAX_RESIDUAL_CHARTS} of {len(csvs)} interactive charts — open CSVs or ZIP for the rest.",
-                    className="small text-muted",
-                )
-            )
-
-    pngs = media_gallery(shot, art.residual_plot_paths(run_dir), run_dir, "No residual PNGs under report/key_plots/.")
     if not table_body and not charts_body:
         return empty_state("No residuals yet", "Run the pipeline with contract metrics enabled.")
     return html.Div(
         [
             tab_banner(
                 "Contract residuals",
-                "FreeGSNKE synthetic vs experimental contracts. Expand charts only when you need them.",
+                "Metrics table first. Plotly charts are skipped for speed — open PNGs/CSVs, or use the light preview below.",
             ),
             accordion(
                 [
-                    ("Metrics table & CSV", html.Div(table_body) if table_body else None, True),
-                    ("Interactive traces", html.Div(charts_body) if charts_body else None, False),
-                    ("Saved residual PNGs", pngs, False),
+                    ("Metrics table & CSV", html.Div(table_body) if table_body else None, False),
+                    ("Residual PNG links", pngs, False),
+                    ("Light PNG preview", charts_body, False),
                 ]
             ),
         ]
@@ -723,11 +687,27 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
             ),
             accordion(
                 [
-                    ("COMPARE.json fields", compare_body, True),
+                    ("COMPARE.json fields", compare_body, False),
                     ("Shape scorecard", score_body, False),
                     (
                         "EFIT plots",
-                        media_gallery(shot, art.efit_plot_paths(run_dir), run_dir, "No EFIT compare plots yet."),
+                        file_link_list(
+                            shot,
+                            art.efit_plot_paths(run_dir),
+                            run_dir,
+                            empty="No EFIT compare plots yet.",
+                            limit=_MAX_FILE_LINKS,
+                        ),
+                        False,
+                    ),
+                    (
+                        "Light PNG preview",
+                        media_gallery(
+                            shot,
+                            art.efit_plot_paths(run_dir)[:_MAX_GALLERY],
+                            run_dir,
+                            "No EFIT compare plots yet.",
+                        ),
                         False,
                     ),
                 ]
@@ -811,7 +791,7 @@ def _csv_section_block(shot: int, run_dir: Path, section: str, items: List[Dict[
 
 
 def level2_panel(shot: int, run_dir: Path) -> Any:
-    """FAIR-MAST Level-2 measured pack: plots + CSVs in click-to-expand families."""
+    """FAIR-MAST Level-2 measured pack — link-first (fast); light preview only."""
     html, _, dbc = _require()
     from mast_freegsnke_ui import level2 as l2
 
@@ -825,11 +805,11 @@ def level2_panel(shot: int, run_dir: Path) -> Any:
             "Run the pipeline with enable_experimental_data so 02_measured_data/ is built from the FAIR-MAST extract.",
         )
 
-    def _plot_sec(key: str, title: str) -> Any:
+    def _plot_links(key: str, title: str) -> Any:
         paths = grouped.get(key) or []
         if not paths:
             return None
-        return media_gallery(shot, paths, run_dir, f"No {title} plots.")
+        return file_link_list(shot, paths, run_dir, empty=f"No {title} plots.", limit=_MAX_FILE_LINKS)
 
     index_bits: List[Any] = []
     if catalog:
@@ -843,39 +823,25 @@ def level2_panel(shot: int, run_dir: Path) -> Any:
         )
         if catalog.get("warnings"):
             index_bits.append(
-                html.Ul([html.Li(str(w)) for w in list(catalog.get("warnings") or [])[:8]], className="small")
+                html.Ul([html.Li(str(w)) for w in list(catalog.get("warnings") or [])[:6]], className="small")
             )
     else:
         index_bits.append(html.P("catalog.json not found — listing files from disk.", className="small text-muted"))
 
-    l1 = status.get("l1") or {}
-    l3 = status.get("l3") or {}
     opt = status.get("optional") or {}
     opt_groups = (opt.get("groups") or {}) if isinstance(opt, dict) else {}
     avail = [k for k, v in opt_groups.items() if isinstance(v, dict) and v.get("available")]
     missing = [k for k, v in opt_groups.items() if isinstance(v, dict) and not v.get("available")]
     if avail or missing:
         index_bits.append(
-            html.Div(
-                [
-                    html.P(
-                        f"Optional L2 diagnostics — available: {', '.join(avail) or 'none'} · "
-                        f"missing (warn only): {', '.join(missing) or 'none'}",
-                        className="small mb-1",
-                    ),
-                    html.A(
-                        "optional_diagnostics.json",
-                        href=art.file_url(shot, "02_measured_data/00_index/optional_diagnostics.json"),
-                        target="_blank",
-                        className="btn btn-sm btn-outline-secondary",
-                    )
-                    if art.safe_resolve_under(run_dir, "02_measured_data/00_index/optional_diagnostics.json")
-                    else None,
-                ],
-                className="mb-2",
+            html.P(
+                f"Optional L2 — available: {', '.join(avail) or 'none'} · missing (warn): {', '.join(missing) or 'none'}",
+                className="small mb-0",
             )
         )
 
+    l1 = status.get("l1") or {}
+    l3 = status.get("l3") or {}
     meta_body = html.Div(
         [
             html.P(
@@ -916,9 +882,21 @@ def level2_panel(shot: int, run_dir: Path) -> Any:
 
     def _fam(key: str, title: str) -> List[tuple]:
         return [
-            (f"{title} — plots", _plot_sec(key, title), False),
+            (f"{title} — plots", _plot_links(key, title), False),
             (f"{title} — CSV", _csv_section_block(shot, run_dir, key, csvs), False),
         ]
+
+    # Tiny inline preview only (not every family) — keeps first paint fast.
+    preview = None
+    plasma_plots = (grouped.get("plasma") or [])[:2]
+    if plasma_plots:
+        preview = html.Div(
+            [
+                html.Div("Quick preview (plasma)", className="fg-quick-label mb-2"),
+                media_gallery(shot, plasma_plots, run_dir, ""),
+            ],
+            className="mb-3",
+        )
 
     sections: List[tuple] = [
         ("Index & availability", html.Div(index_bits), False),
@@ -935,28 +913,16 @@ def level2_panel(shot: int, run_dir: Path) -> Any:
         *_fam("gas", "Gas injection"),
         *_fam("equilibrium_l2", "Equilibrium L2 scalars"),
         ("L1 / L3 status", meta_body, False),
-        (
-            "All Level-2 plots (capped)",
-            media_gallery(
-                shot,
-                art.measured_plot_paths(run_dir)[:_MAX_GALLERY],
-                run_dir,
-                "No plots under 05_plots/.",
-            ),
-            False,
-        ),
     ]
     return html.Div(
         [
             tab_banner(
                 "FAIR-MAST Level-2 measured data",
-                "Plasma · PF · magnetics · geometry plus optional diagnostics "
-                "(summary, Soft X-rays, Thomson, CXRS, gas, …). "
-                "Missing optional groups are warnings only — expand a family for plots and CSV.",
+                "Link-first browser for speed — Open plots/CSV in a new tab. Expand a family for the file list.",
             ),
             html.Div(
                 [
-                    html.Span("Families", className="fg-quick-label"),
+                    html.Span("Present", className="fg-quick-label"),
                     html.Div(
                         [
                             html.Span(lab, className="fg-family-pill")
@@ -979,6 +945,7 @@ def level2_panel(shot: int, run_dir: Path) -> Any:
                 ],
                 className="fg-quick-bar mb-3",
             ),
+            preview,
             accordion(sections, always_open=True),
         ]
     )
