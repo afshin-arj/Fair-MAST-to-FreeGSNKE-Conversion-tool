@@ -20,21 +20,28 @@ Version **11.10.0**.
 ## Quick start (shot number only)
 
 ```bash
-# Windows
+# Fresh machine (Windows) — one shot bootstrap
+setup_fresh.cmd
+
+# Then run
 run_pipeline.cmd
 # prompts ONLY for shot number(s)
+
+# Or browser console
+run_ui.cmd
 
 # Non-interactive
 mast-freegsnke run --shot 30201 --config configs/default.json
 ```
 
-Requirements: Python 3.11+, `s5cmd`, FreeGSNKE in `.venv-freegsnke`, pipeline package in `.venv`.
+Requirements: Python 3.11+, `s5cmd`, FreeGSNKE in `.venv-freegsnke` (for execute), pipeline package in `.venv`.
 
 ```bash
-# Fresh machine (pipeline venv)
+# Manual equivalent of setup_fresh.cmd
 py -3.11 -m venv .venv
 .venv\Scripts\python -m pip install -U pip
 .venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -m pip install -e ".[ui]"
 python scripts/ensure_s5cmd.py
 python scripts/ensure_freegsnke_env.py
 ```
@@ -45,6 +52,28 @@ mast-freegsnke doctor --config configs/default.json
 
 After a run, open `SHOT/<N>/00_START_HERE.txt`. EFIT insights are under `04_efit_compare/`
 (FAIR-MAST EFIT++ archive vs FreeGSNKE — not a live efit-ai / Py-EFIT solve; see ADR-002/003).
+
+Level-2 measured pack (`02_measured_data/`) includes FreeGSNKE inputs **and** optional FAIR-MAST diagnostics
+when present on the shot (summary, Soft X-rays, Thomson, CXRS, gas injection, … — see
+[mastapp Level-2 catalog](https://mastapp.site/level2-data.html)). Missing optional groups are **warnings only**.
+
+### UI (optional)
+
+Local Dash app: enter a shot number → run the pipeline with live stage status, or open an existing `SHOT/<N>/`.
+
+```bash
+# Windows (after setup_fresh.cmd)
+run_ui.cmd
+
+# Or
+.venv\Scripts\python -m pip install -e ".[ui]"
+mast-freegsnke ui --config configs/default.json
+# → opens http://127.0.0.1:8050 (use --no-browser to skip)
+```
+
+Happy path still uses `configs/default.json` (no extra prompts). Live progress is written to `SHOT/<N>/progress.json`.
+
+In the browser: Overview KPIs, **Level-2** (plots + CSV by diagnostic family), Residuals, EFIT, GIFs, Authorities, and **Files** with View/Download plus **Download ZIP**.
 
 ---
 

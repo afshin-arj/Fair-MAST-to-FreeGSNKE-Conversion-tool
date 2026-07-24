@@ -35,6 +35,14 @@ _SUBDIRS = (
     "03_magnetics",
     "04_geometry",
     "05_plots",
+    "06_summary",
+    "07_pulse_schedule",
+    "08_spectrometer_visible",
+    "09_soft_x_rays",
+    "10_thomson_scattering",
+    "11_charge_exchange",
+    "12_gas_injection",
+    "13_equilibrium_l2",
     "l1",
     "l3",
 )
@@ -326,8 +334,12 @@ def _write_readme(path: Path, shot: int) -> None:
                 "  03_magnetics/ flux loops, pickups, audit_* (uncalibrated)",
                 "  04_geometry/  limiter / geometry exports",
                 "  05_plots/     PNG figures (matplotlib Agg — headless portable)",
+                "  06_summary/ … 13_equilibrium_l2/  optional L2 diagnostics (warn if missing)",
                 "  l1/           Level-1 inventory / optional exports",
                 "  l3/           Level-3 status (not wired in pipeline)",
+                "",
+                "Optional groups (Soft X-rays, Thomson, CXRS, …) follow mastapp.site/level2-data.html.",
+                "Missing optional groups are warnings only — never invented.",
                 "",
                 "Rules: measured vs derived are labeled in catalog.json.",
                 "Never invent V→T calibrations, resistivity, or missing PF voltages.",
@@ -741,6 +753,23 @@ def build_experimental_data(
                 )
             except Exception as e:
                 report.warnings.append(f"plots_failed:{type(e).__name__}:{e}")
+
+    # --- optional FAIR-MAST L2 diagnostics (Soft X-rays, Thomson, …) — warn only ---
+    try:
+        from mast_freegsnke.level2_diagnostics import export_optional_diagnostics
+
+        export_optional_diagnostics(
+            cache_dir=Path(cache_dir) if cache_dir else None,
+            measured_root=root,
+            run_dir=run_dir,
+            shot=shot,
+            window=window,
+            plots=bool(plots),
+            report=report,
+            catalog=catalog,
+        )
+    except Exception as e:
+        report.warnings.append(f"optional_diagnostics_failed:{type(e).__name__}:{e}")
 
     catalog["plots"] = list(report.plots_written)
     catalog["warnings"] = list(report.warnings)

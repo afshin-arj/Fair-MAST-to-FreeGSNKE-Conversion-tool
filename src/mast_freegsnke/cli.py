@@ -191,6 +191,21 @@ def main(argv=None) -> int:
     rg.add_argument("--max-mfe-red-increase", type=int, default=0, help="Maximum allowed increase in MFE-RED tier count (default 0)")
     rg.add_argument("--max-mfe-median-worst-rel-deg-increase", type=float, default=0.0, help="Maximum allowed increase in median MFE worst-relative-degradation (default 0.0)")
 
+    ui = sub.add_parser(
+        "ui",
+        help="Launch shot-only Dash UI (run + browse SHOT/<N>); requires pip install -e '.[ui]'",
+    )
+    ui.add_argument("--port", type=int, default=8050)
+    ui.add_argument("--host", type=str, default="127.0.0.1")
+    ui.add_argument("--runs-dir", type=str, default=None, help="Override runs dir (default: config runs_dir or SHOT)")
+    ui.add_argument("--config", type=str, default="configs/default.json")
+    ui.add_argument("--debug", action="store_true")
+    ui.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Do not auto-open the system browser",
+    )
+
     r = sub.add_parser("run", help="Run pipeline for one shot (--shot) or a batch (--shots)")
     r.add_argument("--shot", type=int, default=None, help="Single MAST shot number")
     r.add_argument("--shots", type=int, nargs="+", default=None, help="Multiple MAST shot numbers (batch; worst exit code)")
@@ -252,6 +267,30 @@ def main(argv=None) -> int:
     templates_dir = Path(__file__).resolve().parents[2] / "templates"
     if hasattr(args, "config") and getattr(args, "config") is not None:
         cfg = AppConfig.load(Path(args.config))
+
+    if args.cmd == "ui":
+        runs = args.runs_dir
+        if runs is None:
+            runs = cfg.runs_dir if cfg is not None else "SHOT"
+        try:
+            from mast_freegsnke_ui.app import run_server
+        except ImportError as e:
+            print(
+                "[FAIL] UI package/deps not available. Install with:\n"
+                '  python -m pip install -e ".[ui]"\n'
+                f"Detail: {e}"
+            )
+            return 1
+        run_server(
+            repo_root=Path.cwd(),
+            runs_dir=Path(runs),
+            config_path=Path(args.config),
+            host=str(args.host),
+            port=int(args.port),
+            debug=bool(args.debug),
+            open_browser=not bool(args.no_browser),
+        )
+        return 0
 
     if args.cmd == "doctor":
         ok = True

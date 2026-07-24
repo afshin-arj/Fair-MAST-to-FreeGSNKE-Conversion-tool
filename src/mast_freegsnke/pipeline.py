@@ -2,17 +2,17 @@
 from __future__ import annotations
 
 import json
+import os
 import platform
 import shutil
 import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-from .availability import check_groups
 from .config import AppConfig, cache_dir_for_shot, run_dir_for_shot
-from .download import BulkDownloader, build_cache_report, group_cache_hit
+from .download import BulkDownloader, build_cache_report, check_groups_respecting_cache, group_cache_hit
 from .extract import Extractor
 from .generate import ScriptGenerator
 from .mastapp import MastAppClient
@@ -63,6 +63,118 @@ def _resolve_config_path(raw: Optional[str], repo_root: Path) -> Optional[Path]:
     return p
 
 
+# Compatibility junctions created by shot_layout (redirects, not primary content).
+_LAYOUT_SHIM_NAMES = frozenset(
+    {
+        "contracts",
+        "metrics",
+        "provenance",
+        "machine_authority_snapshot",
+        "experimental_data",
+        "synthetic",
+        "presentation",
+        "evolutive",
+        "downstream",
+    }
+)
+
+
+def _is_windows_reparse_point(path: Path) -> bool:
+    """True for Windows junctions/symlinks (layout shims)."""
+    if os.name != "nt":
+        return path.is_symlink()
+    try:
+        if path.is_symlink():
+            return True
+        st = path.lstat()
+        return bool(getattr(st, "st_file_attributes", 0) & 0x400)
+    except OSError:
+        return False
+
+
+def _remove_layout_shim(path: Path) -> None:
+    """Remove a junction/symlink shim without deleting its target content."""
+    try:
+        path.unlink()
+    except OSError:
+        # Directory junction fallback
+        try:
+            path.rmdir()
+        except OSError:
+            pass
+
+
+def _strip_reparse_points(root: Path, *, max_depth: int = 3) -> int:
+    """Remove junction/symlink shims under ``root`` (shallow). Returns count removed.
+
+    Archived Windows junctions keep *absolute* targets into the live SHOT tree.
+    After a re-run moves ``06_authorities/``, those history junctions break and
+    directory walks raise ``FileNotFoundError``. Drop the reparse points; the
+    real content already lives under numbered folders in the same archive.
+    """
+    if not root.is_dir() or _is_windows_reparse_point(root):
+        return 0
+    removed = 0
+    # Top-down by depth so we only scan a few levels (history/<ts>/…).
+    stack: List[Tuple[Path, int]] = [(root, 0)]
+    while stack:
+        cur, depth = stack.pop()
+        try:
+            children = list(cur.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            if _is_windows_reparse_point(child):
+                _remove_layout_shim(child)
+                removed += 1
+                continue
+            if depth < max_depth and child.is_dir():
+                stack.append((child, depth + 1))
+    return removed
+
+
+def _sanitize_history_reparse_points(run_dir: Path) -> int:
+    """Strip dangling layout junctions from all ``history/<ts>/`` archives."""
+    hist = Path(run_dir) / "history"
+    if not hist.is_dir():
+        return 0
+    total = 0
+    try:
+        entries = list(hist.iterdir())
+    except OSError:
+        return 0
+    for entry in entries:
+        if entry.is_dir() and not _is_windows_reparse_point(entry):
+            total += _strip_reparse_points(entry, max_depth=2)
+    return total
+
+
+def _robust_move(src: Path, dst: Path) -> None:
+    """Move with Windows-friendly retries (AV / explorer locks)."""
+    last: Optional[BaseException] = None
+    for attempt in range(6):
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(src), str(dst))
+            return
+        except PermissionError as e:
+            last = e
+            time.sleep(0.15 * (attempt + 1))
+        except OSError as e:
+            last = e
+            time.sleep(0.15 * (attempt + 1))
+    # Last resort: copytree then remove (handles stubborn directory locks).
+    try:
+        if src.is_dir() and not _is_windows_reparse_point(src):
+            shutil.copytree(src, dst, dirs_exist_ok=True)
+            shutil.rmtree(src, ignore_errors=True)
+            if not src.exists():
+                return
+    except OSError as e:
+        last = e
+    raise PermissionError(f"Could not archive {src} -> {dst}: {last}") from last
+
+
 def _archive_prior_run(run_dir: Path) -> Optional[str]:
     """Archive a previous run of the same shot into <run_dir>/history/<ts>/.
 
@@ -71,8 +183,17 @@ def _archive_prior_run(run_dir: Path) -> Optional[str]:
     folder is always a single clean, auditable run. Prior runs are preserved,
     never deleted.
 
+    Layout junctions (``contracts`` → ``06_authorities/contracts``, etc.) are
+    removed rather than archived — the real trees are moved via their numbered
+    destinations. Archiving junctions previously left broken reparse points that
+    made ``provenance_lock`` fail with PermissionError / FileNotFoundError on Windows.
+
     Returns the history subpath (relative to run_dir) if archiving happened.
     """
+    run_dir = Path(run_dir)
+    # Always scrub old archives first — absolute-target junctions go stale on re-run.
+    _sanitize_history_reparse_points(run_dir)
+
     if not (run_dir / "manifest.json").exists():
         return None
     ts = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
@@ -82,10 +203,28 @@ def _archive_prior_run(run_dir: Path) -> Optional[str]:
         n += 1
         hist = run_dir / "history" / f"{ts}_{n}"
     hist.mkdir(parents=True)
-    for child in sorted(run_dir.iterdir(), key=lambda p: p.name):
+    # Drop every reparse shim; move only real trees / files.
+    children = sorted(run_dir.iterdir(), key=lambda p: p.name)
+    for child in children:
         if child.name == "history":
             continue
-        shutil.move(str(child), str(hist / child.name))
+        if _is_windows_reparse_point(child):
+            _remove_layout_shim(child)
+            continue
+        if child.name in _LAYOUT_SHIM_NAMES and child.is_dir():
+            # Pointer folder with only MOVED.txt — archive the stub.
+            try:
+                marker = child / "MOVED.txt"
+                n_entries = sum(1 for _ in child.iterdir())
+            except OSError:
+                marker = None
+                n_entries = 0
+            if marker is not None and marker.is_file() and n_entries <= 2:
+                _robust_move(child, hist / child.name)
+                continue
+        _robust_move(child, hist / child.name)
+    # Belt-and-suspenders: never leave reparse points inside the new archive.
+    _strip_reparse_points(hist, max_depth=2)
     return str(hist.relative_to(run_dir))
 
 
@@ -128,9 +267,23 @@ class ShotPipeline:
         prior_run_archived_to = _archive_prior_run(run_dir)
         inputs_dir = ensure_dir(run_dir / "inputs")
 
+        from .progress import write_run_progress
+
+        def _flush_progress(current_stage: Optional[str] = None) -> None:
+            write_run_progress(
+                run_dir,
+                shot=int(shot),
+                status=status,
+                stage_log=stage_log,
+                blocking_errors=blocking_errors,
+                current_stage=current_stage,
+            )
 
         def _stage(name: str, ok: bool, **kw: Any) -> None:
             stage_log.append({"stage": name, "ok": bool(ok), **kw})
+            _flush_progress(current_stage=name)
+
+        _flush_progress(current_stage=None)
 
         if prior_run_archived_to is not None:
             _stage("prior_run_archived", True, dest=prior_run_archived_to)
@@ -201,6 +354,9 @@ class ShotPipeline:
             }
             manifest.update(extra)
             write_json(run_dir / "manifest.json", manifest)
+            _flush_progress(
+                current_stage=stage_log[-1]["stage"] if stage_log else None
+            )
 
         cache_root = ensure_dir(self.cfg.cache_dir)
         shot_cache: Optional[Path] = None
@@ -212,6 +368,8 @@ class ShotPipeline:
 
         # Always attempt to write a manifest, even on failure.
         try:
+            status = "running"
+            _flush_progress(current_stage=stage_log[-1]["stage"] if stage_log else None)
             shot_cache_candidate = cache_dir_for_shot(self.cfg, shot)
             all_groups_cached = bool(self.cfg.allow_cache_reuse) and all(
                 group_cache_hit(shot_cache_candidate, g) for g in self.cfg.required_groups
@@ -231,30 +389,50 @@ class ShotPipeline:
                     True,
                     shot_cache=str(shot_cache),
                     cache_hits=sorted(download_report.keys()),
+                    synced=[],
+                    note="local_cache_only_no_s3_sync",
                     download_report=download_report,
                 )
-                # Optional audit groups still attempted (best-effort; may use cache).
+                # Optional audit groups: skip network entirely when all are cached.
                 if self.cfg.optional_groups:
-                    dl_opt = BulkDownloader(
-                        s5cmd_path=self.cfg.s5cmd_path,
-                        level2_s3_prefix=self.cfg.level2_s3_prefix,
-                        layout_patterns=self.cfg.s3_layout_patterns,
-                        s3_endpoint_url=self.cfg.s3_endpoint_url,
-                        s3_no_sign_request=self.cfg.s3_no_sign_request,
-                        timeout_s=self.cfg.s5cmd_timeout_s,
-                    )
-                    opt_rep = dl_opt.download_optional_groups(
-                        shot,
-                        list(self.cfg.optional_groups),
-                        shot_cache,
-                        allow_cache_reuse=bool(self.cfg.allow_cache_reuse),
-                    )
-                    download_report.update(opt_rep)
-                    _stage(
-                        "download_optional_groups",
-                        True,
-                        optional_report=opt_rep,
-                    )
+                    opt = list(self.cfg.optional_groups)
+                    if all(group_cache_hit(shot_cache, g) for g in opt):
+                        opt_rep = build_cache_report(shot_cache, opt)
+                        for g in opt_rep:
+                            opt_rep[g]["optional"] = True
+                            opt_rep[g]["ok"] = True
+                        download_report.update(opt_rep)
+                        write_json(shot_cache / "download_report.json", download_report)
+                        _stage(
+                            "download_optional_groups",
+                            True,
+                            note="skipped_all_optional_cached",
+                            cache_hits=sorted(opt),
+                            optional_report=opt_rep,
+                        )
+                    else:
+                        dl_opt = BulkDownloader(
+                            s5cmd_path=self.cfg.s5cmd_path,
+                            level2_s3_prefix=self.cfg.level2_s3_prefix,
+                            layout_patterns=self.cfg.s3_layout_patterns,
+                            s3_endpoint_url=self.cfg.s3_endpoint_url,
+                            s3_no_sign_request=self.cfg.s3_no_sign_request,
+                            timeout_s=self.cfg.s5cmd_timeout_s,
+                        )
+                        opt_rep = dl_opt.download_optional_groups(
+                            shot,
+                            opt,
+                            shot_cache,
+                            allow_cache_reuse=bool(self.cfg.allow_cache_reuse),
+                        )
+                        download_report.update(opt_rep)
+                        _stage(
+                            "download_optional_groups",
+                            True,
+                            optional_report=opt_rep,
+                            cache_hits=sorted(g for g, r in opt_rep.items() if r.get("cache_hit")),
+                            synced=sorted(g for g, r in opt_rep.items() if not r.get("cache_hit")),
+                        )
             else:
                 client = MastAppClient(base_url=self.cfg.mastapp_base_url)
                 if not client.shot_exists(shot):
@@ -274,15 +452,31 @@ class ShotPipeline:
                 dl.preflight(shot)
                 _stage("s3_shot_preflight", True, endpoint=self.cfg.s3_endpoint_url, no_sign=bool(self.cfg.s3_no_sign_request), timeout_s=int(self.cfg.s5cmd_timeout_s))
 
-                # Pre-check group availability (no downloads yet)
-                avail = check_groups(shot=shot, groups=self.cfg.required_groups, discover=dl.discover_group_path)
+                # Pre-check group availability — skip S3 ls for groups already in local cache.
+                avail = check_groups_respecting_cache(
+                    shot=shot,
+                    groups=self.cfg.required_groups,
+                    discover=dl.discover_group_path,
+                    shot_cache=shot_cache_candidate,
+                    allow_cache_reuse=bool(self.cfg.allow_cache_reuse),
+                )
                 write_json(shot_cache_candidate / "availability.json", {k: v.__dict__ for k, v in avail.items()})
                 missing = [k for k, v in avail.items() if not v.exists]
                 if missing:
                     raise RuntimeError("Required Level-2 groups missing for shot {}: {}".format(shot, ", ".join(missing)))
-                _stage("availability_check", True, groups_ok=list(avail.keys()))
+                cached_avail = [
+                    k
+                    for k, v in avail.items()
+                    if v.exists and isinstance(v.s3_path, str) and str(v.s3_path).startswith("local-cache:")
+                ]
+                _stage(
+                    "availability_check",
+                    True,
+                    groups_ok=list(avail.keys()),
+                    cache_hits=sorted(cached_avail),
+                )
 
-                # Download now that availability is confirmed
+                # Download only missing groups (cache hits are not re-synced).
                 shot_cache, download_report = dl.download_groups(
                     shot,
                     self.cfg.required_groups,
@@ -294,6 +488,7 @@ class ShotPipeline:
                     True,
                     shot_cache=str(shot_cache),
                     cache_hits=sorted(g for g, r in download_report.items() if r.get("cache_hit")),
+                    synced=sorted(g for g, r in download_report.items() if not r.get("cache_hit")),
                     download_report=download_report,
                 )
                 if self.cfg.optional_groups:
@@ -304,7 +499,13 @@ class ShotPipeline:
                         allow_cache_reuse=bool(self.cfg.allow_cache_reuse),
                     )
                     download_report.update(opt_rep)
-                    _stage("download_optional_groups", True, optional_report=opt_rep)
+                    _stage(
+                        "download_optional_groups",
+                        True,
+                        optional_report=opt_rep,
+                        cache_hits=sorted(g for g, r in opt_rep.items() if r.get("cache_hit")),
+                        synced=sorted(g for g, r in opt_rep.items() if not r.get("cache_hit")),
+                    )
 
             # Rebuild classic MAST pickles when wall/pf_active fingerprints disagree.
             if (
@@ -1031,6 +1232,8 @@ class ShotPipeline:
 
             # Provenance before folder rearrange (writes provenance/ at run root)
             try:
+                # Scrub stale absolute-target junctions left in history/ from prior layouts.
+                _sanitize_history_reparse_points(run_dir)
                 base_manifest = json.loads((run_dir / "manifest.json").read_text())
                 hash_data_tree = shot_cache if (self.cfg.provenance_hash_data and shot_cache is not None) else None
                 prov_summary = write_provenance(run_dir=run_dir, repo_root=repo_root, hash_data_tree=hash_data_tree)

@@ -7,7 +7,14 @@
   ],
   "optional_groups": [
     "pf_passive",
-    "equilibrium"
+    "equilibrium",
+    "summary",
+    "pulse_schedule",
+    "spectrometer_visible",
+    "soft_x_rays",
+    "thomson_scattering",
+    "charge_exchange",
+    "gas_injection"
   ],
   "level2_s3_prefix": "s3://mast/level2/shots",
   "s5cmd_path": "s5cmd",

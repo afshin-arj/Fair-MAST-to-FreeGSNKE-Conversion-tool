@@ -7,6 +7,7 @@ import subprocess
 import json
 
 from .util import run_cmd, looks_like_exists_s5cmd_ls, resolve_s5cmd_path, shot_cache_dir
+from .availability import GroupAvailability, check_groups
 
 
 def group_cache_stats(shot_dir: Path, group: str) -> Tuple[int, int]:
@@ -57,6 +58,35 @@ def build_cache_report(shot_dir: Path, groups: List[str]) -> Dict[str, Dict[str,
             "total_bytes": total_bytes,
         }
     return report
+
+
+def check_groups_respecting_cache(
+    shot: int,
+    groups: List[str],
+    *,
+    discover,
+    shot_cache: Path,
+    allow_cache_reuse: bool,
+) -> Dict[str, GroupAvailability]:
+    """Skip S3 discovery for groups already present under data_cache/shot_<N>/."""
+    shot_cache = Path(shot_cache)
+    prior = load_prior_resolved_paths(shot_cache)
+    out: Dict[str, GroupAvailability] = {}
+    need: List[str] = []
+    for g in groups:
+        if allow_cache_reuse and group_cache_hit(shot_cache, g):
+            out[g] = GroupAvailability(
+                group=g,
+                exists=True,
+                s3_path=prior.get(g) or f"local-cache:{g}.zarr",
+                error=None,
+            )
+        else:
+            need.append(g)
+    if need:
+        out.update(check_groups(shot=shot, groups=need, discover=discover))
+    return out
+
 
 @dataclass
 class BulkDownloader:

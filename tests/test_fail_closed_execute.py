@@ -84,7 +84,10 @@ def test_execute_skipped_when_blocking_errors(tmp_path: Path, monkeypatch) -> No
 
     @dataclass
     class FakeAvail:
+        group: str = ""
         exists: bool = True
+        s3_path: str = "s3://bucket/fake"
+        error: object = None
 
     class FailingExtractor:
         def __init__(self, **kw):
@@ -110,7 +113,11 @@ def test_execute_skipped_when_blocking_errors(tmp_path: Path, monkeypatch) -> No
 
     monkeypatch.setattr(pl, "MastAppClient", FakeClient)
     monkeypatch.setattr(pl, "BulkDownloader", FakeDownloader)
-    monkeypatch.setattr(pl, "check_groups", lambda shot, groups, discover: {g: FakeAvail() for g in groups})
+
+    def _fake_avail(*, shot, groups, discover, shot_cache, allow_cache_reuse):
+        return {g: FakeAvail(group=g) for g in groups}
+
+    monkeypatch.setattr(pl, "check_groups_respecting_cache", _fake_avail)
     monkeypatch.setattr(pl, "Extractor", FailingExtractor)
     monkeypatch.setattr(pl, "ScriptGenerator", FakeGenerator)
     monkeypatch.setattr(pl, "FreeGSNKERunner", FakeRunner)

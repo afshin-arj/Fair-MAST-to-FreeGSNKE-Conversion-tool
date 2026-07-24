@@ -12,28 +12,97 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from .util import ensure_dir, sha256_file, write_json
 
 
-def _iter_files(root: Path, exclude_dirs: Tuple[str, ...] = (".git", "__pycache__", ".pytest_cache")) -> Iterable[Path]:
+# Directories that must never be hashed into run provenance (archives, caches, venvs).
+_DEFAULT_HASH_EXCLUDE = (
+    ".git",
+    "__pycache__",
+    ".pytest_cache",
+    "provenance",
+    "history",
+    ".multitime_work",
+    ".venv",
+    ".venv-freegsnke",
+)
+
+
+def _is_reparse_point(path: Path) -> bool:
+    """True for symlinks and Windows junctions/mount-points (layout shims)."""
+    try:
+        if path.is_symlink():
+            return True
+        if os.name == "nt":
+            st = path.lstat()
+            # FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+            return bool(getattr(st, "st_file_attributes", 0) & 0x400)
+    except OSError:
+        return True
+    return False
+
+
+def _iter_files(root: Path, exclude_dirs: Tuple[str, ...] = _DEFAULT_HASH_EXCLUDE) -> Iterable[Path]:
+    """Yield regular files under ``root`` without following junctions or excluded dirs.
+
+    Windows layout junctions under ``history/`` keep absolute targets into the live
+    run tree. After a re-run archives ``06_authorities/``, those junctions break and
+    ``Path.rglob`` / ``os.scandir`` into them raises ``FileNotFoundError``. Prune
+    ``history`` (and other excludes) *before* descending, and never follow reparse
+    points.
+    """
     root = Path(root)
-    for p in root.rglob("*"):
-        if p.is_dir():
-            continue
-        rel_parts = p.relative_to(root).parts
-        if rel_parts and rel_parts[0] in exclude_dirs:
-            continue
-        if any(part in exclude_dirs for part in rel_parts):
-            continue
-        yield p
+    exclude = set(exclude_dirs)
+    if not root.is_dir():
+        return
+
+    for dirpath, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
+        base = Path(dirpath)
+        # Prune in-place so os.walk never descends into excluded / reparse dirs.
+        keep: List[str] = []
+        for name in dirnames:
+            if name in exclude:
+                continue
+            child = base / name
+            if _is_reparse_point(child):
+                continue
+            keep.append(name)
+        dirnames[:] = keep
+
+        for name in filenames:
+            fp = base / name
+            try:
+                if _is_reparse_point(fp):
+                    continue
+                if not fp.is_file():
+                    continue
+            except OSError:
+                continue
+            yield fp
 
 
-def hash_tree(root: Path, exclude_dirs: Tuple[str, ...] = (".git", "__pycache__", ".pytest_cache")) -> Dict[str, Any]:
+def hash_tree(root: Path, exclude_dirs: Tuple[str, ...] = _DEFAULT_HASH_EXCLUDE) -> Dict[str, Any]:
     root = Path(root)
     files: Dict[str, str] = {}
+    skipped: List[Dict[str, str]] = []
     total_bytes = 0
     for p in _iter_files(root, exclude_dirs=exclude_dirs):
-        rel = str(p.relative_to(root)).replace(os.sep, "/")
-        files[rel] = sha256_file(p)
-        total_bytes += p.stat().st_size
-    return {"root": str(root), "n_files": len(files), "total_bytes": int(total_bytes), "sha256": files}
+        try:
+            rel = str(p.relative_to(root)).replace(os.sep, "/")
+        except ValueError:
+            continue
+        try:
+            files[rel] = sha256_file(p)
+            total_bytes += p.stat().st_size
+        except OSError as e:
+            skipped.append({"path": rel, "error": f"{type(e).__name__}: {e}"})
+    out: Dict[str, Any] = {
+        "root": str(root),
+        "n_files": len(files),
+        "total_bytes": int(total_bytes),
+        "sha256": files,
+    }
+    if skipped:
+        out["skipped"] = skipped
+        out["n_skipped"] = len(skipped)
+    return out
 
 
 def env_fingerprint() -> Dict[str, Any]:
@@ -72,14 +141,28 @@ def git_state(repo_root: Path) -> Dict[str, Any]:
 def write_provenance(run_dir: Path, repo_root: Path, hash_data_tree: Optional[Path] = None) -> Dict[str, Any]:
     """Write provenance folder and return summary.
 
-    Always hashes run_dir (excluding provenance itself) and captures env + pip freeze.
-    Optionally hashes a data tree (e.g. downloaded cache) if hash_data_tree is provided.
+    Always hashes run_dir (excluding provenance / history / layout shims) and captures
+    env + pip freeze. Optionally hashes a data tree (e.g. downloaded cache) if
+    ``hash_data_tree`` is provided.
     """
     run_dir = Path(run_dir)
-    prov_dir = ensure_dir(run_dir / "provenance")
+    prov_path = run_dir / "provenance"
+    # Prior layouts leave ``provenance`` as a Windows junction into
+    # ``06_authorities/provenance``. If that target was archived/moved, mkdir fails
+    # with WinError 183 — drop the shim and create a real directory.
+    if _is_reparse_point(prov_path):
+        try:
+            prov_path.unlink()
+        except OSError:
+            try:
+                prov_path.rmdir()
+            except OSError:
+                pass
+    prov_dir = ensure_dir(prov_path)
 
-    # Hash run artifacts excluding provenance folder to avoid self-reference.
-    file_hashes = hash_tree(run_dir, exclude_dirs=(".git", "__pycache__", ".pytest_cache", "provenance"))
+    # Hash run artifacts excluding provenance + archived history (Windows junctions
+    # under history/ previously caused PermissionError / FileNotFoundError on re-runs).
+    file_hashes = hash_tree(run_dir, exclude_dirs=_DEFAULT_HASH_EXCLUDE)
     write_json(prov_dir / "file_hashes.json", file_hashes)
 
     env = env_fingerprint()
