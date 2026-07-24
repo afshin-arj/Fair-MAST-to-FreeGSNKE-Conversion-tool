@@ -1,210 +1,276 @@
-# fair-mast-freegsnke
+# Fair-MAST → FreeGSNKE
 
-**Shot-only** FAIR-MAST Level-2 → FreeGSNKE: static inverse/forward **and** evolutive forward, under explicit authorities, with residual metrics and full provenance.
+**Enter a MAST shot number. Everything else is automatic.**
 
-Enter one or more **MAST shot numbers**. Everything else is automatic.
+This toolkit downloads [FAIR-MAST](https://github.com/ukaea/fair-mast) Level-2 data, builds FreeGSNKE inputs under **explicit authorities**, runs static inverse / forward and evolutive reconstruction, scores diagnostic residuals, and writes a full provenance pack under `SHOT/<N>/`.
 
-```text
-shot number(s)  →  FAIR-MAST Level-2  →  FreeGSNKE inverse/forward/evolutive  →  SHOT/<N>/
+| | |
+|---|---|
+| **Happy path** | One shot number → download → reconstruct → metrics → provenance |
+| **Machine** | Classic MAST (not MAST-U) |
+| **Solver** | [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke) only |
+| **EFIT insight** | Compare to archived FAIR-MAST EFIT++ (not a live EFIT++ / Py-EFIT / efit-ai run) |
+| **Version** | **11.10.0** |
+
+```mermaid
+flowchart LR
+  A(["MAST shot N"]) --> B["FAIR-MAST Level-2<br/>S3 Zarr"]
+  B --> C["Authorities<br/>coil · voltage · machine · contracts"]
+  C --> D["FreeGSNKE<br/>inverse · forward · evolutive"]
+  D --> E(["SHOT/N/<br/>summary · plots · metrics · provenance"])
+
+  style A fill:#1a3a4a,stroke:#2ec4b3,color:#eaf0f7
+  style E fill:#1a3a4a,stroke:#2ec4b3,color:#eaf0f7
+  style B fill:#162131,stroke:#5eb0ff,color:#eaf0f7
+  style C fill:#162131,stroke:#e8b84a,color:#eaf0f7
+  style D fill:#162131,stroke:#3dd68c,color:#eaf0f7
 ```
-
-Upstream references:
-
-- [FAIR-MAST](https://github.com/ukaea/fair-mast) — Level-2 Zarr (currents + `coil_voltage` in V)
-- [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke) — Grad–Shafranov + evolutive `nl_solver` / `nlstepper`
-
-Version **11.10.0**.
 
 ---
 
-## Quick start (shot number only)
+## Why this exists
 
-```bash
-# Fresh machine (Windows) — one shot bootstrap
-setup_fresh.cmd
+Fusion equilibrium work should be **repeatable and honest**:
 
-# Then run
-run_pipeline.cmd
-# prompts ONLY for shot number(s)
+- **Deterministic** — no hidden smoothing or silent heuristics
+- **Authority-driven** — coil maps, voltages, machine geometry, and numerics are declared JSON (snapshotted + hashed)
+- **Fail-fast** — missing authority blocks the run; optional diagnostics only warn
+- **Never invent metrology** — no fake probe calibrations, Green’s tables, or vessel CAD
 
-# Or browser console
-run_ui.cmd
+Upstream data: [mastapp Level-2 catalog](https://mastapp.site/level2-data.html) · [FAIR-MAST](https://github.com/ukaea/fair-mast) · [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke)
 
-# Non-interactive
-mast-freegsnke run --shot 30201 --config configs/default.json
+---
+
+## Quick start
+
+### Windows (recommended)
+
+```bat
+git clone https://github.com/afshin-arj/Fair-MAST-to-FreeGSNKE-Conversion-tool.git
+cd Fair-MAST-to-FreeGSNKE-Conversion-tool
+
+setup_fresh.cmd          REM once: venv + deps + s5cmd (+ FreeGSNKE helper)
+run_pipeline.cmd         REM prompts ONLY for shot number(s)
+run_ui.cmd               REM optional browser console → http://127.0.0.1:8050
 ```
 
-Requirements: Python 3.11+, `s5cmd`, FreeGSNKE in `.venv-freegsnke` (for execute), pipeline package in `.venv`.
+### Non-interactive
 
 ```bash
-# Manual equivalent of setup_fresh.cmd
+mast-freegsnke doctor --config configs/default.json
+mast-freegsnke run --shot 30201 --config configs/default.json
+mast-freegsnke ui --config configs/default.json
+```
+
+### Manual install
+
+```bash
 py -3.11 -m venv .venv
-.venv\Scripts\python -m pip install -U pip
-.venv\Scripts\python -m pip install -r requirements.txt
-.venv\Scripts\python -m pip install -e ".[ui]"
+.venv\Scripts\activate          # Windows
+pip install -U pip
+pip install -r requirements.txt
+pip install -e ".[ui]"
 python scripts/ensure_s5cmd.py
 python scripts/ensure_freegsnke_env.py
 ```
 
-```bash
-mast-freegsnke doctor --config configs/default.json
-```
+**Requirements:** Python 3.11+, network access to FAIR-MAST S3 (`s5cmd`), FreeGSNKE in `.venv-freegsnke` when `execute_freegsnke=true`.
 
-After a run, open `SHOT/<N>/00_START_HERE.txt`. EFIT insights are under `04_efit_compare/`
-(FAIR-MAST EFIT++ archive vs FreeGSNKE — not a live efit-ai / Py-EFIT solve; see ADR-002/003).
-
-Level-2 measured pack (`02_measured_data/`) includes FreeGSNKE inputs **and** optional FAIR-MAST diagnostics
-when present on the shot (summary, Soft X-rays, Thomson, CXRS, gas injection, … — see
-[mastapp Level-2 catalog](https://mastapp.site/level2-data.html)). Missing optional groups are **warnings only**.
-
-### UI (optional)
-
-Local Dash app: enter a shot number → run the pipeline with live stage status, or open an existing `SHOT/<N>/`.
-
-```bash
-# Windows (after setup_fresh.cmd)
-run_ui.cmd
-
-# Or
-.venv\Scripts\python -m pip install -e ".[ui]"
-mast-freegsnke ui --config configs/default.json
-# → opens http://127.0.0.1:8050 (use --no-browser to skip)
-```
-
-Happy path still uses `configs/default.json` (no extra prompts). Live progress is written to `SHOT/<N>/progress.json`.
-
-In the browser: Overview KPIs, **Level-2** (plots + CSV by diagnostic family), Residuals, EFIT, GIFs, Authorities, and **Files** with View/Download plus **Download ZIP**.
+After a run, open `SHOT/<N>/00_START_HERE.txt` (or `01_summary/SUMMARY.md`).
 
 ---
 
-## Data flow
-
-```mermaid
-flowchart LR
-  U["User: shot N"] --> D["Download FAIR-MAST L2<br/>pf_active + magnetics + wall"]
-  D --> E["Extract CSVs<br/>currents · voltages · probes"]
-  E --> A["Authorities<br/>coil_map · voltage_map · machine · execution · evolutive"]
-  A --> I["Inverse GS"]
-  I --> F["Static forward replay"]
-  I --> V["Evolutive forward<br/>nl_solver + FAIR-MAST V(t)"]
-  I --> M["Contract residual metrics"]
-  F --> O["SHOT/N/"]
-  V --> O
-  M --> O
-```
-
-### Static vs evolutive
+## What you get
 
 ```mermaid
 flowchart TB
-  subgraph static [Static path]
-    INV["inverse_run.py<br/>shape/profile IC at t0"]
-    FWD["forward_run.py<br/>GS replay at fixed currents"]
-    INV --> FWD
+  subgraph ingest [Ingest]
+    DL["Download L2 groups<br/>required + optional"]
+    EX["Extract CSVs<br/>Ip · PF · magnetics"]
+    MEAS["02_measured_data/<br/>plots + CSV pack"]
   end
-  subgraph evol [Evolutive path]
-    IC["inverse_dump.pkl IC"]
-    NL["nl_solver + initialize_from_ICs"]
-    STEP["nlstepper(active_voltage_vec)<br/>mapped FAIR-MAST voltages"]
-    IC --> NL --> STEP
+  subgraph solve [Solve]
+    INV["Inverse GS"]
+    FWD["Static forward"]
+    EVO["Evolutive nl_solver"]
   end
-  INV --> IC
+  subgraph score [Score & compare]
+    MET["Contract residuals"]
+    EFIT["EFIT++ archive compare"]
+    PROV["manifest + provenance"]
+  end
+
+  DL --> EX --> MEAS
+  EX --> INV --> FWD
+  INV --> EVO
+  INV --> MET
+  FWD --> EFIT
+  MET --> PROV
+  EVO --> PROV
+  EFIT --> PROV
 ```
+
+| Path | Purpose |
+|------|---------|
+| **CLI** | `mast-freegsnke run --shot <N>` — shot-only automation |
+| **UI** | Live stages, Level-2 browser, residuals, EFIT, ZIP download |
+| **Cache** | `data_cache/shot_<N>/` — existing Zarr groups are **reused** (only missing groups sync) |
+
+---
+
+## Level-2 data
+
+**Required** (blocking if missing): `pf_active`, `magnetics`, `wall`
+
+**Optional** (warn if missing — never invent):
+
+| Group | Typical content |
+|-------|-----------------|
+| `summary` | General 1-D physics profiles |
+| `pulse_schedule` | Planned Ip / line density |
+| `spectrometer_visible` | Dα / BES |
+| `soft_x_rays` | Soft X-ray cameras |
+| `thomson_scattering` | Te, ne, pe (+ core traces) |
+| `charge_exchange` | Ti, Vi (CXRS) |
+| `gas_injection` | Gas valves / pressure |
+| `equilibrium` | Archived EFIT++ fields (also used for compare) |
+| `pf_passive` | Passive geometry (no ρ → no FreeGSNKE passives) |
+
+Exported under `SHOT/<N>/02_measured_data/` as CSV + PNG, browsable in the UI **Level-2** tab (click-to-expand families).
+
+```mermaid
+flowchart LR
+  S3["FAIR-MAST S3"] --> CACHE["data_cache/shot_N/"]
+  CACHE --> REQ["Required<br/>PF · magnetics · wall"]
+  CACHE --> OPT["Optional<br/>SXR · Thomson · CXRS · …"]
+  REQ --> PACK["02_measured_data/"]
+  OPT --> PACK
+  PACK --> UI["UI Level-2 tab"]
+  PACK --> FG["FreeGSNKE inputs/"]
+```
+
+---
+
+## Reconstruction paths
+
+```mermaid
+flowchart TB
+  subgraph static [Static]
+    I1["inverse_run.py<br/>IC at t₀"]
+    F1["forward_run.py<br/>GS at fixed currents"]
+    I1 --> F1
+  end
+  subgraph evolutive [Evolutive]
+    IC["inverse_dump.pkl"]
+    NL["nl_solver + ICs"]
+    ST["nlstepper<br/>mapped FAIR-MAST V(t)"]
+    IC --> NL --> ST
+  end
+  I1 --> IC
+```
+
+Formed-plasma window samples drive inverse/forward GIFs; evolutive steps drive `evolutive_equilibria.gif` (toggles in `configs/default.json`).
+
+---
+
+## Output layout
+
+```text
+SHOT/30201/
+├── 00_START_HERE.txt / 00_README.txt
+├── 01_summary/           SUMMARY.md · SUMMARY.json · timeline
+├── 02_measured_data/     Level-2 plots + CSV (plasma…Thomson…CXRS…)
+├── 03_reconstruction/    scripts · metrics · presentation GIFs · evolutive
+├── 04_efit_compare/      FreeGSNKE vs FAIR-MAST EFIT++ archive
+├── 06_authorities/       snapshotted JSON + hashes
+├── inputs/               tooling CSVs + window + execution authority
+├── progress.json         live UI / CLI stage log
+└── manifest.json         full stage provenance
+```
+
+```mermaid
+flowchart TB
+  R["SHOT/N/"]
+  R --> S["01_summary/"]
+  R --> M["02_measured_data/"]
+  R --> C["03_reconstruction/"]
+  R --> E["04_efit_compare/"]
+  R --> A["06_authorities/"]
+  R --> I["inputs/"]
+  R --> P["manifest.json"]
+```
+
+Prior runs are archived under `history/` when you Start again from the UI/CLI (cache is kept).
+
+---
+
+## Browser console
+
+```bat
+run_ui.cmd
+```
+
+Opens `http://127.0.0.1:8050` with:
+
+- **Overview** — KPIs + SUMMARY  
+- **Level-2** — diagnostic families (plots + CSV), collapsed by default  
+- **Residuals** — contract metrics + traces  
+- **EFIT** — archive compare scorecard  
+- **GIFs / Authorities / Files** — visuals, hashes, ZIP download  
+
+Happy path still uses `configs/default.json` — no extra prompts.
 
 ---
 
 ## Authority model
 
+Every binding choice is declared — not guessed.
+
 | Authority | Role |
 |-----------|------|
-| `machine_authority/` | Classic MAST FreeGSNKE pickles from FAIR-MAST Level-2 filaments + `wall.zarr` EFIT limiter; auto-rebuild on fingerprint change; probe geometry JSON (no invented metrology) |
-| `configs/coil_map.json` | Current channels → classic circuits (`mean` for series P2–P5/P3; `antisym_mean` `[P6U,P6L]` → `0.5*(P6U-P6L)` for anti-series P6) |
-| `configs/voltage_map.json` | Voltage channels → classic active vector (measured FAIR-MAST V primary; `from_current_ohmic` for P3/P6; no divertors) |
-| `configs/l1_voltage_inventory_30201.json` | Declared L1/L2 inventory: no usable P3/P6 PF drive voltage on public FAIR-MAST |
-| `configs/passive_resistivity.json` | Awaiting cited ρ for FreeGSNKE passives (pf_passive geometry alone is not enough) |
-| `execution_authority` | Grid, profiles, boundary, solver, metrics timebase |
-| `configs/evolutive_authority.json` | `dt`, `cover_window`/`max_steps`, `linear_only`, `scale_paxis_with_ip`, resistivity, timeouts |
-| `diagnostic_contracts.json` | Residual scoring pairs |
-| `diagnostic_calibration.json` | Optional V→T / V→Wb (empty until real factors exist) |
+| `machine_authority/` | Classic MAST FreeGSNKE pickles from L2 filaments + EFIT limiter |
+| `configs/coil_map.json` | PF channels → circuit currents |
+| `configs/voltage_map.json` | Measured V → active voltage vector (+ ohmic fallback for P3/P6) |
+| `configs/evolutive_authority.json` | `dt`, steps, resistivity, timeouts |
+| `configs/diagnostic_contracts.json` | Residual scoring pairs |
+| `configs/diagnostic_calibration.json` | Optional V→T / V→Wb (empty until real factors exist) |
+| `execution_authority` | Grid, profiles, boundary, solver timebase |
+
+```mermaid
+flowchart LR
+  L2["Level-2 signals"] --> MAP["coil_map + voltage_map"]
+  MACH["machine_authority"] --> SOLVE["FreeGSNKE"]
+  MAP --> SOLVE
+  EXEC["execution + evolutive authority"] --> SOLVE
+  CONT["contracts"] --> SCORE["residuals"]
+  SOLVE --> SCORE
+```
 
 **Design laws:** determinism · explicit authority · fail fast · never invent geometry/voltages/profiles · one binding mapping path · manifest everything.
 
 ---
 
-## Output layout (`SHOT/<N>/`)
-
-Operational paths stay at the run root (stable for tooling). An expert-facing index is added on top:
-
-```text
-SHOT/30201/
-  00_README.txt                 # human index
-  01_summary/
-    SUMMARY.md / SUMMARY.json   # status, window, modes, metrics, limits
-    timeline.txt
-  inputs/                       # experimental CSVs + authority snapshots
-  experimental_data/            # categorized FAIR-MAST CSV + professional plots
-  synthetic/                    # FreeGSNKE probe synthetics
-  presentation/                 # inverse/forward eq frames + GIFs
-  metrics/                      # residual scores
-  evolutive/                    # history.csv, snapshots, evolutive_equilibria.gif
-  logs/
-  manifest.json
-  inverse_run.py / forward_run.py / evolutive_run.py
-  inverse_dump.pkl
-```
-
-Formed-plasma window samples (`metrics_n_times`, default 5) drive **inverse** and **forward** equilibria GIFs; evolutive steps drive `evolutive/evolutive_equilibria.gif`. Toggle via `write_equilibrium_gifs` in `configs/default.json`.
-
-```mermaid
-flowchart TB
-  R["SHOT/N/"]
-  R --> R0["00_README.txt"]
-  R --> R1["01_summary/"]
-  R --> IN["inputs/"]
-  R --> ED["experimental_data/"]
-  R --> SYN["synthetic/"]
-  R --> PRES["presentation/"]
-  R --> MET["metrics/"]
-  R --> EV["evolutive/"]
-  R --> LOG["logs/"]
-  R --> MAN["manifest.json"]
-```
-
-Legacy `SHOTS/` is still ignored by git if present; default `runs_dir` is now **`SHOT`**.
-
----
-
 ## Honest limitations
 
-- **FAIR-MAST = classic MAST** (not MAST-U). Structural machine pickles are built from Level-2 PF filaments (`scripts/build_classic_mast_machine.py`).
-- Measured voltages `p1`/`p2`/`p4`/`p5` (V) drive Solenoid / P2_inner+P2_outer (same-V) / P4 / P5. **P3/P6**: public L1/L2 have no usable measured PF drive V (inventory `configs/l1_voltage_inventory_30201.json`; `xma/p6_volts` is not usable) → `from_current_ohmic` (`V=I×R` only).
-- **Limiter/wall** = FAIR-MAST `wall.zarr` `limiter_r`/`limiter_z` (EFIT limiter geometry) — **≠ surveyed CAD vessel**, and not a flux-loop proxy.
-- **No FreeGSNKE passives**: Level-2 `pf_passive` has parallelogram geometry but **no resistivity**; inventing ρ is forbidden → empty `passive_coils.pickle`.
-- Active-coil **resistivity** = FreeGSNKE copper default **1.55e-8** (declared material constant; Level-2 does not publish coil ρ).
-- Evolutive profiles: `alpha_m`/`alpha_n`/`fvac` held from inverse IC; optional `scale_paxis_with_ip` is a declared Ip scaling law (default off).
-- Mirnov/saddle/omaha stay audit-only until a real calibration authority is populated.
+- **Classic MAST only** (not MAST-U).
+- Measured voltages `p1/p2/p4/p5` drive Solenoid / P2 / P4 / P5. **P3/P6** have no usable public PF drive V → declared `from_current_ohmic` (`V=I×R`) only.
+- Limiter = FAIR-MAST `wall.zarr` EFIT limiter — **not** surveyed CAD vessel.
+- **No FreeGSNKE passives** until a cited resistivity authority exists (`pf_passive` geometry alone is not enough).
+- EFIT tab = archive compare (ADR-002/003) — **not** a live EFIT++ / efit-ai / Py-EFIT solve on Windows.
+- Mirnov / saddle / omaha remain audit-only until calibration authority is populated.
 
 ---
 
-## Install
+## Documentation map
 
-```bash
-# Quickest (Windows): clones + bootstraps s5cmd + FreeGSNKE venv automatically
-run_pipeline.cmd
-# Enter shot number only (e.g. 30201)
-
-# Or manual:
-python -m venv .venv
-.venv\Scripts\activate          # Windows
-pip install -e ".[dev,zarr]"
-python scripts/ensure_s5cmd.py
-python scripts/ensure_freegsnke_env.py   # creates .venv-freegsnke + installs freegsnke
-```
-
-`configs/default.json` expects `.venv-freegsnke` (set `freegsnke_python` if you use another env).
+| Doc | Topic |
+|-----|--------|
+| `AGENTS.md` | Project north star + agent roles |
+| `docs/` / ADRs | EFIT compare, TORAX export, Windows equilibrium stack |
+| [mastapp Level-2](https://mastapp.site/level2-data.html) | Upstream diagnostic groups |
 
 ---
 
-## License / authorship
+## License
 
-© 2026 Afshin Arjhangmehr. See repository LICENSE if present.
+© 2026 Afshin Arjhangmehr. See repository `LICENSE` if present.
