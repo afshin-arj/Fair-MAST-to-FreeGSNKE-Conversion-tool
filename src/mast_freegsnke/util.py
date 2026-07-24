@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -18,8 +19,20 @@ def sha256_file(path: Path, chunk_bytes: int = 1024 * 1024) -> str:
     return h.hexdigest()
 
 def write_json(path: Path, obj: Dict[str, Any]) -> None:
+    """Atomic JSON write (temp + replace) so concurrent readers never see a partial file."""
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(obj, indent=2, sort_keys=True) + "\n")
+    payload = json.dumps(obj, indent=2, sort_keys=True) + "\n"
+    tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
+    try:
+        tmp.write_text(payload, encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
 
 def ensure_dir(p: Path) -> Path:
     p.mkdir(parents=True, exist_ok=True)

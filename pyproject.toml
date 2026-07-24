@@ -41,6 +41,9 @@ mast-freegsnke = "mast_freegsnke.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+mast_freegsnke_ui = ["assets/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 norecursedirs = [".git", ".venv", ".venv-freegsnke", "temp", "data_cache", "SHOT", "SHOTS", "tools", "build", "dist", "*.egg-info"]

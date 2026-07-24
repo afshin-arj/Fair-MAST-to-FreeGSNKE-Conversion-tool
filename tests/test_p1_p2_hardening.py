@@ -133,10 +133,29 @@ def test_group_cache_hit_and_stats(tmp_path: Path) -> None:
     # empty dir is not a hit
     (shot_dir / "magnetics.zarr").mkdir(parents=True)
     assert group_cache_hit(shot_dir, "magnetics") is False
+    # lone leftover object without Zarr root metadata is not a hit
+    (shot_dir / "magnetics.zarr" / "orphan.bin").write_bytes(b"x" * 10)
+    assert group_cache_hit(shot_dir, "magnetics") is False
+    (shot_dir / "magnetics.zarr" / "orphan.bin").unlink()
     _populate_group(shot_dir, "magnetics")
     assert group_cache_hit(shot_dir, "magnetics") is True
     n, b = group_cache_stats(shot_dir, "magnetics")
     assert n == 1 and b == 10
+
+
+def test_group_cache_reusable_rejects_wrong_shot_path(tmp_path: Path) -> None:
+    from mast_freegsnke.download import group_cache_reusable, prior_path_matches_shot
+
+    shot_dir = tmp_path / "shot_99"
+    _populate_group(shot_dir, "magnetics")
+    (shot_dir / "resolved_s3_paths.json").write_text(
+        json.dumps({"magnetics": "s3://bucket/30201.zarr/magnetics"}),
+        encoding="utf-8",
+    )
+    assert prior_path_matches_shot("s3://bucket/30201.zarr/magnetics", 30201)
+    assert not prior_path_matches_shot("s3://bucket/30201.zarr/magnetics", 99)
+    assert group_cache_reusable(shot_dir, "magnetics", shot=99) is False
+    assert group_cache_reusable(shot_dir, "magnetics", shot=30201) is True
 
 
 def test_download_groups_cache_reuse_skips_s5cmd(tmp_path: Path) -> None:

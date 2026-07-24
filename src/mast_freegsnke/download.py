@@ -25,11 +25,49 @@ def group_cache_stats(shot_dir: Path, group: str) -> Tuple[int, int]:
 
 
 def group_cache_hit(shot_dir: Path, group: str) -> bool:
-    """True when data_cache/shot_<N>/<group>.zarr exists and contains at least one file."""
+    """True when ``<group>.zarr`` looks like a usable Zarr store (not a truncated sync).
+
+    Requires root metadata (``zarr.json`` / ``.zgroup`` / ``.zarray``) plus at least one
+    file. A bare empty directory or a lone leftover object is not a hit.
+    """
     dst = Path(shot_dir) / f"{group}.zarr"
     if not dst.is_dir():
         return False
-    return any(p.is_file() for p in dst.rglob("*"))
+    meta_ok = any(
+        (dst / name).is_file() for name in ("zarr.json", ".zgroup", ".zarray")
+    )
+    if not meta_ok:
+        return False
+    try:
+        return any(p.is_file() for p in dst.rglob("*"))
+    except OSError:
+        return False
+
+
+def prior_path_matches_shot(s3_path: Optional[str], shot: int) -> bool:
+    """True when a recorded S3/local path clearly refers to this shot number."""
+    if not s3_path:
+        return False
+    text = str(s3_path).replace("\\", "/")
+    shot_s = str(int(shot))
+    return (
+        f"shot_{shot_s}" in text
+        or f"/{shot_s}.zarr" in text
+        or f"/{shot_s}/" in text
+        or text.endswith(f"/{shot_s}")
+        or f"_{shot_s}." in text
+        or f"_{shot_s}/" in text
+    )
+
+
+def group_cache_reusable(shot_dir: Path, group: str, *, shot: int) -> bool:
+    """Cache hit that is safe to skip S3 for: strong Zarr metadata + shot-id when known."""
+    if not group_cache_hit(shot_dir, group):
+        return False
+    prior = load_prior_resolved_paths(shot_dir).get(group)
+    if prior and not prior_path_matches_shot(prior, shot):
+        return False
+    return True
 
 
 def load_prior_resolved_paths(shot_dir: Path) -> Dict[str, str]:
@@ -74,7 +112,7 @@ def check_groups_respecting_cache(
     out: Dict[str, GroupAvailability] = {}
     need: List[str] = []
     for g in groups:
-        if allow_cache_reuse and group_cache_hit(shot_cache, g):
+        if allow_cache_reuse and group_cache_reusable(shot_cache, g, shot=int(shot)):
             out[g] = GroupAvailability(
                 group=g,
                 exists=True,
@@ -235,7 +273,7 @@ class BulkDownloader:
         report: Dict[str, Dict[str, Any]] = {}
         for g in groups:
             dst = shot_dir / f"{g}.zarr"
-            if allow_cache_reuse and group_cache_hit(shot_dir, g):
+            if allow_cache_reuse and group_cache_reusable(shot_dir, g, shot=int(shot)):
                 n_files, total_bytes = group_cache_stats(shot_dir, g)
                 report[g] = {
                     "s3_path": prior.get(g),
@@ -261,7 +299,7 @@ class BulkDownloader:
             # Downloads can exceed the short ls timeout; allow a longer bound for sync.
             sync_timeout = max(int(self.timeout_s), 600)
             subprocess.run(cmd, check=True, timeout=sync_timeout)
-            if not (dst / "zarr.json").exists() and not any(dst.iterdir()):
+            if not (dst / "zarr.json").exists() and not (dst / ".zgroup").exists() and not any(dst.iterdir()):
                 raise RuntimeError(f"s5cmd sync produced empty destination for {g}: {dst} (src={sync_src})")
             n_files, total_bytes = group_cache_stats(shot_dir, g)
             report[g] = {
@@ -289,7 +327,7 @@ class BulkDownloader:
         resolved: Dict[str, str] = dict(prior)
         report: Dict[str, Dict[str, Any]] = {}
         for g in groups:
-            if allow_cache_reuse and group_cache_hit(shot_dir, g):
+            if allow_cache_reuse and group_cache_reusable(shot_dir, g, shot=int(shot)):
                 n_files, total_bytes = group_cache_stats(shot_dir, g)
                 report[g] = {
                     "s3_path": prior.get(g),

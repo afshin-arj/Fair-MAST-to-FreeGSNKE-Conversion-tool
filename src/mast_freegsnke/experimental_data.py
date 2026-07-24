@@ -105,7 +105,8 @@ def _copy_csv(
         catalog_entry["columns"] = [str(c) for c in df.columns]
         catalog_entry["n_columns"] = int(len(df.columns))
         # Full row count (cheap for typical magnetics sizes)
-        n = sum(1 for _ in open(dst, "r", encoding="utf-8", errors="replace")) - 1
+        with open(dst, "r", encoding="utf-8", errors="replace") as fh:
+            n = sum(1 for _ in fh) - 1
         catalog_entry["n_rows_approx"] = max(0, int(n))
     except Exception as e:
         report.warnings.append(f"csv_meta_failed:{dst.name}:{type(e).__name__}")

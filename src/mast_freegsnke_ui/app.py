@@ -66,10 +66,25 @@ def _hash_text(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8", errors="replace")).hexdigest()[:12]
 
 
-def _library_fingerprint(runs_dir: Path) -> str:
-    # Cheap: shot folder names only (no per-file stats).
+def _library_fingerprint(runs_dir: Path, *, cache_dir: Optional[Path] = None) -> str:
+    """Fingerprint shot library + optional cache readiness so dropdown labels refresh."""
     try:
-        return _hash_text("|".join(str(s) for s in art.list_shot_dirs(runs_dir)))
+        parts = [str(s) for s in art.list_shot_dirs(runs_dir)]
+        if cache_dir is not None and cache_dir.is_dir():
+            # Include presence of required Zarr leaves so "cache partial/ready" updates.
+            for s in parts:
+                shot_cache = cache_dir / f"shot_{s}"
+                if not shot_cache.is_dir():
+                    parts.append(f"{s}:nocache")
+                    continue
+                for child in sorted(shot_cache.iterdir()):
+                    if child.name.endswith(".zarr"):
+                        try:
+                            mtime = int(child.stat().st_mtime)
+                        except OSError:
+                            mtime = 0
+                        parts.append(f"{s}:{child.name}:{mtime}")
+        return _hash_text("|".join(parts))
     except OSError:
         return ""
 
@@ -152,7 +167,7 @@ def create_app(
 
     empty_body = panels.fill_one_tab("overview", None, None)
     library_opts = _shot_library_options(runs_dir, cache_dir=cache_dir, required_groups=required_groups)
-    library_fp = _library_fingerprint(runs_dir)
+    library_fp = _library_fingerprint(runs_dir, cache_dir=cache_dir)
 
     app.layout = dbc.Container(
         [
@@ -465,11 +480,31 @@ def create_app(
                     color="danger",
                 ),
                 None,
-                "idle",
+                "idle" if not manager.is_running else no_update,
                 manager.is_running,
                 shot,
                 "",
                 panels.shot_dossier(None, None),
+            )
+        if manager.is_running and manager.shot is not None and int(manager.shot) != int(shot):
+            return (
+                dbc.Alert(
+                    [
+                        html.Strong(f"Run in progress for shot {manager.shot}"),
+                        html.Div(
+                            f"Cannot bind the console to SHOT/{shot} while another reconstruction is live. "
+                            "Cancel first, or wait for completion."
+                        ),
+                    ],
+                    color="warning",
+                    duration=6000,
+                ),
+                no_update,
+                no_update,
+                True,
+                no_update,
+                no_update,
+                no_update,
             )
         man = art.load_manifest(rd) or {}
         st = str(man.get("status") or "?")
@@ -488,7 +523,7 @@ def create_app(
                 duration=4200,
             ),
             shot,
-            "idle",
+            "idle" if not manager.is_running else no_update,
             manager.is_running,
             shot,
             rd.as_posix(),
@@ -519,6 +554,7 @@ def create_app(
         Output("shot-input", "value", allow_duplicate=True),
         Output("shot-path", "children", allow_duplicate=True),
         Output("shot-dossier", "children", allow_duplicate=True),
+        Output("refresh-token", "data", allow_duplicate=True),
         Input("btn-open", "n_clicks"),
         Input("btn-start", "n_clicks"),
         Input("btn-cancel", "n_clicks"),
@@ -527,13 +563,15 @@ def create_app(
         State("shot-picker", "value"),
         State("active-shot", "data"),
         State("ui-status", "data"),
+        State("refresh-token", "data"),
         prevent_initial_call=True,
     )
-    def on_buttons(n_open, n_start, n_cancel, n_submit, shot_val, picker_val, active_shot, ui_status):
+    def on_buttons(n_open, n_start, n_cancel, n_submit, shot_val, picker_val, active_shot, ui_status, refresh_token):
         ctx = dash.callback_context
         if not ctx.triggered:
-            return (no_update,) * 7
+            return (no_update,) * 8
         tid = ctx.triggered[0]["prop_id"].split(".")[0]
+        tok = int(refresh_token or 0)
 
         if tid == "btn-cancel":
             if manager.is_running:
@@ -546,12 +584,14 @@ def create_app(
                     no_update,
                     no_update,
                     _dossier_for(active_shot) if active_shot is not None else no_update,
+                    tok + 1,
                 )
             return (
                 dbc.Alert("Nothing to cancel.", color="secondary", duration=2200),
                 active_shot,
                 ui_status,
                 False,
+                no_update,
                 no_update,
                 no_update,
                 no_update,
@@ -567,13 +607,15 @@ def create_app(
                 no_update,
                 no_update,
                 no_update,
+                no_update,
             )
 
         if tid in {"btn-open", "shot-input"}:
-            return _open_shot(shot)
+            opened = _open_shot(shot)
+            return (*opened, tok + 1)
 
         if tid != "btn-start":
-            return (no_update,) * 7
+            return (no_update,) * 8
 
         if manager.is_running:
             return (
@@ -584,6 +626,7 @@ def create_app(
                 shot,
                 no_update,
                 _dossier_for(active_shot) if active_shot is not None else no_update,
+                no_update,
             )
         try:
             manager.start(shot, config=config_path, cwd=repo_root)
@@ -596,6 +639,7 @@ def create_app(
                 shot,
                 no_update,
                 no_update,
+                no_update,
             )
         rd = art.run_dir_for(runs_dir, shot)
         return (
@@ -603,7 +647,7 @@ def create_app(
                 [
                     html.Strong(f"Reconstructing shot {shot}"),
                     html.Div(
-                        "Watch Stages and Operator output. Results refresh when the run finishes. Cached Level-2 Zarrs are reused.",
+                        "Prior results are archived under history/. Watch Stages — tabs refresh now and when the run finishes. Cached Level-2 Zarrs are reused when verified.",
                         className="small mt-1",
                     ),
                 ],
@@ -616,6 +660,7 @@ def create_app(
             shot,
             rd.as_posix(),
             _dossier_for(shot),
+            tok + 1,
         )
 
     @app.callback(
@@ -649,7 +694,11 @@ def create_app(
     def on_poll(_n, active_shot, ui_status, refresh_token, poll_cache, library_fp):
         snap = manager.snapshot()
         running = bool(snap["running"])
-        shot = active_shot if active_shot is not None else snap.get("shot")
+        # While a subprocess is live, bind progress to that shot — not a differently Open'd shot.
+        if running and snap.get("shot") is not None:
+            shot = snap.get("shot")
+        else:
+            shot = active_shot if active_shot is not None else snap.get("shot")
         run_dir = art.run_dir_for(runs_dir, int(shot)) if shot is not None else None
         progress = art.load_progress(run_dir) if run_dir else None
         man = art.load_manifest(run_dir) if run_dir else None
@@ -660,6 +709,10 @@ def create_app(
         bump = no_update
         if running:
             status_label = "running"
+        elif snap.get("cancelled") or (snap.get("returncode") == -1 and ui_status in {"running", "cancelled"}):
+            status_label = "cancelled"
+            if ui_status != "cancelled":
+                bump = int(refresh_token or 0) + 1
         elif snap.get("returncode") is not None and ui_status == "running":
             rc = snap["returncode"]
             if rc == 0:
@@ -672,9 +725,6 @@ def create_app(
                     color="success",
                     duration=8000,
                 )
-                bump = int(refresh_token or 0) + 1
-            elif rc == -1:
-                status_label = "cancelled"
                 bump = int(refresh_token or 0) + 1
             else:
                 status_label = "failed"
@@ -696,9 +746,19 @@ def create_app(
                 )
                 bump = int(refresh_token or 0) + 1
         elif progress and not running:
-            st = str(progress.get("status") or status_label)
-            if st in {"success", "failed", "running", "started"}:
-                status_label = "running" if st == "started" else st
+            st = str(progress.get("status") or "")
+            # Never trust disk "running"/"started" without a live process.
+            if st in {"success", "failed"}:
+                status_label = st
+            elif st in {"running", "started"}:
+                if ui_status == "cancelled":
+                    status_label = "cancelled"
+                elif man and man.get("status") in {"success", "failed"}:
+                    status_label = str(man.get("status"))
+                else:
+                    status_label = "interrupted"
+            elif st:
+                status_label = st
         elif man and not running and active_shot is not None:
             status_label = str(man.get("status") or status_label)
 
@@ -771,7 +831,7 @@ def create_app(
         # Refresh library only when the shot set / status mtimes change.
         if running or bump is not no_update or cache.get("lib_check", 0) >= 4:
             try:
-                new_lib_fp = _library_fingerprint(runs_dir)
+                new_lib_fp = _library_fingerprint(runs_dir, cache_dir=cache_dir)
             except OSError:
                 new_lib_fp = library_fp
             if new_lib_fp != library_fp:
@@ -831,15 +891,24 @@ def create_app(
     @app.callback(
         Output("results-heading", "children"),
         Output("tab-body", "children"),
+        Input("active-shot", "data"),
         Input("results-tabs", "value"),
         Input("refresh-token", "data"),
         Input("btn-refresh", "n_clicks"),
-        State("active-shot", "data"),
         prevent_initial_call=False,
     )
-    def on_results(active_tab, _refresh_token, _n_refresh, active_shot):
-        """Fill only the active tab. Shot changes flip the tab to Overview (separate callback)."""
+    def on_results(active_shot, active_tab, _refresh_token, _n_refresh):
+        """Fill the active tab. Shot changes always rebuild Overview (even if tab value is unchanged)."""
+        triggered = None
+        try:
+            triggered = dash.callback_context.triggered_id
+        except Exception:
+            triggered = None
+
         tid = (active_tab or "overview").strip().lower()
+        # Opening / switching shot must refresh body even when already on Overview.
+        if triggered == "active-shot":
+            tid = "overview"
         valid = {k for k, _ in panels.TAB_DEFS}
         if tid not in valid:
             tid = "overview"

@@ -1065,8 +1065,9 @@ def main(argv=None) -> int:
                     if man.get("status") != "success" or man.get("blocking_errors"):
                         print(f"[FAIL] Run completed with status={man.get('status')} blocking_errors={man.get('blocking_errors')}")
                         return 11
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[FAIL] Could not read/validate manifest.json after run: {e}")
+                    return 12
                 return 0
             except Exception as e:
                 # Print a full traceback to stdout/stderr (captured by launcher logs)

@@ -12,7 +12,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .config import AppConfig, cache_dir_for_shot, run_dir_for_shot
-from .download import BulkDownloader, build_cache_report, check_groups_respecting_cache, group_cache_hit
+from .download import (
+    BulkDownloader,
+    build_cache_report,
+    check_groups_respecting_cache,
+    group_cache_reusable,
+)
 from .extract import Extractor
 from .generate import ScriptGenerator
 from .mastapp import MastAppClient
@@ -372,7 +377,8 @@ class ShotPipeline:
             _flush_progress(current_stage=stage_log[-1]["stage"] if stage_log else None)
             shot_cache_candidate = cache_dir_for_shot(self.cfg, shot)
             all_groups_cached = bool(self.cfg.allow_cache_reuse) and all(
-                group_cache_hit(shot_cache_candidate, g) for g in self.cfg.required_groups
+                group_cache_reusable(shot_cache_candidate, g, shot=int(shot))
+                for g in self.cfg.required_groups
             )
 
             if all_groups_cached:
@@ -396,7 +402,7 @@ class ShotPipeline:
                 # Optional audit groups: skip network entirely when all are cached.
                 if self.cfg.optional_groups:
                     opt = list(self.cfg.optional_groups)
-                    if all(group_cache_hit(shot_cache, g) for g in opt):
+                    if all(group_cache_reusable(shot_cache, g, shot=int(shot)) for g in opt):
                         opt_rep = build_cache_report(shot_cache, opt)
                         for g in opt_rep:
                             opt_rep[g]["optional"] = True
@@ -856,6 +862,14 @@ class ShotPipeline:
             if final_tw is not None:
                 write_json(inputs_dir / "window.json", final_tw.__dict__)
                 _stage("window_finalize", True, t_start=final_tw.t_start, t_end=final_tw.t_end, source=final_tw.source)
+                note = str(final_tw.note or "")
+                if note.startswith("fallback_") and str(final_tw.source) != "override":
+                    blocking_errors.append(
+                        "window_fallback_blocked: "
+                        f"{note} (source={final_tw.source}, col={final_tw.signal_column}). "
+                        "Formed-plasma window must come from Ip/consensus or explicit --tstart/--tend — "
+                        "refusing PF-proxy / full-extent silence."
+                    )
 
             # QC diagnostics (best-effort, but failures are blocking if window exists)
             window_diag: Optional[WindowDiagnostics] = None
@@ -1128,7 +1142,7 @@ class ShotPipeline:
                     else:
                         _stage("contracts", True, note="contract_metrics_disabled_or_no_contracts_path")
 
-            # Final status
+            # Final status (recomputed again immediately before each manifest write below)
             status = "success" if not blocking_errors else "failed"
 
             science_audit = None
@@ -1191,6 +1205,18 @@ class ShotPipeline:
                     _stage("efit_compare", False, error=str(e))
                     efit_compare_report = {"ok": False, "errors": [str(e)]}
                     write_json(run_dir / "04_efit_compare" / "COMPARE.json", efit_compare_report)
+                    # Exceptions during a requested compare are fail-closed when the
+                    # authority asks for it; otherwise still record a loud soft failure.
+                    try:
+                        from .efit_compare import load_efit_compare_authority
+
+                        ec_snap = (
+                            inputs_dir / "efit_compare_authority" / "efit_compare_authority.json"
+                        )
+                        if ec_snap.exists() and load_efit_compare_authority(ec_snap).fail_closed_if_missing:
+                            blocking_errors.append(f"efit_compare_exception: {type(e).__name__}: {e}")
+                    except Exception:
+                        pass
             else:
                 _stage(
                     "efit_compare",
@@ -1198,6 +1224,7 @@ class ShotPipeline:
                     note="compare_efit_archive=false_or_no_cache",
                 )
 
+            status = "success" if not blocking_errors else "failed"
             _write_manifest(
                 {
                     "cache_dir": str(shot_cache) if shot_cache is not None else None,
@@ -1268,6 +1295,26 @@ class ShotPipeline:
                     pass
             except Exception as e:
                 _stage("shot_layout", False, error=str(e))
+
+            status = "success" if not blocking_errors else "failed"
+            _write_manifest(
+                {
+                    "cache_dir": str(shot_cache) if shot_cache is not None else None,
+                    "download_report": download_report,
+                    "extract_meta": extract_meta,
+                    "time_window": final_tw.__dict__ if final_tw is not None else None,
+                    "time_window_qc": window_diag.__dict__ if window_diag is not None else None,
+                    "time_window_override": window_override,
+                    "time_window_consensus": consensus_obj.__dict__ if consensus_obj is not None else None,
+                    "freegsnke_execution": exec_summary,
+                    "reconstruction_metrics": metrics_summary,
+                    "science_audit": science_audit,
+                    "efit_compare": efit_compare_report,
+                    "machine_authority_snapshot": machine_snapshot,
+                    "diagnostic_calibration_snapshot": calibration_snapshot,
+                    "diagnostic_calibration_apply": calibration_apply,
+                }
+            )
 
             if blocking_errors:
                 raise RuntimeError("Pipeline completed with blocking errors: " + "; ".join(blocking_errors))

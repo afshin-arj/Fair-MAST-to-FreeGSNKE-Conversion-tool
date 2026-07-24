@@ -220,14 +220,13 @@ def shot_cache_status(
     required: Sequence[str],
     optional: Sequence[str] = (),
 ) -> Dict[str, Any]:
+    from mast_freegsnke.download import group_cache_hit
+
     shot_dir = Path(cache_root) / f"shot_{int(shot)}"
 
     def _hit(group: str) -> bool:
-        dst = shot_dir / f"{group}.zarr"
-        if not dst.is_dir():
-            return False
         try:
-            return any(p.is_file() for p in dst.rglob("*"))
+            return group_cache_hit(shot_dir, group)
         except OSError:
             return False
 

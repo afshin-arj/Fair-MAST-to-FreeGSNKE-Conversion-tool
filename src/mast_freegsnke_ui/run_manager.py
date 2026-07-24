@@ -22,6 +22,7 @@ class RunManager:
         self._returncode: Optional[int] = None
         self._started_at: Optional[float] = None
         self._reader: Optional[threading.Thread] = None
+        self._cancelled: bool = False
 
     @property
     def is_running(self) -> bool:
@@ -60,6 +61,7 @@ class RunManager:
             self._log.clear()
             self._shot = shot
             self._returncode = None
+            self._cancelled = False
             self._started_at = time.time()
             self._proc = subprocess.Popen(
                 cmd,
@@ -88,13 +90,21 @@ class RunManager:
         finally:
             rc = proc.wait()
             with self._lock:
-                self._returncode = rc
-                self._log.append(f"[ui] process exited rc={rc}")
+                # Preserve cancel sentinel; do not let taskkill's real rc mask cancelled.
+                if self._cancelled:
+                    self._returncode = -1
+                else:
+                    self._returncode = rc
+                self._log.append(f"[ui] process exited rc={self._returncode}")
 
     def cancel(self) -> None:
         with self._lock:
             proc = self._proc
+            self._cancelled = True
         if proc is None or proc.poll() is not None:
+            with self._lock:
+                if self._returncode is None:
+                    self._returncode = -1
             return
         pid = proc.pid
         if os.name == "nt":
@@ -115,8 +125,7 @@ class RunManager:
             proc.kill()
         with self._lock:
             self._log.append("[ui] cancelled by user")
-            if self._returncode is None:
-                self._returncode = -1
+            self._returncode = -1
 
     def snapshot(self) -> Dict[str, object]:
         with self._lock:
@@ -126,6 +135,7 @@ class RunManager:
                 "running": running,
                 "shot": self._shot,
                 "returncode": self._returncode,
+                "cancelled": self._cancelled,
                 "log_lines": lines[-50:],
                 "started_at": self._started_at,
             }

@@ -62,15 +62,22 @@ if not errorlevel 1 (
 )
 if "%PY_BOOT%"=="" (
   where python >nul 2>nul
-  if errorlevel 1 (
-    echo [FAIL] Python not found on PATH. Install Python 3.11+ and retry.
-    set "RC=1"
-    goto :FINISH
+  if not errorlevel 1 (
+    python -c "import sys; raise SystemExit(0 if sys.version_info[:2]==(3,11) else 1)" >nul 2>nul
+    if not errorlevel 1 set "PY_BOOT=python"
   )
-  set "PY_BOOT=python"
+)
+if "%PY_BOOT%"=="" (
+  echo [FAIL] Python 3.11 not found. Install Python 3.11 and retry ^(or run setup_fresh.cmd^).
+  set "RC=1"
+  goto :FINISH
 )
 
-if not exist ".venv" (
+if not exist ".venv\Scripts\python.exe" (
+  if exist ".venv" (
+    echo [WARN] .venv incomplete — recreating
+    rmdir /s /q ".venv" 2>nul
+  )
   echo [INFO] Creating virtual environment: .venv  ^(bootstrap: %PY_BOOT%^)
   %PY_BOOT% -m venv .venv
   if errorlevel 1 (
@@ -83,6 +90,14 @@ if not exist ".venv" (
 call ".venv\Scripts\activate.bat"
 if errorlevel 1 (
   echo [FAIL] Failed to activate virtual environment.
+  set "RC=1"
+  goto :FINISH
+)
+
+python -c "import sys; raise SystemExit(0 if sys.version_info[:2]==(3,11) else 1)" >nul 2>nul
+if errorlevel 1 (
+  echo [FAIL] .venv is not Python 3.11. Delete .venv and run setup_fresh.cmd
+  python -V
   set "RC=1"
   goto :FINISH
 )
@@ -127,8 +142,8 @@ if errorlevel 1 (
   goto :FINISH
 )
 
-echo [INFO] Installing repo (editable) with extras: [zarr,dev]
-python -m pip install -e ".[zarr,dev]"
+echo [INFO] Installing repo via requirements.txt ^(editable [ui,dev]^)
+python -m pip install -r requirements.txt
 if errorlevel 1 (
   echo [FAIL] Package install failed.
   set "RC=1"

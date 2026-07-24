@@ -49,10 +49,24 @@ Upstream data: [mastapp Level-2 catalog](https://mastapp.site/level2-data.html) 
 git clone https://github.com/afshin-arj/Fair-MAST-to-FreeGSNKE-Conversion-tool.git
 cd Fair-MAST-to-FreeGSNKE-Conversion-tool
 
-setup_fresh.cmd          REM once: venv + deps + s5cmd (+ FreeGSNKE helper)
+setup_fresh.cmd          REM once: Python 3.11 venv + deps + s5cmd + FreeGSNKE
 run_pipeline.cmd         REM prompts ONLY for shot number(s)
 run_ui.cmd               REM optional browser console → http://127.0.0.1:8050
 ```
+
+### Linux / macOS
+
+```bash
+git clone https://github.com/afshin-arj/Fair-MAST-to-FreeGSNKE-Conversion-tool.git
+cd Fair-MAST-to-FreeGSNKE-Conversion-tool
+
+chmod +x setup_fresh.sh run_pipeline.sh
+./setup_fresh.sh         # once: Python 3.11 venv + deps + s5cmd + FreeGSNKE
+./run_pipeline.sh        # prompts ONLY for shot number(s)
+mast-freegsnke ui --config configs/default.json
+```
+
+**Requires Python 3.11** (FreeGSNKE / scipy wheels). `setup_fresh` fails fast if 3.11, s5cmd, or FreeGSNKE bootstrap cannot complete.
 
 ### Non-interactive
 
@@ -65,16 +79,21 @@ mast-freegsnke ui --config configs/default.json
 ### Manual install
 
 ```bash
+# Windows
 py -3.11 -m venv .venv
-.venv\Scripts\activate          # Windows
-pip install -U pip
-pip install -r requirements.txt
-pip install -e ".[ui]"
+.venv\Scripts\activate
+
+# Linux / macOS
+python3.11 -m venv .venv
+source .venv/bin/activate
+
+python -m pip install -U pip
+python -m pip install -r requirements.txt   # installs -e ".[ui,dev]"
 python scripts/ensure_s5cmd.py
 python scripts/ensure_freegsnke_env.py
 ```
 
-**Requirements:** Python 3.11+, network access to FAIR-MAST S3 (`s5cmd`), FreeGSNKE in `.venv-freegsnke` when `execute_freegsnke=true`.
+**Requirements:** Python 3.11, network access to FAIR-MAST S3 (`s5cmd`), FreeGSNKE in `.venv-freegsnke` when `execute_freegsnke=true`.
 
 After a run, open `SHOT/<N>/00_START_HERE.txt` (or `01_summary/SUMMARY.md`).
 

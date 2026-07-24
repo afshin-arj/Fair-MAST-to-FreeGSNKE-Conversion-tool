@@ -4,6 +4,7 @@ setlocal EnableExtensions
 REM ---------------------------------------------------------------------------
 REM Fresh-machine bootstrap for Fair-MAST → FreeGSNKE (Windows)
 REM Clone the repo, run this once, then use run_pipeline.cmd / run_ui.cmd
+REM Requires Python 3.11 (FreeGSNKE / scipy wheels).
 REM ---------------------------------------------------------------------------
 
 cd /d "%~dp0"
@@ -19,16 +20,27 @@ if not errorlevel 1 (
 )
 if "%PY_BOOT%"=="" (
   where python >nul 2>nul
-  if errorlevel 1 (
-    echo [FAIL] Python 3.11+ not found. Install from https://www.python.org/downloads/
-    exit /b 1
+  if not errorlevel 1 (
+    python -c "import sys; raise SystemExit(0 if sys.version_info[:2]==(3,11) else 1)" >nul 2>nul
+    if not errorlevel 1 set "PY_BOOT=python"
   )
-  set "PY_BOOT=python"
+)
+if "%PY_BOOT%"=="" (
+  echo [FAIL] Python 3.11 is required ^(FreeGSNKE / scipy wheels^).
+  echo       Install from https://www.python.org/downloads/release/python-3119/
+  echo       Or: winget install Python.Python.3.11
+  echo       Then re-run setup_fresh.cmd
+  where py >nul 2>nul && py -0p 2>nul
+  exit /b 1
 )
 
 echo [INFO] Using: %PY_BOOT%
 
 if not exist ".venv\Scripts\python.exe" (
+  if exist ".venv" (
+    echo [WARN] .venv exists but python.exe missing — recreating
+    rmdir /s /q ".venv" 2>nul
+  )
   echo [INFO] Creating .venv
   %PY_BOOT% -m venv .venv
   if errorlevel 1 (
@@ -43,28 +55,35 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [INFO] Upgrading pip + installing package ^(with UI extras^)
-python -m pip install -U pip
-if errorlevel 1 exit /b 1
-if exist requirements.txt (
-  python -m pip install -r requirements.txt
-  if errorlevel 1 exit /b 1
+python -c "import sys; raise SystemExit(0 if sys.version_info[:2]==(3,11) else 1)" >nul 2>nul
+if errorlevel 1 (
+  echo [FAIL] .venv is not Python 3.11. Delete .venv and re-run setup_fresh.cmd
+  python -V
+  exit /b 1
 )
-python -m pip install -e ".[ui]"
+
+echo [INFO] Upgrading pip + installing package ^(UI + tests via requirements.txt^)
+python -m pip install -U pip setuptools wheel
 if errorlevel 1 exit /b 1
+python -m pip install -r requirements.txt
+if errorlevel 1 (
+  echo [FAIL] pip install -r requirements.txt failed
+  exit /b 1
+)
 
 echo [INFO] Ensuring s5cmd ^(FAIR-MAST Level-2 sync^)
 python scripts\ensure_s5cmd.py
 if errorlevel 1 (
-  echo [WARN] s5cmd helper returned non-zero — install s5cmd manually if downloads fail
+  echo [FAIL] s5cmd bootstrap failed — downloads will not work
+  exit /b 1
 )
 
-echo [INFO] Ensuring FreeGSNKE env ^(optional until you execute solvers^)
-if exist scripts\ensure_freegsnke_env.py (
-  python scripts\ensure_freegsnke_env.py
-  if errorlevel 1 (
-    echo [WARN] FreeGSNKE env helper returned non-zero — pipeline download/extract still works
-  )
+echo [INFO] Ensuring FreeGSNKE env ^(required by configs\default.json execute flags^)
+python scripts\ensure_freegsnke_env.py
+if errorlevel 1 (
+  echo [FAIL] FreeGSNKE env bootstrap failed
+  echo       Install Python 3.11 and retry, or see scripts\ensure_freegsnke_env.py
+  exit /b 1
 )
 
 echo.

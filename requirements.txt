@@ -1,11 +1,16 @@
-# Fresh-machine pipeline install (Windows / Linux)
-#   py -3.11 -m venv .venv
-#   .venv\Scripts\python -m pip install -U pip
-#   .venv\Scripts\python -m pip install -e ".[dev]"
-#   .venv\Scripts\python -m pip install -r requirements.txt
+# Fresh-machine install (Windows / Linux / macOS)
 #
-# FreeGSNKE execution env is separate — see requirements-freegsnke.txt
-# Also need s5cmd: python scripts/ensure_s5cmd.py
+#   python3.11 -m venv .venv
+#   # Windows: .venv\Scripts\activate
+#   # Unix:    source .venv/bin/activate
+#   python -m pip install -U pip
+#   python -m pip install -r requirements.txt
 #
--e .
-pytest>=7.4.0
+# Or one-shot:
+#   Windows: setup_fresh.cmd
+#   Unix:    ./setup_fresh.sh
+#
+# FreeGSNKE execution uses a separate venv — scripts/ensure_freegsnke_env.py
+# s5cmd: scripts/ensure_s5cmd.py
+#
+-e ".[ui,dev]"

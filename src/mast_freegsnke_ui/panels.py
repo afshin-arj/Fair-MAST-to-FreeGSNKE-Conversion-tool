@@ -219,11 +219,20 @@ def stage_progress_bar(progress: Optional[Dict[str, Any]], running: bool) -> Any
         return html.Div(className="stage-progress-wrap")
     n = max(len(stages), 1)
     done = sum(1 for s in stages if s.get("ok"))
-    failed = any(not s.get("ok") for s in stages)
+    overall = str((progress or {}).get("status") or "")
+    blocking = list((progress or {}).get("blocking_errors") or [])
+    hard_fail = overall == "failed" or bool(blocking)
     pct = int(round(100 * done / n)) if stages else (8 if running else 0)
     if running and stages:
         pct = min(95, max(pct, int(round(100 * (done + 0.35) / max(n + 1, 1)))))
-    color = "danger" if failed and not running else ("success" if not running and done == n and n else "info")
+    if running:
+        color = "info"
+    elif hard_fail:
+        color = "danger"
+    elif overall == "success" or (done == n and n):
+        color = "success"
+    else:
+        color = "secondary"
     label = f"{done}/{n} stages" + (" · running" if running else "")
     return html.Div(
         [

@@ -20,10 +20,10 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [INFO] Ensuring UI extras ^(dash / plotly^)
-python -m pip install -e ".[ui]" -q
+echo [INFO] Ensuring UI package is installed ^(dash / plotly^)
+python -m pip install -r requirements.txt -q
 if errorlevel 1 (
-  echo [FAIL] pip install -e ".[ui]" failed
+  echo [FAIL] pip install -r requirements.txt failed
   exit /b 1
 )
 

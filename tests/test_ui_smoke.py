@@ -313,7 +313,7 @@ def test_check_groups_respecting_cache_skips_s3(tmp_path: Path) -> None:
 
     shot_cache = tmp_path / "shot_42"
     (shot_cache / "pf_active.zarr").mkdir(parents=True)
-    (shot_cache / "pf_active.zarr" / "x").write_text("1", encoding="utf-8")
+    (shot_cache / "pf_active.zarr" / "zarr.json").write_text("{}", encoding="utf-8")
 
     called: list[str] = []
 

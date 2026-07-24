@@ -27,25 +27,36 @@ echo "[ENV] Shell: $SHELL"
 echo "[ENV] PWD: $(pwd)"
 
 
-# Prefer Python 3.11 when available (FAIR-MAST Zarr + FreeGSNKE stack).
+# Require Python 3.11 (FAIR-MAST Zarr + FreeGSNKE / scipy wheels).
 PY_BIN=""
 if command -v python3.11 >/dev/null 2>&1; then
   PY_BIN="python3.11"
-elif command -v python3 >/dev/null 2>&1; then
+elif command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; raise SystemExit(0 if sys.version_info[:2]==(3,11) else 1)'; then
   PY_BIN="python3"
-elif command -v python >/dev/null 2>&1; then
+elif command -v python >/dev/null 2>&1 && python -c 'import sys; raise SystemExit(0 if sys.version_info[:2]==(3,11) else 1)'; then
   PY_BIN="python"
 else
-  echo "[FAIL] Python not found. Install Python 3.11+ and retry." >&2
+  echo "[FAIL] Python 3.11 not found. Install python3.11 (or run ./setup_fresh.sh)." >&2
   exit 1
 fi
 
-if [[ ! -d .venv ]]; then
+if [[ ! -x .venv/bin/python ]]; then
+  if [[ -d .venv ]]; then
+    echo "[WARN] .venv incomplete — recreating"
+    rm -rf .venv
+  fi
   echo "[INFO] Creating virtual environment: .venv (bootstrap: ${PY_BIN})"
   "$PY_BIN" -m venv .venv
 fi
 
+# shellcheck disable=SC1091
 source .venv/bin/activate
+
+python -c 'import sys; raise SystemExit(0 if sys.version_info[:2]==(3,11) else 1)' || {
+  echo "[FAIL] .venv is not Python 3.11. Remove .venv and run ./setup_fresh.sh" >&2
+  python -V
+  exit 1
+}
 
 echo "[INFO] Python:"
 python -V
@@ -73,8 +84,8 @@ else
     echo "[INFO] Upgrading pip..."
     python -m pip install --upgrade pip
 
-    echo "[INFO] Installing package (editable) with extras: zarr,dev"
-    python -m pip install -e ".[zarr,dev]"
+    echo "[INFO] Installing package via requirements.txt (editable [ui,dev])"
+    python -m pip install -r requirements.txt
     if [[ -n "$PYPROJECT_HASH" ]]; then
       printf '%s\n' "$PYPROJECT_HASH" > "$INSTALL_MARKER"
     fi
