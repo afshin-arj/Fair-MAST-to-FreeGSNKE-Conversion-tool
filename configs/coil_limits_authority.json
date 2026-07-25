@@ -1,0 +1,8 @@
+{
+  "authority_name": "coil_limits",
+  "authority_version": "0.1.0",
+  "status": "awaiting_authority",
+  "circuits": {},
+  "citation": null,
+  "notes": "ADR-004 Phase 2 hard gate. Populate per-circuit Imax_A / Vmax_V with plant-doc citation before enabling the Python GSPulse-style planner. Empty circuits = planner blocked; never invent limits."
+}

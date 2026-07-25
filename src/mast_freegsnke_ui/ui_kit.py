@@ -225,6 +225,26 @@ def kpi_scorecard_rows(kpis: Dict[str, Any]) -> List[Dict[str, Any]]:
         },
         {"key": "evolutive_rms_A", "label": "Evolutive Ip RMS [A]", "value": kpis.get("evolutive_rms_A")},
         {
+            "key": "profile_source",
+            "label": "Profile source (ADR-004)",
+            "value": kpis.get("profile_source"),
+            "tone": (
+                "ok"
+                if kpis.get("profile_source") == "profile_trajectory_authority"
+                else ("warn" if kpis.get("profile_traj_status") and str(kpis.get("profile_traj_status")).startswith("skipped") else "")
+            ),
+        },
+        {
+            "key": "profile_fit_mode",
+            "label": "Profile fit mode",
+            "value": kpis.get("profile_fit_mode"),
+        },
+        {
+            "key": "profile_n_knots",
+            "label": "Profile knots",
+            "value": kpis.get("profile_n_knots"),
+        },
+        {
             "key": "efit_ok",
             "label": "EFIT archive ok",
             "value": kpis.get("efit_ok"),

@@ -62,11 +62,12 @@ signals as reconstruction targets — confirming they are the open, citeable EFI
 | Shape scorecard (axis, midplane R, X-point, LCFS NN distance) | done (`shape_scorecard.csv`) |
 | Declared ψ convention Wb/2π | done |
 | Mode label `reconstruction_vs_archive` | done |
-| Forward replay (EFIT currents+profiles → FreeGSNKE) | **not** implemented (needs cited profile-coeff authority) |
+| Forward replay (EFIT currents+profiles → FreeGSNKE) | deferred as full forward-replay mode; **profile-coeff trajectory** for evolutive is ADR-004 Phase 1 |
 
 ## Related
 
 - [ADR-003](003-reject-pyefit-windows-path.md) — Py-EFIT / efit-ai / eqtools-as-solver are **not** the Windows path; FreeGSNKE + this archive compare remain.
+- [ADR-004](004-profile-trajectory-and-planner.md) — EFIT++ → `profile_trajectory_authority` → FreeGSNKE evolutive; Phase-2 Python planner.
 
 ## References
 

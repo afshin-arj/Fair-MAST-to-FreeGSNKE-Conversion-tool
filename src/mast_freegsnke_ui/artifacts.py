@@ -358,6 +358,8 @@ def authority_snapshot(run_dir: Path) -> Dict[str, Any]:
         ("diagnostic_contracts (legacy)", "contracts/diagnostic_contracts.resolved.json"),
         ("evolutive_authority", "inputs/evolutive_authority/evolutive_authority.json"),
         ("execution_authority", "inputs/execution_authority/execution_authority_bundle.json"),
+        ("profile_trajectory", "inputs/profile_trajectory_authority/profile_trajectory.json"),
+        ("profile_trajectory_policy", "inputs/profile_trajectory_authority/profile_trajectory_authority.json"),
         ("diagnostic_calibration", "06_authorities/diagnostic_calibration/diagnostic_calibration.json"),
         ("diagnostic_calibration (legacy)", "inputs/diagnostic_calibration/diagnostic_calibration.json"),
         ("machine_authority_snapshot", "06_authorities/machine_authority_snapshot/authority_manifest.json"),
@@ -384,15 +386,25 @@ def authority_snapshot(run_dir: Path) -> Dict[str, Any]:
         }
         obj = _safe_json(p)
         if obj:
-            for key in ("sha256", "authority_name", "authority_version", "version", "n_channels", "status"):
+            for key in ("sha256", "content_sha256", "authority_name", "authority_version", "version", "n_channels", "status", "fit_mode_used"):
                 if key in obj and obj[key] is not None:
                     val = obj[key]
-                    if key == "sha256" and isinstance(val, str) and len(val) > 16:
+                    if key in ("sha256", "content_sha256") and isinstance(val, str) and len(val) > 16:
                         entry["detail"] = f"sha256={val[:16]}…"
                     elif key == "status":
                         entry.setdefault("detail", f"status={val}")
+                        if val in ("skipped_insufficient_archive", "awaiting_authority"):
+                            entry["status"] = "awaiting"
+                        elif val == "ok":
+                            entry["status"] = "present"
+                    elif key == "fit_mode_used":
+                        entry.setdefault("detail", f"fit={val}")
                     else:
                         entry.setdefault("detail", f"{key}={val}")
+            if role == "profile_trajectory" and isinstance(obj.get("knots"), list):
+                n = len(obj["knots"])
+                prev = entry.get("detail") or ""
+                entry["detail"] = (prev + f" knots={n}").strip()
         items.append(entry)
         present_by_role[role] = entry
 
@@ -404,6 +416,7 @@ def authority_snapshot(run_dir: Path) -> Dict[str, Any]:
         "diagnostic_contracts",
         "evolutive_authority",
         "execution_authority",
+        "profile_trajectory",
         "diagnostic_calibration",
         "provenance hashes",
     )
@@ -419,6 +432,12 @@ def authority_snapshot(run_dir: Path) -> Dict[str, Any]:
             hint = (
                 "Optional until mirnov/saddle/omaha synthesis is required; "
                 "populate configs/diagnostic_calibration.json with cited scale/sign/source."
+            )
+        elif role == "profile_trajectory":
+            status = "awaiting"
+            hint = (
+                "ADR-004: built from FAIR-MAST equilibrium when wmhd/pprime exist; "
+                "soft-skip → evolutive holds inverse IC (never invents coefficients)."
             )
         matrix.append(
             {
@@ -441,7 +460,14 @@ def authority_snapshot(run_dir: Path) -> Dict[str, Any]:
         for b in blocking
         if any(
             tok in str(b).lower()
-            for tok in ("authority", "coil_map", "voltage_map", "diagnostic_calibration", "contract")
+            for tok in (
+                "authority",
+                "coil_map",
+                "voltage_map",
+                "diagnostic_calibration",
+                "contract",
+                "profile_trajectory",
+            )
         )
     ]
     if auth_block:
@@ -531,6 +557,79 @@ def file_to_data_uri(path: Path) -> Optional[str]:
     return f"data:{mime};base64,{b64}"
 
 
+def load_evolutive_meta(run_dir: Path) -> Optional[Dict[str, Any]]:
+    """Evolutive provenance (profile_source / trajectory hash) — never invent."""
+    run_dir = Path(run_dir)
+    for rel in (
+        "03_reconstruction/evolutive/evolutive_meta.json",
+        "evolutive/evolutive_meta.json",
+    ):
+        obj = _safe_json(run_dir / rel)
+        if obj:
+            return obj
+    return None
+
+
+def load_profile_trajectory_info(run_dir: Path) -> Dict[str, Any]:
+    """ADR-004 profile trajectory snapshot summary for UI (read-only).
+
+    Returns keys: present, status, fit_mode, n_knots, sha256_short, profile_source,
+    policy_rel, trajectory_rel, detail.
+    """
+    run_dir = Path(run_dir)
+    traj_rel = "inputs/profile_trajectory_authority/profile_trajectory.json"
+    pol_rel = "inputs/profile_trajectory_authority/profile_trajectory_authority.json"
+    traj = _safe_json(run_dir / traj_rel)
+    pol = _safe_json(run_dir / pol_rel)
+    evo = load_evolutive_meta(run_dir) or {}
+    policy = evo.get("profile_policy") if isinstance(evo.get("profile_policy"), dict) else {}
+
+    out: Dict[str, Any] = {
+        "present": bool(traj) or bool(pol),
+        "status": None,
+        "fit_mode": None,
+        "n_knots": None,
+        "sha256_short": None,
+        "profile_source": evo.get("profile_source") or policy.get("profile_source"),
+        "policy_rel": pol_rel if (run_dir / pol_rel).is_file() else None,
+        "trajectory_rel": traj_rel if (run_dir / traj_rel).is_file() else None,
+        "detail": None,
+    }
+    if isinstance(traj, dict):
+        status = traj.get("status")
+        out["status"] = status
+        out["fit_mode"] = traj.get("fit_mode_used")
+        knots = traj.get("knots") or []
+        out["n_knots"] = len(knots) if isinstance(knots, list) else None
+        sha = traj.get("content_sha256")
+        if isinstance(sha, str) and sha:
+            out["sha256_short"] = sha[:16] + "…"
+        if not out["profile_source"]:
+            if status == "ok":
+                out["profile_source"] = "profile_trajectory_authority"
+            elif status:
+                out["profile_source"] = f"ic_hold ({status})"
+        out["detail"] = (
+            f"status={status} fit={out['fit_mode']} knots={out['n_knots']}"
+            + (f" sha={out['sha256_short']}" if out["sha256_short"] else "")
+        )
+    elif isinstance(policy, dict) and policy.get("profile_trajectory"):
+        out["profile_source"] = "profile_trajectory_authority"
+        out["fit_mode"] = policy.get("profile_trajectory_fit_mode")
+        sha = policy.get("profile_trajectory_sha256")
+        if isinstance(sha, str) and sha:
+            out["sha256_short"] = sha[:16] + "…"
+        out["status"] = "ok"
+        out["detail"] = "from evolutive_meta (trajectory file may be archived)"
+    elif evo.get("profile_source"):
+        out["profile_source"] = evo.get("profile_source")
+        out["detail"] = "from evolutive_meta"
+    elif not out["present"]:
+        out["profile_source"] = None
+        out["detail"] = "No profile_trajectory snapshot (evolutive holds inverse IC if run)."
+    return out
+
+
 def overview_kpis(run_dir: Path) -> Dict[str, Any]:
     """Compact KPI dict for the overview strip."""
     run_dir = Path(run_dir)
@@ -540,10 +639,17 @@ def overview_kpis(run_dir: Path) -> Dict[str, Any]:
     audit = load_science_audit(run_dir) or summary.get("science_audit") or {}
     metrics = load_metrics(run_dir) or {}
     efit = load_efit_compare(run_dir) or {}
+    ptraj = load_profile_trajectory_info(run_dir)
     window = summary.get("window") or man.get("time_window") or {}
     blocking = list(summary.get("blocking_errors") or man.get("blocking_errors") or progress.get("blocking_errors") or [])
     evo = audit.get("evolutive_ip") if isinstance(audit, dict) else {}
     status = summary.get("status") or man.get("status") or progress.get("status") or "unknown"
+    # Stage-log hint for profile_trajectory soft-skip
+    stage_status = None
+    for s in progress.get("stage_log") or man.get("stage_log") or []:
+        if isinstance(s, dict) and s.get("stage") == "profile_trajectory":
+            stage_status = s.get("status") or s.get("note")
+            break
     return {
         "shot": summary.get("shot") or man.get("shot") or run_dir.name,
         "status": status,
@@ -554,6 +660,12 @@ def overview_kpis(run_dir: Path) -> Dict[str, Any]:
         "efit_ok": efit.get("ok"),
         "evolutive_ok": evo.get("ok") if isinstance(evo, dict) else None,
         "evolutive_rms_A": evo.get("rms_A") if isinstance(evo, dict) else None,
+        "profile_source": ptraj.get("profile_source"),
+        "profile_traj_status": ptraj.get("status") or stage_status,
+        "profile_fit_mode": ptraj.get("fit_mode"),
+        "profile_n_knots": ptraj.get("n_knots"),
+        "profile_sha256_short": ptraj.get("sha256_short"),
+        "profile_traj_rel": ptraj.get("trajectory_rel"),
         "blocking_n": len(blocking),
         "blocking": blocking[:8],
         "modes": summary.get("modes") or {},
@@ -632,6 +744,9 @@ def compare_scorecard(
         ("metrics_ok", "Metrics ok"),
         ("evolutive_ok", "Evolutive Ip ok"),
         ("evolutive_rms_A", "Evolutive Ip RMS [A]"),
+        ("profile_source", "Profile source"),
+        ("profile_fit_mode", "Profile fit mode"),
+        ("profile_n_knots", "Profile knots"),
         ("efit_ok", "EFIT archive ok"),
         ("blocking_n", "Blocking errors"),
     )
@@ -699,6 +814,13 @@ def overview_text(run_dir: Path) -> str:
         lines.append(f"EFIT archive compare ok={k['efit_ok']}")
     if k.get("evolutive_ok") is not None:
         lines.append(f"Evolutive Ip: ok={k['evolutive_ok']} rms_A={k.get('evolutive_rms_A')}")
+    if k.get("profile_source") or k.get("profile_traj_status"):
+        lines.append(
+            "Profile trajectory: "
+            f"source={k.get('profile_source')} status={k.get('profile_traj_status')} "
+            f"fit={k.get('profile_fit_mode')} knots={k.get('profile_n_knots')}"
+            + (f" sha={k.get('profile_sha256_short')}" if k.get("profile_sha256_short") else "")
+        )
     if k["blocking"]:
         lines.append("Blocking errors:")
         for e in k["blocking"]:
@@ -745,6 +867,9 @@ _PREFERRED_DOWNLOADS = (
     "04_efit_compare/COMPARE.md",
     "04_efit_compare/shape_scorecard.json",
     "04_efit_compare/shape_scorecard.csv",
+    "inputs/profile_trajectory_authority/profile_trajectory.json",
+    "inputs/profile_trajectory_authority/profile_trajectory_authority.json",
+    "03_reconstruction/evolutive/evolutive_meta.json",
 )
 
 

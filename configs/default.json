@@ -33,6 +33,8 @@
   "coil_map_path": "configs/coil_map.json",
   "voltage_map_path": "configs/voltage_map.json",
   "evolutive_authority_path": "configs/evolutive_authority.json",
+  "profile_trajectory_authority_path": "configs/profile_trajectory_authority.json",
+  "build_profile_trajectory": true,
   "enable_contract_metrics": true,
   "enable_experimental_data": true,
   "experimental_data_plots": true,

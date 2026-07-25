@@ -469,6 +469,33 @@ def main(argv=None) -> int:
         else:
             print("[WARN] evolutive_authority_path not set")
 
+        # ADR-004 profile trajectory policy (required when build_profile_trajectory)
+        if cfg.build_profile_trajectory:
+            from .profile_trajectory import load_profile_trajectory_policy
+
+            ptp = Path(cfg.profile_trajectory_authority_path) if cfg.profile_trajectory_authority_path else None
+            if ptp is None:
+                print("[FAIL] profile_trajectory_authority_path required when build_profile_trajectory=true")
+                ok = False
+            else:
+                if not ptp.is_absolute():
+                    ptp = (Path.cwd() / ptp).resolve()
+                if not ptp.exists():
+                    print(f"[FAIL] profile_trajectory_authority_path not found: {ptp}")
+                    ok = False
+                else:
+                    try:
+                        pol = load_profile_trajectory_policy(ptp)
+                        print(
+                            f"[OK] profile_trajectory: enabled={pol.enabled} require={pol.require} "
+                            f"fit_mode={pol.fit_mode} n_knots={pol.n_knots}"
+                        )
+                    except Exception as e:
+                        print(f"[FAIL] profile_trajectory_authority invalid: {e}")
+                        ok = False
+        else:
+            print("[INFO] build_profile_trajectory=false (ADR-004 stage off)")
+
         # Diagnostic calibration (optional; empty channels = awaiting)
         if cfg.diagnostic_calibration_path:
             from .diagnostic_calibration import (

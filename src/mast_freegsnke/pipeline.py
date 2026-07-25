@@ -876,6 +876,102 @@ class ShotPipeline:
                         "refusing PF-proxy / full-extent silence."
                     )
 
+            # ADR-004 Phase 1: EFIT++ → declared profile_trajectory (needs window.json)
+            if self.cfg.build_profile_trajectory:
+                from dataclasses import replace as _dc_replace
+
+                from .efit_profile_fit import ProfileFitError, run_profile_trajectory_stage
+                from .profile_trajectory import load_profile_trajectory_policy
+
+                pt_path = _resolve_config_path(
+                    self.cfg.profile_trajectory_authority_path, repo_root
+                )
+                if pt_path is None or not pt_path.exists():
+                    blocking_errors.append(
+                        "profile_trajectory_authority_required: set "
+                        "profile_trajectory_authority_path when build_profile_trajectory=true "
+                        "(ADR-004 fail-closed)"
+                    )
+                    _stage("profile_trajectory", False, note="missing_path")
+                elif shot_cache is None:
+                    try:
+                        _pol0 = load_profile_trajectory_policy(pt_path)
+                        _req0 = bool(_pol0.require)
+                    except Exception:
+                        _req0 = True
+                    msg = "profile_trajectory skipped: no shot cache for equilibrium.zarr"
+                    if _req0:
+                        blocking_errors.append(msg)
+                        _stage("profile_trajectory", False, note="no_cache")
+                    else:
+                        _stage("profile_trajectory", True, note="no_cache_soft_skip")
+                elif final_tw is None:
+                    try:
+                        _pol0 = load_profile_trajectory_policy(pt_path)
+                        _req0 = bool(_pol0.require)
+                    except Exception:
+                        _req0 = True
+                    msg = "profile_trajectory skipped: window.json not finalized"
+                    if _req0:
+                        blocking_errors.append(msg)
+                        _stage("profile_trajectory", False, note="no_window")
+                    else:
+                        _stage("profile_trajectory", True, note="no_window_soft_skip")
+                else:
+                    try:
+                        policy = load_profile_trajectory_policy(pt_path)
+                        policy = _dc_replace(policy, n_knots=int(self.cfg.metrics_n_times))
+                        pt_rep = run_profile_trajectory_stage(
+                            inputs_dir=inputs_dir,
+                            cache_dir=shot_cache,
+                            policy_path=pt_path,
+                            shot=int(shot),
+                            policy=policy,
+                        )
+                        if pt_rep.get("ok"):
+                            _stage(
+                                "profile_trajectory",
+                                True,
+                                status=pt_rep.get("status"),
+                                fit_mode_used=pt_rep.get("fit_mode_used"),
+                                n_knots=pt_rep.get("n_knots"),
+                                content_sha256=pt_rep.get("content_sha256"),
+                                path=pt_rep.get("path"),
+                            )
+                        elif policy.require:
+                            blocking_errors.append(
+                                "profile_trajectory_required: "
+                                f"{pt_rep.get('status')}: {pt_rep.get('fix_hint')}"
+                            )
+                            _stage(
+                                "profile_trajectory",
+                                False,
+                                status=pt_rep.get("status"),
+                                fix_hint=pt_rep.get("fix_hint"),
+                                provenance=pt_rep.get("provenance"),
+                            )
+                        else:
+                            _stage(
+                                "profile_trajectory",
+                                True,
+                                note=str(pt_rep.get("status") or "skipped"),
+                                status=pt_rep.get("status"),
+                                fix_hint=pt_rep.get("fix_hint"),
+                                provenance=pt_rep.get("provenance"),
+                            )
+                    except ProfileFitError as e:
+                        blocking_errors.append(
+                            f"profile_trajectory_failed: {type(e).__name__}: {e}"
+                        )
+                        _stage("profile_trajectory", False, error=str(e))
+                    except Exception as e:
+                        blocking_errors.append(
+                            f"profile_trajectory_failed: {type(e).__name__}: {e}"
+                        )
+                        _stage("profile_trajectory", False, error=str(e))
+            else:
+                _stage("profile_trajectory", True, note="build_profile_trajectory=false")
+
             # QC diagnostics (best-effort, but failures are blocking if window exists)
             window_diag: Optional[WindowDiagnostics] = None
             if final_tw is not None:

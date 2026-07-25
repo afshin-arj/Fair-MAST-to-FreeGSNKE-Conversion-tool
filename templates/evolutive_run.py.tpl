@@ -8,7 +8,7 @@
 #   - measured FAIR-MAST Level-2 voltages (primary drive for mapped channels)
 #   - from_current_ohmic: V = sign*scale*I*R using FreeGSNKE coil_resist
 #   - declared default_V=0 for MAST-U-only divertor circuits
-# Profile alpha_m/alpha_n/fvac held from inverse IC; optional scale_paxis_with_ip.
+# Profile: ADR-004 trajectory overrides IC hold / scale_paxis_with_ip when present.
 
 from __future__ import annotations
 
@@ -261,6 +261,19 @@ def _set_currents(tokamak, currents: dict) -> None:
             coil.current = float(currents[name])
 
 
+def _try_load_profile_trajectory():
+    """ADR-004: declared time-dependent ConstrainPaxisIp knobs (never invent)."""
+    try:
+        from mast_freegsnke.profile_trajectory import try_load_built_trajectory, interpolate_profile_at
+    except Exception as e:
+        print(f"[WARN] profile_trajectory import failed: {e}", flush=True)
+        return None, None
+    traj = try_load_built_trajectory(INPUTS)
+    if traj is None:
+        return None, None
+    return traj, interpolate_profile_at
+
+
 def main() -> None:
     ea_evolv = _load_evolutive_authority()
     full_dt = float(ea_evolv["full_timestep_s"])
@@ -274,6 +287,22 @@ def main() -> None:
     per_step_timeout_s = float(ea_evolv.get("per_step_timeout_s", 180.0))
     if not (per_step_timeout_s > 0.0):
         raise ValueError("evolutive_authority.per_step_timeout_s must be > 0")
+    traj, interpolate_profile_at = _try_load_profile_trajectory()
+    use_trajectory = traj is not None
+    if use_trajectory and scale_paxis:
+        print(
+            "[INFO] profile_trajectory present → overrides scale_paxis_with_ip "
+            "(ADR-004 declared precedence)",
+            flush=True,
+        )
+        scale_paxis = False
+    if use_trajectory:
+        print(
+            f"[INFO] profile_trajectory: status=ok knots={len(traj.knots)} "
+            f"fit_mode={traj.fit_mode_used} interp={traj.interpolation} "
+            f"sha256={traj.content_sha256()[:12]}…",
+            flush=True,
+        )
     # If presentation wants GIFs but authority left snapshots off, enable every step
     # (declared by presentation_authority.json — not a silent invent).
     try:
@@ -326,6 +355,7 @@ def main() -> None:
         currents_df = pd.read_csv(cur_path)
 
     ip_df = None
+    ip_col = None
     if scale_paxis:
         ip_path = INPUTS / "ip.csv"
         if not ip_path.exists():
@@ -336,7 +366,6 @@ def main() -> None:
         if "time" not in ip_df.columns:
             raise ValueError("ip.csv missing time column")
         # Prefer column named Ip / ip / plasma_current
-        ip_col = None
         for cand in ("Ip", "ip", "plasma_current", "I_p"):
             if cand in ip_df.columns:
                 ip_col = cand
@@ -518,8 +547,26 @@ def main() -> None:
         )
         profiles_parameters = None
         paxis_step = paxis0
-        if scale_paxis:
-            assert ip_df is not None
+        alpha_m_step = alpha_m0
+        alpha_n_step = alpha_n0
+        fvac_step = float(dump["fvac"])
+        if use_trajectory:
+            assert interpolate_profile_at is not None and traj is not None
+            knobs = interpolate_profile_at(traj, t_abs)
+            paxis_step = float(knobs["paxis"])
+            alpha_m_step = float(knobs["alpha_m"])
+            alpha_n_step = float(knobs["alpha_n"])
+            fvac_step = float(knobs["fvac"])
+            profiles_parameters = {
+                "paxis": float(paxis_step),
+                "alpha_m": float(alpha_m_step),
+                "alpha_n": float(alpha_n_step),
+            }
+            # fvac is not in nlstepper profiles_parameters on all FreeGSNKE builds;
+            # record it in history/meta. Shape alphas+paxis are the declared drive.
+            _ = fvac_step
+        elif scale_paxis:
+            assert ip_df is not None and ip_col is not None
             t_ip = ip_df["time"].to_numpy(dtype=float)
             y_ip = ip_df[ip_col].to_numpy(dtype=float)
             ip_t = _interp_series(t_abs, t_ip, y_ip, "Ip")
@@ -536,7 +583,7 @@ def main() -> None:
 
         print(
             f"Step {step}/{n_steps - 1}  t_abs={t_abs:.6f}  linear_only={linear_only} "
-            f"scale_paxis={scale_paxis} paxis={paxis_step:.6g}",
+            f"traj={use_trajectory} scale_paxis={scale_paxis} paxis={paxis_step:.6g}",
             flush=True,
         )
         step_ok = True
@@ -662,10 +709,25 @@ def main() -> None:
                 "machine_circuits_without_fairmast_drive"
             ),
         },
-        "profile_source": "inverse_dump_IC",
+        "profile_source": (
+            "profile_trajectory_authority"
+            if use_trajectory
+            else "inverse_dump_IC"
+        ),
         "profile_policy": {
-            "alpha_m_alpha_n_fvac": "held_from_inverse_IC",
+            "alpha_m_alpha_n_fvac": (
+                "from_profile_trajectory"
+                if use_trajectory
+                else "held_from_inverse_IC"
+            ),
             "scale_paxis_with_ip": scale_paxis,
+            "profile_trajectory": bool(use_trajectory),
+            "profile_trajectory_fit_mode": (
+                traj.fit_mode_used if use_trajectory else None
+            ),
+            "profile_trajectory_sha256": (
+                traj.content_sha256() if use_trajectory else None
+            ),
             "paxis0": paxis0,
             "Ip0": Ip0,
         },
@@ -675,9 +737,13 @@ def main() -> None:
             "MAST-U-only divertor circuits (D1–D7/Dp) use declared default_V=0 (no classic-MAST FAIR-MAST drive)",
             "Mismatch is FreeGSNKE structural coils vs classic MAST PF set — not missing FAIR-MAST voltages",
             (
-                "paxis scaled with measured Ip(t)/Ip(t0) (declared law)"
-                if scale_paxis
-                else "Profile parameters held from IC (scale_paxis_with_ip=false)"
+                "Profile knobs from declared profile_trajectory (ADR-004); overrides scale_paxis_with_ip"
+                if use_trajectory
+                else (
+                    "paxis scaled with measured Ip(t)/Ip(t0) (declared law)"
+                    if scale_paxis
+                    else "Profile parameters held from IC (scale_paxis_with_ip=false)"
+                )
             ),
         ],
     }

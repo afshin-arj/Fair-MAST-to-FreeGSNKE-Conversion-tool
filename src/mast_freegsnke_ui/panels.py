@@ -76,6 +76,20 @@ def shot_dossier(
         chip("EFIT", k.get("efit_ok"), tone=ui_kit.status_tone(k.get("efit_ok"))),
         chip("Evol. Ip", k.get("evolutive_ok"), tone=ui_kit.status_tone(k.get("evolutive_ok"))),
         chip("RMS [A]", k.get("evolutive_rms_A")),
+        chip(
+            "Profiles",
+            k.get("profile_source") or k.get("profile_traj_status") or "—",
+            tone=(
+                "ok"
+                if k.get("profile_source") == "profile_trajectory_authority"
+                else (
+                    "warn"
+                    if k.get("profile_traj_status")
+                    and str(k.get("profile_traj_status")).startswith("skipped")
+                    else ""
+                )
+            ),
+        ),
         chip("L2 cache", cache_val, tone=cache_tone),
     ]
     if k.get("blocking_n"):
@@ -118,6 +132,8 @@ def quick_links(shot: int, run_dir: Path) -> Any:
         ("manifest.json", "manifest"),
         ("03_reconstruction/metrics/reconstruction_metrics.json", "metrics"),
         ("04_efit_compare/COMPARE.json", "COMPARE"),
+        ("inputs/profile_trajectory_authority/profile_trajectory.json", "profile traj"),
+        ("03_reconstruction/evolutive/evolutive_meta.json", "evolutive meta"),
         ("02_measured_data/00_index/catalog.json", "L2 catalog"),
         ("02_measured_data/00_index/optional_diagnostics.json", "optional L2"),
     ):
@@ -1174,6 +1190,7 @@ def level2_panel(shot: int, run_dir: Path) -> Any:
 def auth_panel(shot: int, run_dir: Path) -> Any:
     html, _, dbc = _require()
     snap = art.authority_snapshot(run_dir)
+    ptraj = art.load_profile_trajectory_info(run_dir)
     children: List[Any] = [
         tab_banner(
             "Authority snapshots",
@@ -1182,6 +1199,48 @@ def auth_panel(shot: int, run_dir: Path) -> Any:
     ]
     if snap.get("blocking_hint"):
         children.append(dbc.Alert(snap["blocking_hint"], color="danger", className="py-2 small"))
+
+    # ADR-004 profile trajectory card
+    pt_chips = [
+        chip("source", ptraj.get("profile_source") or "—"),
+        chip("status", ptraj.get("status") or "—"),
+        chip("fit", ptraj.get("fit_mode") or "—"),
+        chip("knots", ptraj.get("n_knots")),
+        chip("sha256", ptraj.get("sha256_short") or "—"),
+    ]
+    pt_links: List[Any] = []
+    for rel, label in (
+        (ptraj.get("trajectory_rel"), "profile_trajectory.json"),
+        (ptraj.get("policy_rel"), "policy JSON"),
+        ("03_reconstruction/evolutive/evolutive_meta.json", "evolutive_meta.json"),
+        ("evolutive/evolutive_meta.json", "evolutive_meta (legacy)"),
+    ):
+        if not rel:
+            continue
+        if art.safe_resolve_under(run_dir, str(rel)):
+            pt_links.append(
+                html.A(
+                    label,
+                    href=art.file_url(shot, str(rel)),
+                    target="_blank",
+                    className="compare-file-chip",
+                )
+            )
+    children.append(
+        ui_kit.section(
+            "Profile trajectory (ADR-004)",
+            "Declared ConstrainPaxisIp knobs from EFIT++ archive — never invented. "
+            "When status≠ok, evolutive holds inverse IC profiles.",
+            html.Div(
+                [
+                    html.Div(pt_chips, className="compare-chip-row mb-2"),
+                    html.P(ptraj.get("detail") or "—", className="small text-muted mb-2"),
+                    html.Div(pt_links, className="compare-file-chip-row") if pt_links else None,
+                ]
+            ),
+        )
+    )
+
     matrix = snap.get("matrix") or []
     if matrix:
         mrows = []
@@ -1212,7 +1271,7 @@ def auth_panel(shot: int, run_dir: Path) -> Any:
         children.append(
             ui_kit.section(
                 "Authority matrix",
-                "Present vs missing vs awaiting (calibration may be awaiting until cited factors exist).",
+                "Present vs missing vs awaiting (calibration / profile trajectory may be awaiting until cited inputs exist).",
                 dbc.Table(
                     [
                         html.Thead(
@@ -2168,7 +2227,7 @@ TAB_META = {
     "compare": "Browse-only A|B console — basename-aligned KPIs, Level-2, residuals, and GIFs.",
     "efit": "Archive shape scorecard first (ADR-002) — not a live EFIT solve.",
     "gifs": "Inverse / forward / evolutive equilibrium GIFs with mode badges.",
-    "auth": "Authority traffic-light matrix — fail-fast if missing.",
+    "auth": "Authority matrix + ADR-004 profile trajectory — never invent metrology.",
     "files": "Grouped, filterable artifact downloads + copy path.",
 }
 

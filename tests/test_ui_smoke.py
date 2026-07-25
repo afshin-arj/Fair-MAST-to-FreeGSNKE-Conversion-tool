@@ -51,6 +51,7 @@ def _fixture_shot(run_dir: Path) -> None:
                 "current_stage": "shot_layout",
                 "stage_log": [
                     {"stage": "download", "ok": True},
+                    {"stage": "profile_trajectory", "ok": True, "status": "ok", "fit_mode_used": "scalar_bridge"},
                     {"stage": "shot_layout", "ok": True},
                 ],
                 "blocking_errors": [],
@@ -115,6 +116,59 @@ def _fixture_shot(run_dir: Path) -> None:
     pres = run_dir / "03_reconstruction" / "presentation"
     pres.mkdir(parents=True, exist_ok=True)
     (pres / "inverse_equilibria.gif").write_bytes(b"GIF89a")
+    # ADR-004 profile trajectory snapshot
+    pt_dir = run_dir / "inputs" / "profile_trajectory_authority"
+    pt_dir.mkdir(parents=True, exist_ok=True)
+    (pt_dir / "profile_trajectory.json").write_text(
+        json.dumps(
+            {
+                "authority_name": "profile_trajectory",
+                "authority_version": "1.0.0",
+                "basis_type": "ConstrainPaxisIp",
+                "fit_mode_used": "scalar_bridge",
+                "interpolation": "linear",
+                "status": "ok",
+                "knots": [
+                    {"t_s": 0.1, "paxis_Pa": 8000.0, "fvac": 0.5, "alpha_m": 1.8, "alpha_n": 1.2},
+                    {"t_s": 0.3, "paxis_Pa": 9000.0, "fvac": 0.5, "alpha_m": 1.8, "alpha_n": 1.2},
+                ],
+                "content_sha256": "feedbeef" * 8,
+                "provenance": {},
+                "notes": "",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (pt_dir / "profile_trajectory_authority.json").write_text(
+        json.dumps(
+            {
+                "authority_name": "profile_trajectory",
+                "authority_version": "1.0.0",
+                "enabled": True,
+                "require": False,
+                "fit_mode": "auto",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    evo = run_dir / "03_reconstruction" / "evolutive"
+    evo.mkdir(parents=True, exist_ok=True)
+    (evo / "evolutive_meta.json").write_text(
+        json.dumps(
+            {
+                "profile_source": "profile_trajectory_authority",
+                "profile_policy": {
+                    "profile_trajectory": True,
+                    "profile_trajectory_fit_mode": "scalar_bridge",
+                    "profile_trajectory_sha256": "feedbeef" * 8,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def test_list_and_overview(tmp_path: Path) -> None:
@@ -129,6 +183,10 @@ def test_list_and_overview(tmp_path: Path) -> None:
     k = art.overview_kpis(shot_dir)
     assert k["n_scored"] == 1
     assert k["efit_ok"] is True
+    assert k["profile_source"] == "profile_trajectory_authority"
+    assert k["profile_fit_mode"] == "scalar_bridge"
+    assert k["profile_n_knots"] == 2
+    assert "Profile trajectory" in text
 
 
 def test_metrics_auth_catalog_zip(tmp_path: Path) -> None:
@@ -146,11 +204,19 @@ def test_metrics_auth_catalog_zip(tmp_path: Path) -> None:
     assert uri and uri.startswith("data:image/png;base64,")
     snap = art.authority_snapshot(shot_dir)
     assert any(i["label"] == "voltage_map.sha256" for i in snap["items"])
+    assert any(m["label"] == "profile_trajectory" for m in snap["matrix"])
+    assert any(
+        m["label"] == "profile_trajectory" and m.get("status") == "present" for m in snap["matrix"]
+    )
+    ptraj = art.load_profile_trajectory_info(shot_dir)
+    assert ptraj["status"] == "ok"
+    assert ptraj["trajectory_rel"]
     assert art.load_efit_compare(shot_dir)["ok"] is True
 
     cat = art.catalog_downloadables(shot_dir)
     assert any(i["rel"].endswith("01_plasma_ip.png") for i in cat)
     assert any(i["kind"] == "csv" for i in cat)
+    assert any("profile_trajectory.json" in i["rel"] for i in art.catalog_quick(shot_dir))
 
     assert art.safe_resolve_under(shot_dir, "../secrets.txt") is None
     assert art.safe_resolve_under(shot_dir, "manifest.json") is not None

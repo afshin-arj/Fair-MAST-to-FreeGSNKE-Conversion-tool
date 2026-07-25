@@ -93,6 +93,9 @@ class AppConfig:
     # ADR-002: compare FreeGSNKE to FAIR-MAST EFIT++ archive (default.json sets true).
     compare_efit_archive: bool = False
     efit_compare_authority_path: Optional[str] = None
+    # ADR-004: EFIT++ → profile_trajectory (default.json enables when path set).
+    profile_trajectory_authority_path: Optional[str] = None
+    build_profile_trajectory: bool = False
     # Hard wall-clock limit for each FreeGSNKE script (seconds). None disables.
     # Protects the pipeline from FreeGSNKE's uncapped residual-resize hang.
     freegsnke_script_timeout_s: Optional[float] = 1200.0
@@ -140,6 +143,20 @@ class AppConfig:
         evolutive_authority_path = (
             str(obj["evolutive_authority_path"]) if obj.get("evolutive_authority_path") else None
         )
+        profile_trajectory_authority_path = (
+            str(obj["profile_trajectory_authority_path"])
+            if obj.get("profile_trajectory_authority_path")
+            else None
+        )
+        build_profile_trajectory = bool(obj.get("build_profile_trajectory", False))
+        if build_profile_trajectory and not profile_trajectory_authority_path:
+            raise ValueError(
+                "build_profile_trajectory=true requires profile_trajectory_authority_path "
+                "(ADR-004 fail-closed)"
+            )
+        # Ensure equilibrium group is downloaded when building profile trajectory
+        if build_profile_trajectory and "equilibrium" not in optional_groups:
+            optional_groups = list(optional_groups) + ["equilibrium"]
         passive_resistivity_path = (
             str(obj["passive_resistivity_path"]) if obj.get("passive_resistivity_path") else None
         )
@@ -261,6 +278,8 @@ class AppConfig:
             torax_geometry_export_authority_path=torax_geometry_export_authority_path,
             compare_efit_archive=compare_efit_archive,
             efit_compare_authority_path=efit_compare_authority_path,
+            profile_trajectory_authority_path=profile_trajectory_authority_path,
+            build_profile_trajectory=build_profile_trajectory,
             freegsnke_script_timeout_s=freegsnke_script_timeout_s,
         )
 

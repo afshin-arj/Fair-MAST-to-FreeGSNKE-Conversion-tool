@@ -25,6 +25,15 @@ No interactive prompts for config paths, geometry paths, execute y/n, or metrics
 | `freegsnke-integrator` | Wire FreeGSNKE execution, templates, introspection |
 | `run-doctor` | Diagnose a failed `SHOT/<N>/` |
 
+## ADRs (equilibrium / authority)
+
+| ADR | Topic |
+|-----|-------|
+| 001 | Optional TORAX GEQDSK export |
+| 002 | FAIR-MAST EFIT++ archive compare (not live EFIT++) |
+| 003 | Reject Py-EFIT / efit-ai on Windows happy path |
+| 004 | Profile trajectory from EFIT++ → FreeGSNKE evolutive; Phase-2 Python GSPulse-style planner (no MATLAB) |
+
 ## Skills
 
 | Skill | When to use |
