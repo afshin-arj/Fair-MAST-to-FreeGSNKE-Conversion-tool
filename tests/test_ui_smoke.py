@@ -208,6 +208,19 @@ def _fixture_shot(run_dir: Path) -> None:
         json.dumps({"authority_name": "planner", "enabled": True, "require": False}) + "\n",
         encoding="utf-8",
     )
+    (run_dir / "inputs" / "circuit_dynamics_authority").mkdir(parents=True, exist_ok=True)
+    (run_dir / "inputs" / "circuit_dynamics_authority" / "circuit_dynamics_authority.json").write_text(
+        json.dumps(
+            {
+                "authority_name": "circuit_dynamics",
+                "status": "cited",
+                "citation": "test",
+                "circuits": {"P4": {"R_ohm": 0.00374, "L_henry": 0.004095}},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def test_list_and_overview(tmp_path: Path) -> None:
@@ -251,6 +264,7 @@ def test_metrics_auth_catalog_zip(tmp_path: Path) -> None:
     assert any(m["label"] == "profile_trajectory" for m in snap["matrix"])
     assert any(m["label"] == "coil_limits_authority" for m in snap["matrix"])
     assert any(m["label"] == "planner_authority" for m in snap["matrix"])
+    assert any(m["label"] == "circuit_dynamics_authority" for m in snap["matrix"])
     assert any(
         m["label"] == "profile_trajectory" and m.get("status") == "present" for m in snap["matrix"]
     )

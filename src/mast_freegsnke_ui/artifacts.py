@@ -362,6 +362,7 @@ def authority_snapshot(run_dir: Path) -> Dict[str, Any]:
         ("profile_trajectory_policy", "inputs/profile_trajectory_authority/profile_trajectory_authority.json"),
         ("planner_authority", "inputs/planner_authority/planner_authority.json"),
         ("coil_limits_authority", "inputs/coil_limits_authority/coil_limits_authority.json"),
+        ("circuit_dynamics_authority", "inputs/circuit_dynamics_authority/circuit_dynamics_authority.json"),
         ("diagnostic_calibration", "06_authorities/diagnostic_calibration/diagnostic_calibration.json"),
         ("diagnostic_calibration (legacy)", "inputs/diagnostic_calibration/diagnostic_calibration.json"),
         ("machine_authority_snapshot", "06_authorities/machine_authority_snapshot/authority_manifest.json"),
@@ -407,6 +408,16 @@ def authority_snapshot(run_dir: Path) -> Dict[str, Any]:
                 n = len(obj["knots"])
                 prev = entry.get("detail") or ""
                 entry["detail"] = (prev + f" knots={n}").strip()
+            if role == "coil_limits_authority":
+                pol = obj.get("limit_policy")
+                mf = obj.get("margin_factor")
+                if pol:
+                    prev = entry.get("detail") or ""
+                    entry["detail"] = (prev + f" policy={pol} margin={mf}").strip()
+            if role == "circuit_dynamics_authority" and isinstance(obj.get("circuits"), dict):
+                n = len(obj["circuits"])
+                prev = entry.get("detail") or ""
+                entry["detail"] = (prev + f" n_RL={n}").strip()
         items.append(entry)
         present_by_role[role] = entry
 
@@ -421,6 +432,7 @@ def authority_snapshot(run_dir: Path) -> Dict[str, Any]:
         "profile_trajectory",
         "planner_authority",
         "coil_limits_authority",
+        "circuit_dynamics_authority",
         "diagnostic_calibration",
         "provenance hashes",
     )
@@ -446,11 +458,17 @@ def authority_snapshot(run_dir: Path) -> Dict[str, Any]:
         elif role == "coil_limits_authority":
             status = "awaiting"
             hint = (
-                "ADR-004 Phase 2 hard gate: populate cited Imax_A/Vmax_V before execute_planner."
+                "ADR-004: cite fixed Imax/Vmax or measured_peak_margin policy "
+                "(edit configs/coil_limits_authority.json)."
+            )
+        elif role == "circuit_dynamics_authority":
+            status = "awaiting"
+            hint = (
+                "ADR-004: cite PF + Solenoid R/L in configs/circuit_dynamics_authority.json."
             )
         elif role == "planner_authority":
             status = "awaiting"
-            hint = "Optional; execute_planner defaults false until coil limits are cited."
+            hint = "Optional stage; default.json enables execute_planner when limits + R/L are cited."
         matrix.append(
             {
                 "label": role,
@@ -652,9 +670,11 @@ def load_planner_info(run_dir: Path) -> Dict[str, Any]:
     plot_rel = "07_planner/planning_voltage_residual.png"
     limits_rel = "inputs/coil_limits_authority/coil_limits_authority.json"
     auth_rel = "inputs/planner_authority/planner_authority.json"
+    dyn_rel = "inputs/circuit_dynamics_authority/circuit_dynamics_authority.json"
     meta = _safe_json(run_dir / plan_rel)
     limits = _safe_json(run_dir / limits_rel)
     auth = _safe_json(run_dir / auth_rel)
+    dyn = _safe_json(run_dir / dyn_rel)
     out: Dict[str, Any] = {
         "present": bool(meta),
         "status": None,
@@ -663,17 +683,36 @@ def load_planner_info(run_dir: Path) -> Dict[str, Any]:
         "residual_rms_mean_measured_V": None,
         "n_voltage_violations_raw": None,
         "citation": None,
+        "limit_policy": None,
+        "margin_factor": None,
+        "rl_circuits": None,
         "plan_rel": plan_rel if (run_dir / plan_rel).is_file() else None,
         "resid_rel": resid_rel if (run_dir / resid_rel).is_file() else None,
         "plot_rel": plot_rel if (run_dir / plot_rel).is_file() else None,
         "limits_rel": limits_rel if (run_dir / limits_rel).is_file() else None,
         "auth_rel": auth_rel if (run_dir / auth_rel).is_file() else None,
+        "dyn_rel": dyn_rel if (run_dir / dyn_rel).is_file() else None,
         "limits_status": None,
         "detail": None,
+        "edit_hint": (
+            "To change Vmax/Imax headroom or PF R/L before the next run, edit "
+            "configs/coil_limits_authority.json (margin_factor) and "
+            "configs/circuit_dynamics_authority.json — no new shot-only prompts."
+        ),
     }
     if isinstance(limits, dict):
         out["limits_status"] = limits.get("status")
         out["citation"] = limits.get("citation")
+        out["limit_policy"] = limits.get("limit_policy")
+        out["margin_factor"] = limits.get("margin_factor")
+        if isinstance(limits.get("resolution"), dict):
+            out["limit_policy"] = limits["resolution"].get("policy") or out["limit_policy"]
+    if isinstance(dyn, dict) and isinstance(dyn.get("circuits"), dict):
+        out["rl_circuits"] = {
+            k: {"R_ohm": v.get("R_ohm"), "L_henry": v.get("L_henry")}
+            for k, v in dyn["circuits"].items()
+            if isinstance(v, dict)
+        }
     if isinstance(meta, dict):
         out["status"] = meta.get("status")
         out["n_knots"] = meta.get("n_knots")
@@ -686,18 +725,24 @@ def load_planner_info(run_dir: Path) -> Dict[str, Any]:
             f"status={out['status']} knots={out['n_knots']} "
             f"rms_V={out['residual_rms_mean_V']} "
             f"rms_meas_V={out['residual_rms_mean_measured_V']} "
-            f"V_viol={out['n_voltage_violations_raw']}"
+            f"V_viol={out['n_voltage_violations_raw']} "
+            f"margin={out['margin_factor']}"
         )
     elif isinstance(auth, dict) and not out["present"]:
         out["detail"] = (
             f"planner_authority snapshotted enabled={auth.get('enabled')} "
-            "(no PLANNER.json — execute_planner off or limits awaiting)"
+            f"limits_policy={out.get('limit_policy')} margin={out.get('margin_factor')} "
+            "(no PLANNER.json — set execute_planner=true to run)"
         )
     elif out["limits_status"]:
-        out["detail"] = f"coil_limits status={out['limits_status']} (planner not run)"
+        out["detail"] = (
+            f"coil_limits status={out['limits_status']} "
+            f"policy={out.get('limit_policy')} margin={out.get('margin_factor')} "
+            "(planner not run)"
+        )
     else:
         out["detail"] = (
-            "No planner products — execute_planner defaults false until cited coil limits exist."
+            "No planner products — set execute_planner=true and ensure cited coil limits + R/L."
         )
     return out
 

@@ -523,7 +523,7 @@ def main(argv=None) -> int:
                         if auth.awaiting:
                             print(
                                 "[FAIL] coil_limits awaiting_authority — "
-                                "populate cited Imax/Vmax before execute_planner"
+                                "populate cited Imax/Vmax or measured_peak_margin before execute_planner"
                             )
                             ok = False
                     else:
@@ -539,6 +539,24 @@ def main(argv=None) -> int:
                             ok = False
                 except Exception as e:
                     print(f"[FAIL] {label} invalid: {e}")
+                    ok = False
+            if cfg.circuit_dynamics_authority_path:
+                from .circuit_dynamics_authority import load_circuit_dynamics_authority
+
+                pp = Path(cfg.circuit_dynamics_authority_path)
+                if not pp.is_absolute():
+                    pp = (Path.cwd() / pp).resolve()
+                try:
+                    cd = load_circuit_dynamics_authority(pp)
+                    print(
+                        f"[OK] circuit_dynamics_authority: n={len(cd.circuits)} "
+                        f"missing_policy={cd.missing_circuits_policy}"
+                    )
+                    if cd.awaiting:
+                        print("[FAIL] circuit_dynamics_authority awaiting")
+                        ok = False
+                except Exception as e:
+                    print(f"[FAIL] circuit_dynamics_authority invalid: {e}")
                     ok = False
         else:
             print("[INFO] execute_planner=false (ADR-004 Phase 2 off)")

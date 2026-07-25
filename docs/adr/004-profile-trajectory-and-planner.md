@@ -42,24 +42,32 @@ defines a later planner stage (Phase 2).
 
 ### Phase 2 (v1 shipped): Idea B — Python GSPulse-style planner
 
-1. Optional stage `planner` (config `execute_planner`, default **off**) solves a trajectory
+1. Optional stage `planner` (config `execute_planner`, default **on** when coil_limits +
+   circuit_dynamics authorities are cited) solves a trajectory
    optimization over the formed-plasma window:
    - cost: track measured PF currents + actuator effort + 1st/2nd derivative smoothness
      (GSPulse cost vocabulary; full GS Picard isoflux deferred);
    - constraint: circuit dynamics \(L\dot{I}+R I = V\) with R/L from FreeGSNKE
      `build_tokamak_R_and_M` (active block);
    - box constraints from cited `coil_limits_authority`.
-2. **Hard gate:** `configs/coil_limits_authority.json` must cite plant docs with non-empty
-   I/V limits. Empty / `awaiting_authority` → planner blocked; **never invent Imax/Vmax**.
+2. **Hard gate:** `configs/coil_limits_authority.json` must cite either fixed plant
+   I/V limits **or** a declared `measured_peak_margin` policy (user: margin_factor=1.2
+   over peak |measured I/V| in the planner window). Empty / `awaiting_authority` →
+   planner blocked; **never invent Imax/Vmax silently**.
 3. Outputs under `SHOT/<N>/07_planner/` (not `04_*` — that folder is EFIT compare):
    planned I/V CSVs + planning residual vs measured `pf_voltages.csv`, with honest labels
-   for ohmic-synthetic P3/P6 channels. Dynamics voltages that still violate cited V bounds
-   after projection are **fail-closed** (diagnostic artifacts written, then blocking error).
-   Planner knots must lie within measured PF time coverage (no silent extrapolation).
+   for ohmic-synthetic P3/P6 channels. Dynamics voltages that still violate **fixed** cited
+   plant V bounds after projection are **fail-closed**. Under `measured_peak_margin`,
+   I boxes stay hard; V overshoot vs the 1.2× engineering envelope is reported as
+   `voltage_exceeds_measured_peak_margin` (loud, not silent) without inventing plant ratings.
 4. Planner does **not** replace shot-only FreeGSNKE reconstruction or evolutive forward drive.
 5. Passives excluded while `passive_resistivity` is `awaiting_authority`.
 6. `execute_planner=true` with `planner_authority.enabled=false` is a **blocking** error
    (not a silent success).
+7. Cited PF + Central Solenoid R/L live in `configs/circuit_dynamics_authority.json`
+   (user MAST tables). Edit margin_factor / R/L JSON before a run to retune
+   (snapshotted into `inputs/`; no new happy-path prompts). `execute_planner` defaults
+   **on** once those authorities are cited.
 
 ## Implementation status
 
@@ -72,6 +80,8 @@ defines a later planner stage (Phase 2).
 | Phase 2 residual timeseries + ΔV plot | done |
 | Phase 2 UI (Overview / Authorities / Compare) | done |
 | Phase 2 V-limit fail-closed + no PF extrapolation | done |
+| Phase 2 measured_peak_margin + user PF/CS R/L table | done |
+| Phase 2 execute_planner default on | done |
 | Phase 2 GS Picard isoflux cost | **not yet** (EFIT shape inventory only) |
 | Phase 2 passives in dynamics | blocked on passive_resistivity |
 

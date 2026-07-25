@@ -1257,6 +1257,7 @@ def auth_panel(shot: int, run_dir: Path) -> Any:
     pl_chips = [
         chip("status", pinfo.get("status") or "—"),
         chip("knots", pinfo.get("n_knots")),
+        chip("margin", pinfo.get("margin_factor")),
         chip("rms_V", pinfo.get("residual_rms_mean_V")),
         chip("rms_meas_V", pinfo.get("residual_rms_mean_measured_V")),
         chip("V_viol", pinfo.get("n_voltage_violations_raw")),
@@ -1270,6 +1271,7 @@ def auth_panel(shot: int, run_dir: Path) -> Any:
         ("07_planner/planning_residual_timeseries.csv", "residual timeseries"),
         (pinfo.get("plot_rel"), "ΔV plot"),
         (pinfo.get("limits_rel"), "coil_limits"),
+        (pinfo.get("dyn_rel"), "circuit R/L"),
         (pinfo.get("auth_rel"), "planner_authority"),
     ):
         if not rel:
@@ -1300,6 +1302,7 @@ def auth_panel(shot: int, run_dir: Path) -> Any:
                 [
                     html.Div(pl_chips, className="compare-chip-row mb-2"),
                     html.P(pinfo.get("detail") or "—", className="small text-muted mb-2"),
+                    html.P(pinfo.get("edit_hint") or "", className="small text-muted mb-2"),
                     html.Div(pl_links, className="compare-file-chip-row") if pl_links else None,
                     plot_body,
                 ]

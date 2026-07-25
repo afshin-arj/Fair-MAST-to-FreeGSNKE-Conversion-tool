@@ -819,13 +819,19 @@ class ShotPipeline:
             else:
                 _stage("efit_compare_authority", True, note="compare_efit_archive=false")
 
-            # ADR-004 Phase 2: always snapshot planner/coil_limits when paths set (UI visibility);
-            # execute_planner=true additionally fail-closes on awaiting limits.
+            # ADR-004 Phase 2: always snapshot planner/coil_limits/circuit_dynamics when paths set
+            # (UI visibility); execute_planner=true additionally fail-closes on awaiting limits.
             from .coil_limits import CoilLimitsError, load_coil_limits, write_coil_limits
+            from .circuit_dynamics_authority import (
+                CircuitDynamicsAuthorityError,
+                load_circuit_dynamics_authority,
+                write_circuit_dynamics_authority,
+            )
             from .planner import PlannerError, load_planner_authority, write_planner_authority
 
             pl_path = _resolve_config_path(self.cfg.planner_authority_path, repo_root)
             cl_path = _resolve_config_path(self.cfg.coil_limits_authority_path, repo_root)
+            cd_path = _resolve_config_path(self.cfg.circuit_dynamics_authority_path, repo_root)
             if pl_path is not None and pl_path.exists():
                 try:
                     pl_auth = load_planner_authority(pl_path)
@@ -859,7 +865,8 @@ class ShotPipeline:
                         if self.cfg.execute_planner:
                             blocking_errors.append(
                                 "coil_limits_awaiting_authority: populate cited Imax_A/Vmax_V "
-                                "before execute_planner (never invent limits)"
+                                "or measured_peak_margin policy before execute_planner "
+                                "(never invent limits)"
                             )
                             _stage(
                                 "coil_limits_authority",
@@ -881,6 +888,8 @@ class ShotPipeline:
                             True,
                             path=str(cl_out),
                             n_circuits=len(cl_auth.circuits),
+                            limit_policy=cl_auth.limit_policy,
+                            margin_factor=cl_auth.margin_factor,
                             citation=cl_auth.citation,
                         )
                 except (CoilLimitsError, PlannerError, Exception) as e:
@@ -897,6 +906,38 @@ class ShotPipeline:
                 _stage("coil_limits_authority", False, note="missing_path")
             else:
                 _stage("coil_limits_authority", True, note="no_path")
+
+            if cd_path is not None and cd_path.exists():
+                try:
+                    cd_auth = load_circuit_dynamics_authority(cd_path)
+                    cd_out = write_circuit_dynamics_authority(inputs_dir, cd_auth)
+                    if cd_auth.awaiting and self.cfg.execute_planner:
+                        blocking_errors.append(
+                            "circuit_dynamics_awaiting_authority: cite PF R/L table "
+                            "before execute_planner"
+                        )
+                        _stage("circuit_dynamics_authority", False, path=str(cd_out))
+                    else:
+                        _stage(
+                            "circuit_dynamics_authority",
+                            True,
+                            path=str(cd_out),
+                            n_circuits=len(cd_auth.circuits),
+                            citation=cd_auth.citation,
+                            note=("snapshot_only" if not self.cfg.execute_planner else "ready"),
+                        )
+                except (CircuitDynamicsAuthorityError, Exception) as e:
+                    if self.cfg.execute_planner:
+                        blocking_errors.append(
+                            f"circuit_dynamics_authority_failed: {type(e).__name__}: {e}"
+                        )
+                        _stage("circuit_dynamics_authority", False, error=str(e))
+                    else:
+                        _stage("circuit_dynamics_authority", True, note=f"snapshot_failed:{e}")
+            elif self.cfg.execute_planner:
+                _stage("circuit_dynamics_authority", True, note="no_path_freegsnke_fallback")
+            else:
+                _stage("circuit_dynamics_authority", True, note="no_path")
 
             # Time window: override > consensus > single-signal inference
             window_override: Optional[Dict[str, Any]] = None
@@ -1420,9 +1461,7 @@ class ShotPipeline:
             # ADR-004 Phase 2: optional GSPulse-style planner (default off)
             if self.cfg.execute_planner and final_tw is not None:
                 try:
-                    from .coil_limits import load_coil_limits
-                    from .planner import load_planner_authority, run_planner_stage
-                    from .voltage_map import load_voltage_map
+                    from .planner import run_planner_stage
 
                     pl_snap = inputs_dir / "planner_authority" / "planner_authority.json"
                     cl_snap = inputs_dir / "coil_limits_authority" / "coil_limits_authority.json"
@@ -1444,28 +1483,65 @@ class ShotPipeline:
                         vmap = load_voltage_map(vm_path)
                         order = list(vmap.machine_active_circuit_order)
                         ma_for_plan = ma_root if ma_root is not None else machine_dir
-                        # Prefer freegsnke env for R/L extract when main interpreter lacks freegsnke
+
+                        from .coil_limits import resolve_measured_peak_limits, write_coil_limits
+
+                        R_for_limits: dict = {}
+                        L_for_limits: dict = {}
+                        cd_snap_early = (
+                            inputs_dir
+                            / "circuit_dynamics_authority"
+                            / "circuit_dynamics_authority.json"
+                        )
+                        if cd_snap_early.exists():
+                            from .circuit_dynamics_authority import load_circuit_dynamics_authority
+
+                            _cd_early = load_circuit_dynamics_authority(cd_snap_early)
+                            R_for_limits = {
+                                name: float(rl.R_ohm) for name, rl in _cd_early.circuits.items()
+                            }
+                            L_for_limits = {
+                                name: float(rl.L_henry) for name, rl in _cd_early.circuits.items()
+                            }
+
+                        if cl_auth.limit_policy == "measured_peak_margin":
+                            cl_auth = resolve_measured_peak_limits(
+                                cl_auth,
+                                inputs_dir=inputs_dir,
+                                circuit_order=order,
+                                t_start=float(final_tw.t_start),
+                                t_end=float(final_tw.t_end),
+                                R_ohm_by_circuit=R_for_limits or None,
+                                L_henry_by_circuit=L_for_limits or None,
+                                n_knots=int(pl_auth.n_knots),
+                            )
+                            write_coil_limits(inputs_dir, cl_auth)
+
+                        # Prefer cited circuit_dynamics_authority (user PF R/L); FreeGSNKE fills gaps.
                         dyn = None
                         snap_dyn = inputs_dir / "circuit_dynamics_snapshot.json"
-                        if snap_dyn.exists():
+                        cd_snap = (
+                            inputs_dir / "circuit_dynamics_authority" / "circuit_dynamics_authority.json"
+                        )
+                        freegsnke_fill = None
+                        if snap_dyn.exists() and not cd_snap.exists():
                             from .planner import load_circuit_dynamics
 
                             dyn = load_circuit_dynamics(snap_dyn)
                         else:
-                            # Try extract in-process; if fails, attempt freegsnke_python subprocess later via error
                             try:
                                 from .planner import extract_circuit_dynamics_from_freegsnke_machine
 
-                                dyn = extract_circuit_dynamics_from_freegsnke_machine(
+                                freegsnke_fill = extract_circuit_dynamics_from_freegsnke_machine(
                                     machine_dir=ma_for_plan,
                                     circuit_order=order,
                                 )
                             except Exception:
-                                # Subprocess extract using freegsnke_python
+                                import os as _os
                                 import subprocess
                                 import sys
 
-                                import os as _os
+                                from .planner import load_circuit_dynamics
 
                                 py = self.cfg.freegsnke_python or sys.executable
                                 md_lit = json.dumps(str(Path(ma_for_plan).resolve()))
@@ -1498,14 +1574,38 @@ class ShotPipeline:
                                     env=env,
                                     timeout=300,
                                 )
-                                if r.returncode != 0:
-                                    raise RuntimeError(
-                                        "circuit_dynamics extract failed: "
-                                        + (r.stderr or r.stdout or "unknown")
-                                    )
+                                if r.returncode == 0 and snap_dyn.exists():
+                                    freegsnke_fill = load_circuit_dynamics(snap_dyn)
+
+                            if cd_snap.exists():
+                                from .circuit_dynamics_authority import (
+                                    build_circuit_dynamics_from_authority,
+                                    load_circuit_dynamics_authority,
+                                )
+                                from .planner import write_circuit_dynamics
+
+                                cd_auth = load_circuit_dynamics_authority(cd_snap)
+                                dyn, _fill_meta = build_circuit_dynamics_from_authority(
+                                    cd_auth,
+                                    circuit_order=order,
+                                    machine_dir=ma_for_plan,
+                                    freegsnke_fill=freegsnke_fill,
+                                )
+                                write_circuit_dynamics(snap_dyn, dyn)
+                            elif freegsnke_fill is not None:
+                                from .planner import write_circuit_dynamics
+
+                                dyn = freegsnke_fill
+                                write_circuit_dynamics(snap_dyn, dyn)
+                            elif snap_dyn.exists():
                                 from .planner import load_circuit_dynamics
 
                                 dyn = load_circuit_dynamics(snap_dyn)
+                            else:
+                                raise RuntimeError(
+                                    "circuit_dynamics unavailable: cite circuit_dynamics_authority "
+                                    "and/or provide FreeGSNKE machine R/L extract"
+                                )
 
                         prep = run_planner_stage(
                             run_dir=run_dir,

@@ -97,6 +97,8 @@ class AppConfig:
     execute_planner: bool = False
     planner_authority_path: Optional[str] = None
     coil_limits_authority_path: Optional[str] = None
+    # Optional cited PF R/L table (Solenoid may be FreeGSNKE-filled).
+    circuit_dynamics_authority_path: Optional[str] = None
     # ADR-004: EFIT++ → profile_trajectory (default.json enables when path set).
     profile_trajectory_authority_path: Optional[str] = None
     build_profile_trajectory: bool = False
@@ -224,6 +226,11 @@ class AppConfig:
         coil_limits_authority_path = (
             str(obj["coil_limits_authority_path"]) if obj.get("coil_limits_authority_path") else None
         )
+        circuit_dynamics_authority_path = (
+            str(obj["circuit_dynamics_authority_path"])
+            if obj.get("circuit_dynamics_authority_path")
+            else None
+        )
         if execute_planner and not planner_authority_path:
             raise ValueError(
                 "execute_planner=true requires planner_authority_path (ADR-004 fail-closed)"
@@ -301,6 +308,7 @@ class AppConfig:
             execute_planner=execute_planner,
             planner_authority_path=planner_authority_path,
             coil_limits_authority_path=coil_limits_authority_path,
+            circuit_dynamics_authority_path=circuit_dynamics_authority_path,
             profile_trajectory_authority_path=profile_trajectory_authority_path,
             build_profile_trajectory=build_profile_trajectory,
             freegsnke_script_timeout_s=freegsnke_script_timeout_s,

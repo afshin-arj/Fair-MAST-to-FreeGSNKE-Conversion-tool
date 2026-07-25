@@ -251,7 +251,13 @@ def kpi_scorecard_rows(kpis: Dict[str, Any]) -> List[Dict[str, Any]]:
             "tone": (
                 "ok"
                 if kpis.get("planner_status") == "ok"
-                else ("warn" if kpis.get("planner_status") else "")
+                else (
+                    "warn"
+                    if kpis.get("planner_status")
+                    in ("voltage_exceeds_measured_peak_margin", "voltage_limit_violations")
+                    or kpis.get("planner_status")
+                    else ""
+                )
             ),
         },
         {

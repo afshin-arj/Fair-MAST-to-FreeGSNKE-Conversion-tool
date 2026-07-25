@@ -1,8 +1,10 @@
 {
   "authority_name": "coil_limits",
-  "authority_version": "0.1.0",
-  "status": "awaiting_authority",
+  "authority_version": "1.0.0",
+  "status": "cited",
+  "limit_policy": "measured_peak_margin",
+  "margin_factor": 1.2,
+  "citation": "User engineering policy: Imax = margin_factor × peak|measured I|; Vmax = margin_factor × max(|measured V|, |R I + L dI/dt| from measured I with cited R/L). 20% headroom above the governing envelope. Not inventing plant ratings — explicit declared envelope for feedforward planning.",
   "circuits": {},
-  "citation": null,
-  "notes": "ADR-004 Phase 2 hard gate. Populate per-circuit Imax_A / Vmax_V with plant-doc citation before enabling the Python GSPulse-style planner. Empty circuits = planner blocked; never invent limits."
+  "notes": "Edit margin_factor here before a run to change headroom (e.g. 1.1 or 1.5). V envelope includes circuit-dynamics needs so tracking measured I remains feasible. Fixed per-circuit Imax/Vmax can replace this policy by setting limit_policy to fixed and filling circuits. Resolved numeric limits are snapshotted under inputs/coil_limits_authority/ after each planner run."
 }

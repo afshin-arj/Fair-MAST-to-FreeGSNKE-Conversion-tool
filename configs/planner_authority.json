@@ -11,5 +11,5 @@
   "weight_dI": 1.0e-2,
   "weight_d2I": 1.0e-3,
   "max_qp_iterations": 40,
-  "notes": "ADR-004 Phase 2. Python GSPulse-style trajectory planner (no MATLAB). execute_planner defaults false in default.json — enabling also requires cited coil_limits_authority (hard gate). execute_planner=true with enabled=false is blocking. Voltage box violations fail-closed. v1 tracks measured PF currents under L/R dynamics; GS Picard isoflux cost deferred."
+  "notes": "ADR-004 Phase 2. Python GSPulse-style trajectory planner (no MATLAB). execute_planner defaults true when coil_limits (measured_peak_margin) and circuit_dynamics (PF+CS R/L) are cited. execute_planner=true with enabled=false is blocking. Voltage box violations fail-closed. v1 tracks measured PF currents under L/R dynamics; GS Picard isoflux cost deferred."
 }

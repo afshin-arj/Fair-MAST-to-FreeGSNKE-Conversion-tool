@@ -24,18 +24,119 @@ REPO = Path(__file__).resolve().parents[1]
 ORDER = ["Solenoid", "P2_inner", "P2_outer", "P3", "P4", "P5", "P6"]
 
 
-def test_default_planner_off() -> None:
+def test_default_planner_on() -> None:
     cfg = AppConfig.load(REPO / "configs" / "default.json")
-    assert cfg.execute_planner is False
+    assert cfg.execute_planner is True
     assert cfg.planner_authority_path
     assert cfg.coil_limits_authority_path
+    assert cfg.circuit_dynamics_authority_path
 
 
-def test_coil_limits_awaiting_blocks_require_ready() -> None:
-    auth = load_coil_limits(REPO / "configs" / "coil_limits_authority.json")
+def test_coil_limits_awaiting_blocks_require_ready(tmp_path: Path) -> None:
+    p = tmp_path / "awaiting.json"
+    p.write_text(
+        json.dumps(
+            {
+                "authority_name": "coil_limits",
+                "authority_version": "0.1.0",
+                "status": "awaiting_authority",
+                "circuits": {},
+                "citation": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+    auth = load_coil_limits(p)
     assert auth.awaiting is True
     with pytest.raises(CoilLimitsError, match="awaiting"):
         auth.require_ready(ORDER)
+
+
+def test_coil_limits_measured_peak_margin_policy() -> None:
+    auth = load_coil_limits(REPO / "configs" / "coil_limits_authority.json")
+    assert auth.awaiting is False
+    assert auth.limit_policy == "measured_peak_margin"
+    assert auth.margin_factor == 1.2
+
+
+def test_resolve_measured_peak_limits(tmp_path: Path) -> None:
+    from mast_freegsnke.coil_limits import resolve_measured_peak_limits
+
+    inputs = tmp_path / "inputs"
+    inputs.mkdir()
+    t = np.linspace(0.1, 0.5, 21)
+    I = {c: (100.0 * (i + 1)) for i, c in enumerate(ORDER)}
+    V = {c: (10.0 * (i + 1)) for i, c in enumerate(ORDER)}
+    pd.DataFrame({"time": t, **{c: np.full_like(t, I[c]) for c in ORDER}}).to_csv(
+        inputs / "pf_currents.csv", index=False
+    )
+    pd.DataFrame({"time": t, **{c: np.full_like(t, V[c]) for c in ORDER}}).to_csv(
+        inputs / "pf_voltages.csv", index=False
+    )
+    policy = load_coil_limits(REPO / "configs" / "coil_limits_authority.json")
+    resolved = resolve_measured_peak_limits(
+        policy,
+        inputs_dir=inputs,
+        circuit_order=ORDER,
+        t_start=0.1,
+        t_end=0.5,
+    )
+    assert resolved.circuits["Solenoid"].Imax_A == pytest.approx(120.0)
+    assert resolved.circuits["Solenoid"].Vmax_V == pytest.approx(12.0)
+    assert resolved.resolution["margin_factor"] == 1.2
+
+
+def test_resolve_measured_peak_limits_ohmic_nan_fallback(tmp_path: Path) -> None:
+    from mast_freegsnke.coil_limits import resolve_measured_peak_limits
+
+    inputs = tmp_path / "inputs"
+    inputs.mkdir()
+    t = np.linspace(0.1, 0.5, 21)
+    I = {c: np.full_like(t, 100.0 * (i + 1)) for i, c in enumerate(ORDER)}
+    V = {c: np.full_like(t, 10.0 * (i + 1)) for i, c in enumerate(ORDER)}
+    V["P3"] = np.full_like(t, np.nan)
+    V["P6"] = np.full_like(t, np.nan)
+    pd.DataFrame({"time": t, **I}).to_csv(inputs / "pf_currents.csv", index=False)
+    pd.DataFrame({"time": t, **V}).to_csv(inputs / "pf_voltages.csv", index=False)
+    policy = load_coil_limits(REPO / "configs" / "coil_limits_authority.json")
+    R = {c: 0.01 for c in ORDER}
+    R["P3"] = 0.000948
+    L = {c: 1e-6 for c in ORDER}
+    L["P3"] = 0.000356
+    resolved = resolve_measured_peak_limits(
+        policy,
+        inputs_dir=inputs,
+        circuit_order=ORDER,
+        t_start=0.1,
+        t_end=0.5,
+        R_ohm_by_circuit=R,
+        L_henry_by_circuit=L,
+    )
+    assert resolved.resolution["peaks"]["P3"]["V_peak_source"] in {
+        "ohmic_synthetic_IxR",
+        "dynamics_RIdt",
+        "dynamics_planner_knots",
+    }
+    assert resolved.circuits["P3"].Vmax_V > 0
+
+def test_circuit_dynamics_authority_user_table(tmp_path: Path) -> None:
+    from mast_freegsnke.circuit_dynamics_authority import (
+        build_circuit_dynamics_from_authority,
+        load_circuit_dynamics_authority,
+    )
+
+    auth = load_circuit_dynamics_authority(REPO / "configs" / "circuit_dynamics_authority.json")
+    assert auth.awaiting is False
+    assert "P4" in auth.circuits
+    assert "Solenoid" in auth.circuits
+    assert auth.circuits["Solenoid"].R_ohm == pytest.approx(0.03404)
+    assert auth.circuits["Solenoid"].L_henry == pytest.approx(0.00294)
+    dyn, meta = build_circuit_dynamics_from_authority(auth, circuit_order=ORDER)
+    assert meta["filled_from_freegsnke"] == []
+    assert dyn.R_ohm[ORDER.index("P4")] == pytest.approx(0.003740)
+    assert dyn.L_henry[ORDER.index("P4"), ORDER.index("P4")] == pytest.approx(0.004095)
+    assert dyn.R_ohm[ORDER.index("Solenoid")] == pytest.approx(0.03404)
+    assert dyn.L_henry[ORDER.index("Solenoid"), ORDER.index("Solenoid")] == pytest.approx(0.00294)
 
 
 def test_execute_planner_requires_paths(tmp_path: Path) -> None:

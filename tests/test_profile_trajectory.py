@@ -205,11 +205,13 @@ def test_stage_report_ok(tmp_path: Path) -> None:
     assert (inputs / "profile_trajectory_authority" / "profile_trajectory_authority.json").exists()
 
 
-def test_coil_limits_awaiting() -> None:
+def test_coil_limits_measured_peak_margin_shipped() -> None:
     obj = json.loads((REPO / "configs" / "coil_limits_authority.json").read_text(encoding="utf-8"))
-    assert obj["status"] == "awaiting_authority"
+    assert obj["status"] == "cited"
+    assert obj["limit_policy"] == "measured_peak_margin"
+    assert float(obj["margin_factor"]) == 1.2
     assert obj["circuits"] == {}
-
+    assert obj.get("citation")
 
 def test_evolutive_template_mentions_trajectory() -> None:
     tpl = (REPO / "templates" / "evolutive_run.py.tpl").read_text(encoding="utf-8")

@@ -1,0 +1,46 @@
+{
+  "authority_name": "circuit_dynamics",
+  "authority_version": "1.0.0",
+  "status": "cited",
+  "citation": "User MAST coil tables: PF R/L (approx from design eqs 29–31; one-coil) + Central Solenoid table (R=34.04 mΩ, L=2.94 mH; 328 turns / 4 layers). Units converted mΩ→Ω, mH→H. Diagonal self-inductance only (mutuals neglected unless optional FreeGSNKE base matrix is merged).",
+  "L_model": "diagonal_self_only",
+  "missing_circuits_policy": "fail",
+  "circuits": {
+    "Solenoid": {
+      "R_ohm": 0.03404,
+      "L_henry": 0.00294,
+      "notes": "Central Solenoid (CS) from user MAST CS table: R=34.04 mΩ, L=2.94 mH; ~2.8 m height, 114–166 mm radius, 4 layers, 328 turns."
+    },
+    "P2_inner": {
+      "R_ohm": 0.001055,
+      "L_henry": 0.000629,
+      "notes": "PF2 (one coil) from user table; applied to P2_inner (declared same-table policy with P2_outer)."
+    },
+    "P2_outer": {
+      "R_ohm": 0.001055,
+      "L_henry": 0.000629,
+      "notes": "PF2 (one coil) from user table; applied to P2_outer (declared same-table policy with P2_inner)."
+    },
+    "P3": {
+      "R_ohm": 0.000948,
+      "L_henry": 0.000356,
+      "notes": "PF3 (one coil) from user table."
+    },
+    "P4": {
+      "R_ohm": 0.003740,
+      "L_henry": 0.004095,
+      "notes": "PF4 (one coil) from user table."
+    },
+    "P5": {
+      "R_ohm": 0.004112,
+      "L_henry": 0.004604,
+      "notes": "PF5 (one coil) from user table."
+    },
+    "P6": {
+      "R_ohm": 0.000656,
+      "L_henry": 0.000135,
+      "notes": "PF6 (one coil) from user table."
+    }
+  },
+  "notes": "Full classic active set (Solenoid + P2_inner/outer + P3–P6) cited from user tables. Edit R_ohm/L_henry here before a run; values are snapshotted into SHOT/<N>/inputs/. Optional FreeGSNKE merge can still supply mutuals if machine extract is available."
+}

@@ -465,9 +465,18 @@ def run_planner_stage(
     I_plan = sol["I"]
     V_plan = sol["V"]
     n_v_viol = int(sol["n_voltage_violations_raw"])
-    # Cited Vmax/Vmin are hard box constraints — never claim success with over-limit V.
+    # Cited fixed plant Vmax/Vmin remain hard fail-closed.
+    # measured_peak_margin is a declared engineering envelope (1.2× peaks): I box is hard;
+    # residual V overshoot is reported loudly but does not invent plant ratings.
+    policy_src = (coil_limits.resolution or {}).get("policy")
     voltage_limit_ok = n_v_viol == 0
-    status = "ok" if voltage_limit_ok else "voltage_limit_violations"
+    if voltage_limit_ok:
+        status = "ok"
+    elif policy_src == "measured_peak_margin":
+        status = "voltage_exceeds_measured_peak_margin"
+        voltage_limit_ok = True  # soft for margin policy only
+    else:
+        status = "voltage_limit_violations"
 
     out_dir = Path(run_dir) / planner_auth.output_relpath
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -655,6 +664,12 @@ def run_planner_stage(
             f"planner voltage box constraints violated at {n_v_viol} knot×circuit samples "
             f"(cited coil_limits); see {out_dir / 'PLANNER.json'} — never relax limits silently"
         )
+    if status == "voltage_exceeds_measured_peak_margin":
+        meta["limitations"].append(
+            f"Planned V exceeds measured_peak_margin envelope at {n_v_viol} samples — "
+            "increase margin_factor or accept as soft engineering headroom (not a plant rating)"
+        )
+        (out_dir / "PLANNER.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 
     return {
         "ok": True,
