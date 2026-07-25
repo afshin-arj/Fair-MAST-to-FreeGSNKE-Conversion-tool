@@ -20,16 +20,22 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [INFO] Ensuring UI package is installed ^(dash / plotly^)
-python -m pip install -r requirements.txt -q
+REM Only reinstall when dash is missing (avoid multi-minute pip on every launch).
+python -c "import dash, dash_bootstrap_components" >nul 2>nul
 if errorlevel 1 (
-  echo [FAIL] pip install -r requirements.txt failed
-  exit /b 1
+  echo [INFO] Installing UI package ^(dash / plotly^)
+  python -m pip install -r requirements.txt
+  if errorlevel 1 (
+    echo [FAIL] pip install -r requirements.txt failed
+    exit /b 1
+  )
 )
 
 set "PORT=8050"
 if not "%~1"=="" set "PORT=%~1"
 
 echo [INFO] Starting UI on http://127.0.0.1:%PORT%
-python -m mast_freegsnke.cli ui --config configs\default.json --port %PORT%
+echo [INFO] Browser should open shortly. This window stays open while the server runs.
+echo [INFO] Press Ctrl+C to stop.
+python -u -m mast_freegsnke.cli ui --config configs\default.json --port %PORT%
 exit /b %ERRORLEVEL%

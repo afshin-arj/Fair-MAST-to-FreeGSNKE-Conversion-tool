@@ -38,10 +38,8 @@ def group_cache_hit(shot_dir: Path, group: str) -> bool:
     )
     if not meta_ok:
         return False
-    try:
-        return any(p.is_file() for p in dst.rglob("*"))
-    except OSError:
-        return False
+    # Metadata present is enough — do not rglob chunk trees (can be huge / slow on Windows).
+    return True
 
 
 def prior_path_matches_shot(s3_path: Optional[str], shot: int) -> bool:

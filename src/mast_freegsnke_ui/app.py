@@ -67,17 +67,26 @@ def _hash_text(text: str) -> str:
 
 
 def _library_fingerprint(runs_dir: Path, *, cache_dir: Optional[Path] = None) -> str:
-    """Fingerprint shot library + optional cache readiness so dropdown labels refresh."""
+    """Fingerprint shot library + optional cache readiness so dropdown labels refresh.
+
+    Uses a separate accumulator — never mutate the shot-id list while iterating it
+    (appended ``shot:zarr:mtime`` tokens contain ``:`` and are illegal/ADS paths on Windows).
+    """
     try:
-        parts = [str(s) for s in art.list_shot_dirs(runs_dir)]
+        shots = [str(s) for s in art.list_shot_dirs(runs_dir)]
+        parts: List[str] = list(shots)
         if cache_dir is not None and cache_dir.is_dir():
-            # Include presence of required Zarr leaves so "cache partial/ready" updates.
-            for s in parts:
+            for s in shots:
                 shot_cache = cache_dir / f"shot_{s}"
                 if not shot_cache.is_dir():
                     parts.append(f"{s}:nocache")
                     continue
-                for child in sorted(shot_cache.iterdir()):
+                try:
+                    children = sorted(shot_cache.iterdir())
+                except OSError:
+                    parts.append(f"{s}:unreadable")
+                    continue
+                for child in children:
                     if child.name.endswith(".zarr"):
                         try:
                             mtime = int(child.stat().st_mtime)
@@ -953,13 +962,19 @@ def run_server(
     open_browser: bool = True,
 ) -> None:
     import os
+    import sys
 
+    print("[ui] Building Dash app…", flush=True)
     app = create_app(repo_root=repo_root, runs_dir=runs_dir, config_path=config_path)
     url = f"http://{host}:{port}"
-    print(f"[ui] Shot-only Dash UI → {url}")
-    print(f"[ui] Library: {(Path(runs_dir) if Path(runs_dir).is_absolute() else (Path(repo_root) / runs_dir)).resolve()}")
+    lib = (Path(runs_dir) if Path(runs_dir).is_absolute() else (Path(repo_root) / runs_dir)).resolve()
+    print(f"[ui] Shot-only Dash UI → {url}", flush=True)
+    print(f"[ui] Library: {lib}", flush=True)
+    print("[ui] Leave this window open. Press Ctrl+C to stop.", flush=True)
     should_open = bool(open_browser) and (not debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true")
     if should_open:
         _open_browser(url)
-        print("[ui] Opening browser… (--no-browser to skip)")
+        print("[ui] Opening browser… (--no-browser to skip)", flush=True)
+    sys.stdout.flush()
+    sys.stderr.flush()
     app.run(host=host, port=int(port), debug=bool(debug))

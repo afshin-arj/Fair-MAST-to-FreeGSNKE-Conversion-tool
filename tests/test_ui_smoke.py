@@ -348,14 +348,23 @@ def test_check_groups_respecting_cache_skips_s3(tmp_path: Path) -> None:
 def test_create_app_serves_plots_and_tabs(tmp_path: Path) -> None:
     pytest.importorskip("dash")
     pytest.importorskip("dash_bootstrap_components")
-    from mast_freegsnke_ui.app import create_app
+    from mast_freegsnke_ui.app import create_app, _library_fingerprint
     from mast_freegsnke_ui import panels
 
     runs = tmp_path / "SHOT"
     _fixture_shot(runs / "30201")
+    cache = tmp_path / "data_cache" / "shot_30201"
+    (cache / "pf_active.zarr").mkdir(parents=True)
+    (cache / "pf_active.zarr" / "zarr.json").write_text("{}", encoding="utf-8")
     cfg = tmp_path / "configs"
     cfg.mkdir()
-    (cfg / "default.json").write_text("{}", encoding="utf-8")
+    (cfg / "default.json").write_text(
+        json.dumps({"cache_dir": str(tmp_path / "data_cache")}),
+        encoding="utf-8",
+    )
+    # Must stay O(shots) — never grow by mutating the iterated shot list.
+    fp = _library_fingerprint(runs, cache_dir=tmp_path / "data_cache")
+    assert fp
     app = create_app(
         repo_root=tmp_path,
         runs_dir=runs,
