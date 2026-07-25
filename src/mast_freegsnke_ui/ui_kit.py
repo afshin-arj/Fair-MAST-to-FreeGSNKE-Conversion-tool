@@ -18,7 +18,7 @@ def status_tone(status: Any) -> str:
     s = str(status or "").strip().lower()
     if s in {"success", "ok", "succeeded", "complete", "completed", "present", "populated", "yes", "true"}:
         return "ok"
-    if s in {"failed", "fail", "error", "blocked", "missing", "no", "false"}:
+    if s in {"failed", "fail", "error", "blocked", "missing", "no", "false", "voltage_limit_violations"}:
         return "fail"
     if s in {
         "running",
@@ -29,11 +29,36 @@ def status_tone(status: Any) -> str:
         "awaiting",
         "awaiting_authority",
         "unknown",
+        "voltage_exceeds_measured_peak_margin",
+        "off",
+        "skipped",
     }:
         return "warn"
     if isinstance(status, bool):
         return "ok" if status else "fail"
     return ""
+
+
+def planner_status_tone(status: Any) -> str:
+    """Tone for ADR-004 planner status — do not yellow-wash real failures."""
+    if status is None or status == "":
+        return ""
+    s = str(status).strip().lower()
+    if s == "ok":
+        return "ok"
+    if s in {"failed", "fail", "error", "voltage_limit_violations", "blocked"}:
+        return "fail"
+    if s in {
+        "voltage_exceeds_measured_peak_margin",
+        "off",
+        "skipped",
+        "awaiting",
+        "execute_planner=false",
+    }:
+        return "warn"
+    if s.startswith("skipped") or s.startswith("snapshot"):
+        return "warn"
+    return status_tone(status)
 
 
 def fmt_kpi(value: Any) -> str:
@@ -190,8 +215,66 @@ def provenance_strip(items: List[Dict[str, Any]]) -> Any:
     return html.Div(chips, className="fg-prov-strip")
 
 
+def flight_deck_rows(kpis: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Compact pass/fail strip for Overview — signal only for fusion experts."""
+    window = "—"
+    if kpis.get("t_start") is not None or kpis.get("t_end") is not None:
+        window = f"{fmt_kpi(kpis.get('t_start'))} → {fmt_kpi(kpis.get('t_end'))} s"
+    planner_val = kpis.get("planner_status")
+    if not planner_val and not kpis.get("planner_present"):
+        planner_val = "off"
+    return [
+        {
+            "key": "status",
+            "label": "Status",
+            "value": kpis.get("status"),
+            "tone": status_tone(kpis.get("status")),
+        },
+        {"key": "window", "label": "Window [s]", "value": window},
+        {
+            "key": "metrics_ok",
+            "label": "Contracts",
+            "value": (
+                f"{fmt_kpi(kpis.get('n_scored'))} scored"
+                if kpis.get("n_scored") is not None
+                else kpis.get("metrics_ok")
+            ),
+            "tone": status_tone(kpis.get("metrics_ok")),
+        },
+        {
+            "key": "evolutive_ok",
+            "label": "Evolutive Ip",
+            "value": kpis.get("evolutive_ok"),
+            "tone": status_tone(kpis.get("evolutive_ok")),
+        },
+        {
+            "key": "evolutive_rms_A",
+            "label": "Ip RMS [A]",
+            "value": kpis.get("evolutive_rms_A"),
+        },
+        {
+            "key": "efit_ok",
+            "label": "EFIT archive",
+            "value": kpis.get("efit_ok"),
+            "tone": status_tone(kpis.get("efit_ok")),
+        },
+        {
+            "key": "planner_status",
+            "label": "Planner",
+            "value": planner_val,
+            "tone": planner_status_tone(planner_val),
+        },
+        {
+            "key": "planner_v_violations",
+            "label": "V viol",
+            "value": kpis.get("planner_v_violations"),
+            "tone": "fail" if (kpis.get("planner_v_violations") or 0) else "",
+        },
+    ]
+
+
 def kpi_scorecard_rows(kpis: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Single-shot scorecard rows shared by Overview (and dossier logic)."""
+    """Full KPI table (demoted under Overview accordion)."""
     window = "—"
     if kpis.get("t_start") is not None or kpis.get("t_end") is not None:
         window = f"{fmt_kpi(kpis.get('t_start'))} → {fmt_kpi(kpis.get('t_end'))} s"
@@ -205,6 +288,7 @@ def kpi_scorecard_rows(kpis: Dict[str, Any]) -> List[Dict[str, Any]]:
     mode_txt = None
     if isinstance(modes, dict) and modes:
         mode_txt = ", ".join(f"{a}={b}" for a, b in modes.items())
+    planner_val = kpis.get("planner_status")
     return [
         {"key": "status", "label": "Status", "value": kpis.get("status"), "tone": status_tone(kpis.get("status"))},
         {"key": "modes", "label": "Modes", "value": mode_txt},
@@ -231,7 +315,12 @@ def kpi_scorecard_rows(kpis: Dict[str, Any]) -> List[Dict[str, Any]]:
             "tone": (
                 "ok"
                 if kpis.get("profile_source") == "profile_trajectory_authority"
-                else ("warn" if kpis.get("profile_traj_status") and str(kpis.get("profile_traj_status")).startswith("skipped") else "")
+                else (
+                    "warn"
+                    if kpis.get("profile_traj_status")
+                    and str(kpis.get("profile_traj_status")).startswith("skipped")
+                    else ""
+                )
             ),
         },
         {
@@ -247,18 +336,8 @@ def kpi_scorecard_rows(kpis: Dict[str, Any]) -> List[Dict[str, Any]]:
         {
             "key": "planner_status",
             "label": "Planner status (ADR-004)",
-            "value": kpis.get("planner_status"),
-            "tone": (
-                "ok"
-                if kpis.get("planner_status") == "ok"
-                else (
-                    "warn"
-                    if kpis.get("planner_status")
-                    in ("voltage_exceeds_measured_peak_margin", "voltage_limit_violations")
-                    or kpis.get("planner_status")
-                    else ""
-                )
-            ),
+            "value": planner_val,
+            "tone": planner_status_tone(planner_val),
         },
         {
             "key": "planner_rms_V",
@@ -286,13 +365,13 @@ def kpi_scorecard_rows(kpis: Dict[str, Any]) -> List[Dict[str, Any]]:
     ]
 
 
-def kpi_scorecard_table(kpis: Dict[str, Any]) -> Any:
+def kpi_scorecard_table(kpis: Dict[str, Any], *, rows: Optional[List[Dict[str, Any]]] = None) -> Any:
     html, _, dbc = require()
-    rows = []
-    for r in kpi_scorecard_rows(kpis):
+    table_rows = []
+    for r in rows if rows is not None else kpi_scorecard_rows(kpis):
         tone = r.get("tone") or ""
         val_cls = "fg-kpi-val" + (f" fg-kpi-{tone}" if tone else "")
-        rows.append(
+        table_rows.append(
             html.Tr(
                 [
                     html.Td(r["label"], className="fg-kpi-label"),
@@ -303,7 +382,7 @@ def kpi_scorecard_table(kpis: Dict[str, Any]) -> Any:
     return dbc.Table(
         [
             html.Thead(html.Tr([html.Th("KPI"), html.Th("Value")])),
-            html.Tbody(rows),
+            html.Tbody(table_rows),
         ],
         bordered=False,
         hover=True,
@@ -311,6 +390,15 @@ def kpi_scorecard_table(kpis: Dict[str, Any]) -> Any:
         responsive=True,
         className="fg-scorecard",
     )
+
+
+def flight_deck(kpis: Dict[str, Any]) -> Any:
+    """Horizontal chip flight deck — primary Overview surface."""
+    html, _, _ = require()
+    chips = []
+    for r in flight_deck_rows(kpis):
+        chips.append(chip(r["label"], r.get("value"), tone=r.get("tone") or ""))
+    return html.Div(chips, className="fg-flight-deck mb-3")
 
 
 def enrich_library_options(

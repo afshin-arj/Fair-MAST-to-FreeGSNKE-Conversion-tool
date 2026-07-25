@@ -223,6 +223,17 @@ def _fixture_shot(run_dir: Path) -> None:
     )
 
 
+def test_planner_status_tone() -> None:
+    from mast_freegsnke_ui.ui_kit import planner_status_tone
+
+    assert planner_status_tone("ok") == "ok"
+    assert planner_status_tone("voltage_limit_violations") == "fail"
+    assert planner_status_tone("failed") == "fail"
+    assert planner_status_tone("voltage_exceeds_measured_peak_margin") == "warn"
+    assert planner_status_tone("off") == "warn"
+    assert planner_status_tone(None) == ""
+
+
 def test_list_and_overview(tmp_path: Path) -> None:
     runs = tmp_path / "SHOT"
     shot_dir = runs / "30201"
@@ -393,7 +404,8 @@ def test_fill_all_tabs_have_distinct_content(tmp_path: Path) -> None:
     assert "voltage_map" in bodies["auth"] or "sha256" in bodies["auth"]
     assert "manifest.json" in bodies["files"] or "SUMMARY" in bodies["files"]
     # Overview uses click-to-expand subsections
-    assert "Key performance" in bodies["overview"] or "accordion" in bodies["overview"].lower()
+    assert "Flight deck" in bodies["overview"] or "flight" in bodies["overview"].lower()
+    assert "All KPIs" in bodies["overview"] or "accordion" in bodies["overview"].lower()
 
 
 def test_level2_helpers_and_cache_status(tmp_path: Path) -> None:

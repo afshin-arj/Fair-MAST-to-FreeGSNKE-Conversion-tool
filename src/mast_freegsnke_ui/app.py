@@ -941,7 +941,10 @@ def create_app(
         out_path = path_txt if cache.get("path") != path_txt else no_update
         out_lib_fp = new_lib_fp if new_lib_fp != library_fp else no_update
 
-        dossier_sig = f"{shot}|{status_label}|{stage_sig}"
+        dossier_sig = (
+            f"{shot}|{status_label}|{stage_sig}|{refresh_token}|"
+            f"{art.results_fingerprint(run_dir) if run_dir else ''}"
+        )
         if cache.get("dossier_sig") != dossier_sig:
             out_dossier = _dossier_for(int(shot)) if shot is not None else panels.shot_dossier(None, None)
         else:

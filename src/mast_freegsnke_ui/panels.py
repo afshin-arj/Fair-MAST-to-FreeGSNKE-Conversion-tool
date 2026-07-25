@@ -40,7 +40,7 @@ def shot_dossier(
     cache_ready: Optional[bool] = None,
     cache_note: str = "",
 ) -> Any:
-    """Compact science context strip for fusion experts (sticky in layout)."""
+    """Identity strip only — science KPIs live on Overview flight deck (avoid duplication)."""
     html, _, _ = _require()
     if shot is None or run_dir is None or not Path(run_dir).is_dir():
         return html.Div(
@@ -59,51 +59,20 @@ def shot_dossier(
     window = "—"
     if k.get("t_start") is not None or k.get("t_end") is not None:
         window = f"{_fmt_kpi(k.get('t_start'))} → {_fmt_kpi(k.get('t_end'))} s"
-    modes = k.get("modes") or {}
-    mode_txt = " · ".join(f"{a}={b}" for a, b in list(modes.items())[:4]) if modes else "—"
     cache_tone = ""
     cache_val = "—"
     if cache_ready is True:
         cache_val, cache_tone = "ready", "ok"
     elif cache_ready is False:
-        cache_val, cache_tone = "partial/empty", "warn"
+        cache_val, cache_tone = "partial", "warn"
     chips = [
         chip("Shot", int(shot)),
         chip("Status", k.get("status"), tone=tone),
         chip("Window", window),
-        chip("Modes", mode_txt),
-        chip("Contracts", k.get("n_scored")),
-        chip("EFIT", k.get("efit_ok"), tone=ui_kit.status_tone(k.get("efit_ok"))),
-        chip("Evol. Ip", k.get("evolutive_ok"), tone=ui_kit.status_tone(k.get("evolutive_ok"))),
-        chip("RMS [A]", k.get("evolutive_rms_A")),
-        chip(
-            "Profiles",
-            k.get("profile_source") or k.get("profile_traj_status") or "—",
-            tone=(
-                "ok"
-                if k.get("profile_source") == "profile_trajectory_authority"
-                else (
-                    "warn"
-                    if k.get("profile_traj_status")
-                    and str(k.get("profile_traj_status")).startswith("skipped")
-                    else ""
-                )
-            ),
-        ),
-        chip(
-            "Planner",
-            k.get("planner_status") or ("off" if not k.get("planner_present") else "—"),
-            tone="ok"
-            if k.get("planner_status") == "ok"
-            else ("warn" if k.get("planner_status") else ""),
-        ),
-        chip("ΔV RMS", k.get("planner_rms_V")),
-        chip("V viol", k.get("planner_v_violations")),
-        chip("L2 cache", cache_val, tone=cache_tone),
+        chip("L2", cache_val, tone=cache_tone),
     ]
     if k.get("blocking_n"):
         chips.append(chip("Blocking", k.get("blocking_n"), tone="fail"))
-    block_banner = ui_kit.blocking_banner(k.get("blocking") or [], title="Shot blocking errors")
     path_txt = str(Path(run_dir).as_posix())
     return html.Div(
         [
@@ -121,32 +90,21 @@ def shot_dossier(
                 ],
                 className="dossier-top",
             ),
-            block_banner,
             html.Div(cache_note, className="dossier-note") if cache_note else None,
-            html.Span(
-                ["Keys: ", html.Kbd("/"), " shot · ", html.Kbd("1–8"), " tabs · ", html.Kbd("r"), " refresh"],
-                className="dossier-keys",
-            ),
         ],
         className="shot-dossier",
     )
 
 
-def quick_links(shot: int, run_dir: Path) -> Any:
-    """One-click access to the files experts open first."""
+def overview_quick_links(shot: int, run_dir: Path) -> Any:
+    """Four primary opens — detail lives on Residuals / EFIT / Authorities / Files."""
     html, _, _ = _require()
     links = []
     for rel, label in (
         ("01_summary/SUMMARY.md", "SUMMARY"),
-        ("manifest.json", "manifest"),
         ("03_reconstruction/metrics/reconstruction_metrics.json", "metrics"),
         ("04_efit_compare/COMPARE.json", "COMPARE"),
-        ("inputs/profile_trajectory_authority/profile_trajectory.json", "profile traj"),
-        ("03_reconstruction/evolutive/evolutive_meta.json", "evolutive meta"),
         ("07_planner/PLANNER.json", "planner"),
-        ("07_planner/planning_residual_vs_measured_V.csv", "planner ΔV"),
-        ("02_measured_data/00_index/catalog.json", "L2 catalog"),
-        ("02_measured_data/00_index/optional_diagnostics.json", "optional L2"),
     ):
         if art.safe_resolve_under(run_dir, rel):
             links.append(
@@ -158,6 +116,11 @@ def quick_links(shot: int, run_dir: Path) -> Any:
         [html.Span("Open", className="fg-quick-label"), html.Div(links, className="fg-quick-links")],
         className="fg-quick-bar mb-3",
     )
+
+
+def quick_links(shot: int, run_dir: Path) -> Any:
+    """Broader quick links (kept for non-Overview use if needed)."""
+    return overview_quick_links(shot, run_dir)
 
 
 def accordion(sections: List[tuple[str, Any, bool]], *, always_open: bool = True) -> Any:
@@ -182,47 +145,6 @@ def accordion(sections: List[tuple[str, Any, bool]], *, always_open: bool = True
         start_collapsed=True,
         active_item=[] if always_open else None,
         class_name="fg-accordion",
-    )
-
-
-def kpi_strip(kpis: Dict[str, Any]) -> Any:
-    html, _, dbc = _require()
-
-    def cell(label: str, value: Any, hint: str = "", tone: str = "") -> Any:
-        cls = "kpi-cell" + (f" kpi-{tone}" if tone else "")
-        return dbc.Col(
-            html.Div(
-                [
-                    html.Div(label, className="kpi-label"),
-                    html.Div(_fmt_kpi(value), className="kpi-value"),
-                    html.Div(hint, className="kpi-hint") if hint else None,
-                ],
-                className=cls,
-            ),
-            xs=6,
-            md=4,
-            lg=2,
-        )
-
-    status = str(kpis.get("status") or "unknown")
-    st = status.lower()
-    tone = "ok" if st in {"success", "ok", "completed"} else ("fail" if st in {"failed", "error"} else "")
-    window = "—"
-    if kpis.get("t_start") is not None or kpis.get("t_end") is not None:
-        window = f"{kpis.get('t_start')} → {kpis.get('t_end')} s"
-    rms = kpis.get("evolutive_rms_A")
-    rms_hint = f"rms={_fmt_kpi(rms)} A" if rms is not None else ""
-
-    return dbc.Row(
-        [
-            cell("Status", status, tone=tone),
-            cell("Window", window),
-            cell("Contracts", kpis.get("n_scored"), f"ok={_fmt_kpi(kpis.get('metrics_ok'))}"),
-            cell("EFIT archive", kpis.get("efit_ok")),
-            cell("Evolutive Ip", kpis.get("evolutive_ok"), rms_hint),
-            cell("Blocking", kpis.get("blocking_n"), tone="fail" if (kpis.get("blocking_n") or 0) else ""),
-        ],
-        className="kpi-row g-2 mb-3",
     )
 
 
@@ -580,66 +502,41 @@ def overview_panel(shot: int, run_dir: Path) -> Any:
     kpis = art.overview_kpis(run_dir)
     blocking = kpis.get("blocking") or []
     snap = art.authority_snapshot(run_dir)
-    summary_body = html.Div(
+    present_n = sum(1 for it in (snap.get("items") or []) if it.get("present"))
+    missing_n = sum(
+        1
+        for m in (snap.get("matrix") or [])
+        if isinstance(m, dict) and m.get("status") in {"missing", "awaiting"}
+    )
+    auth_summary = html.Div(
         [
+            chip("snapshotted", present_n, tone="ok" if present_n else ""),
+            chip("missing/awaiting", missing_n, tone="warn" if missing_n else ""),
             html.P(
-                "SUMMARY opens as a file for speed — use the scorecard above for the flight-deck view.",
-                className="small text-muted mb-2",
+                "Full matrix, profile trajectory, and planner R/L live on the Authorities tab.",
+                className="small text-muted mb-0 mt-2",
             ),
-            html.Div(
-                [
-                    html.A(
-                        "Open SUMMARY.md",
-                        href=art.file_url(shot, "01_summary/SUMMARY.md"),
-                        target="_blank",
-                        className="btn btn-sm btn-outline-secondary me-1",
-                    )
-                    if art.safe_resolve_under(run_dir, "01_summary/SUMMARY.md")
-                    else None,
-                    html.A(
-                        "SUMMARY.json",
-                        href=art.file_url(shot, "01_summary/SUMMARY.json"),
-                        target="_blank",
-                        className="btn btn-sm btn-outline-secondary me-1",
-                    )
-                    if art.safe_resolve_under(run_dir, "01_summary/SUMMARY.json")
-                    else None,
-                    html.A(
-                        "Download SUMMARY.md",
-                        href=art.file_url(shot, "01_summary/SUMMARY.md", download=True),
-                        className="btn btn-sm btn-outline-secondary",
-                    )
-                    if art.safe_resolve_under(run_dir, "01_summary/SUMMARY.md")
-                    else None,
-                ]
-            ),
-            html.Pre(art.overview_text(run_dir), className="overview-pre mt-3"),
-        ],
-        className="summary-wrap",
+        ]
     )
     return html.Div(
         [
-            tab_banner(
-                "Science overview",
-                "Scorecard first. Blocking errors and authority provenance are fail-fast — never invent metrology.",
-            ),
-            ui_kit.blocking_banner(blocking),
-            quick_links(shot, run_dir),
+            # Blocking once here (sidebar may also show during live run).
+            ui_kit.blocking_banner(blocking, title="Blocking errors"),
             ui_kit.section(
-                "Scorecard",
-                "Declared KPIs from SUMMARY / metrics / science_audit / EFIT archive compare.",
-                ui_kit.kpi_scorecard_table(kpis),
+                "Flight deck",
+                "Pass/fail gates for this shot — expand below only when debugging.",
+                ui_kit.flight_deck(kpis),
             ),
-            ui_kit.section(
-                "Provenance",
-                "Snapshotted authorities cited by this run (short hashes only).",
-                ui_kit.provenance_strip(snap.get("items") or [])
-                or html.P("No authority snapshots on disk.", className="small text-muted mb-0"),
-            ),
+            overview_quick_links(shot, run_dir),
             accordion(
                 [
+                    (
+                        "All KPIs",
+                        ui_kit.kpi_scorecard_table(kpis),
+                        False,
+                    ),
+                    ("Authority summary", auth_summary, False),
                     ("Downloads", export_bar(shot, run_dir), False),
-                    ("SUMMARY (file links + text digest)", summary_body, False),
                 ]
             ),
         ]
@@ -1484,7 +1381,11 @@ def _compare_kpi_cell(value: Any, *, key: str = "") -> Any:
     html, _, _ = _require()
     text = _fmt_kpi(value)
     cls = "compare-kpi"
-    if key in {"status", "metrics_ok", "evolutive_ok", "efit_ok"}:
+    if key == "planner_status":
+        st = ui_kit.planner_status_tone(value)
+        if st:
+            cls += f" compare-kpi-{st}"
+    elif key in {"status", "metrics_ok", "evolutive_ok", "efit_ok"}:
         if isinstance(value, bool):
             cls += " compare-kpi-ok" if value else " compare-kpi-fail"
         elif key == "status":
@@ -2289,7 +2190,7 @@ TAB_DEFS = (
 )
 
 TAB_META = {
-    "overview": "Scorecard, blocking errors, provenance — SUMMARY on demand.",
+    "overview": "Flight deck: status, contracts, Ip RMS, EFIT archive, planner — detail on demand.",
     "level2": "Family TOC, calibration-await table, on-demand plots/CSV.",
     "measured": "Family TOC, calibration-await table, on-demand plots/CSV.",
     "residuals": "Contract residuals sorted by RMS (worst first).",

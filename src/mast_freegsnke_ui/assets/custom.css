@@ -168,11 +168,32 @@ body {
 
 /* ——— Shot dossier (expert context strip) ——— */
 .shot-dossier {
-  padding: 0.7rem 0.9rem;
-  border: 1px solid var(--fg-line-soft);
-  border-radius: var(--fg-radius-sm);
-  background: rgba(5, 9, 14, 0.55);
-  backdrop-filter: blur(6px);
+  padding: 0;
+  border: none;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.fg-flight-deck {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.fg-flight-deck .fg-chip {
+  padding: 0.4rem 0.7rem;
+  font-size: 0.72rem;
+  border-color: var(--fg-line);
+  background: rgba(12, 20, 32, 0.92);
+}
+
+.fg-flight-deck .fg-chip-k {
+  font-size: 0.62rem;
+}
+
+.fg-flight-deck .fg-chip-v {
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .shot-dossier-empty {
