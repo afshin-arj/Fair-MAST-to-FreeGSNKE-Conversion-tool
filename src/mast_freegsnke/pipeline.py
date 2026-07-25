@@ -819,42 +819,44 @@ class ShotPipeline:
             else:
                 _stage("efit_compare_authority", True, note="compare_efit_archive=false")
 
-            # ADR-004 Phase 2: planner + coil_limits authority snapshots
-            if self.cfg.execute_planner:
-                from .coil_limits import CoilLimitsError, load_coil_limits, write_coil_limits
-                from .planner import PlannerError, load_planner_authority, write_planner_authority
+            # ADR-004 Phase 2: always snapshot planner/coil_limits when paths set (UI visibility);
+            # execute_planner=true additionally fail-closes on awaiting limits.
+            from .coil_limits import CoilLimitsError, load_coil_limits, write_coil_limits
+            from .planner import PlannerError, load_planner_authority, write_planner_authority
 
-                pl_path = _resolve_config_path(self.cfg.planner_authority_path, repo_root)
-                cl_path = _resolve_config_path(self.cfg.coil_limits_authority_path, repo_root)
-                if pl_path is None or not pl_path.exists():
-                    blocking_errors.append(
-                        "planner_authority_required: set planner_authority_path when execute_planner=true"
+            pl_path = _resolve_config_path(self.cfg.planner_authority_path, repo_root)
+            cl_path = _resolve_config_path(self.cfg.coil_limits_authority_path, repo_root)
+            if pl_path is not None and pl_path.exists():
+                try:
+                    pl_auth = load_planner_authority(pl_path)
+                    pl_out = write_planner_authority(inputs_dir, pl_auth)
+                    _stage(
+                        "planner_authority",
+                        True,
+                        path=str(pl_out),
+                        enabled=bool(pl_auth.enabled),
+                        note=("execute_planner" if self.cfg.execute_planner else "snapshot_only"),
                     )
-                    _stage("planner_authority", False, note="missing_path")
-                else:
-                    try:
-                        pl_auth = load_planner_authority(pl_path)
-                        pl_out = write_planner_authority(inputs_dir, pl_auth)
-                        _stage(
-                            "planner_authority",
-                            True,
-                            path=str(pl_out),
-                            enabled=bool(pl_auth.enabled),
-                        )
-                    except Exception as e:
+                except Exception as e:
+                    if self.cfg.execute_planner:
                         blocking_errors.append(f"planner_authority_failed: {type(e).__name__}: {e}")
                         _stage("planner_authority", False, error=str(e))
-                if cl_path is None or not cl_path.exists():
-                    blocking_errors.append(
-                        "coil_limits_authority_required: set coil_limits_authority_path "
-                        "when execute_planner=true (ADR-004 hard gate)"
-                    )
-                    _stage("coil_limits_authority", False, note="missing_path")
-                else:
-                    try:
-                        cl_auth = load_coil_limits(cl_path)
-                        cl_out = write_coil_limits(inputs_dir, cl_auth)
-                        if cl_auth.awaiting:
+                    else:
+                        _stage("planner_authority", True, note=f"snapshot_failed:{e}")
+            elif self.cfg.execute_planner:
+                blocking_errors.append(
+                    "planner_authority_required: set planner_authority_path when execute_planner=true"
+                )
+                _stage("planner_authority", False, note="missing_path")
+            else:
+                _stage("planner_authority", True, note="no_path")
+
+            if cl_path is not None and cl_path.exists():
+                try:
+                    cl_auth = load_coil_limits(cl_path)
+                    cl_out = write_coil_limits(inputs_dir, cl_auth)
+                    if cl_auth.awaiting:
+                        if self.cfg.execute_planner:
                             blocking_errors.append(
                                 "coil_limits_awaiting_authority: populate cited Imax_A/Vmax_V "
                                 "before execute_planner (never invent limits)"
@@ -870,15 +872,31 @@ class ShotPipeline:
                                 "coil_limits_authority",
                                 True,
                                 path=str(cl_out),
-                                n_circuits=len(cl_auth.circuits),
-                                citation=cl_auth.citation,
+                                status=cl_auth.status,
+                                note="awaiting_ok_while_planner_off",
                             )
-                    except (CoilLimitsError, PlannerError, Exception) as e:
+                    else:
+                        _stage(
+                            "coil_limits_authority",
+                            True,
+                            path=str(cl_out),
+                            n_circuits=len(cl_auth.circuits),
+                            citation=cl_auth.citation,
+                        )
+                except (CoilLimitsError, PlannerError, Exception) as e:
+                    if self.cfg.execute_planner:
                         blocking_errors.append(f"coil_limits_authority_failed: {type(e).__name__}: {e}")
                         _stage("coil_limits_authority", False, error=str(e))
+                    else:
+                        _stage("coil_limits_authority", True, note=f"snapshot_failed:{e}")
+            elif self.cfg.execute_planner:
+                blocking_errors.append(
+                    "coil_limits_authority_required: set coil_limits_authority_path "
+                    "when execute_planner=true (ADR-004 hard gate)"
+                )
+                _stage("coil_limits_authority", False, note="missing_path")
             else:
-                _stage("planner_authority", True, note="execute_planner=false")
-                _stage("coil_limits_authority", True, note="execute_planner=false")
+                _stage("coil_limits_authority", True, note="no_path")
 
             # Time window: override > consensus > single-signal inference
             window_override: Optional[Dict[str, Any]] = None
@@ -1413,7 +1431,12 @@ class ShotPipeline:
                     pl_auth = load_planner_authority(pl_snap)
                     cl_auth = load_coil_limits(cl_snap)
                     if not pl_auth.enabled:
-                        _stage("planner", True, note="planner_authority.enabled=false")
+                        msg = (
+                            "execute_planner=true but planner_authority.enabled=false — "
+                            "enable the authority or set execute_planner=false"
+                        )
+                        _stage("planner", False, note="planner_authority.enabled=false")
+                        blocking_errors.append(f"planner_required: {msg}")
                     else:
                         vm_path = _resolve_config_path(self.cfg.voltage_map_path, repo_root)
                         if vm_path is None or not vm_path.exists():
@@ -1442,25 +1465,31 @@ class ShotPipeline:
                                 import subprocess
                                 import sys
 
+                                import os as _os
+
                                 py = self.cfg.freegsnke_python or sys.executable
+                                md_lit = json.dumps(str(Path(ma_for_plan).resolve()))
+                                out_lit = json.dumps(str(Path(snap_dyn).resolve()))
+                                order_lit = json.dumps(list(order))
                                 script = (
-                                    "import json,sys\n"
+                                    "import json\n"
                                     "from pathlib import Path\n"
-                                    "from mast_freegsnke.planner import extract_circuit_dynamics_from_freegsnke_machine, write_circuit_dynamics\n"
-                                    f"order={order!r}\n"
-                                    f"md=Path(r'{ma_for_plan}')\n"
-                                    f"out=Path(r'{snap_dyn}')\n"
-                                    "dyn=extract_circuit_dynamics_from_freegsnke_machine(machine_dir=md, circuit_order=order)\n"
+                                    "from mast_freegsnke.planner import ("
+                                    "extract_circuit_dynamics_from_freegsnke_machine, "
+                                    "write_circuit_dynamics)\n"
+                                    f"order=json.loads({order_lit!r})\n"
+                                    f"md=Path(json.loads({md_lit!r}))\n"
+                                    f"out=Path(json.loads({out_lit!r}))\n"
+                                    "dyn=extract_circuit_dynamics_from_freegsnke_machine("
+                                    "machine_dir=md, circuit_order=order)\n"
                                     "write_circuit_dynamics(out, dyn)\n"
                                     "print('ok')\n"
                                 )
-                                # Ensure repo src on path
-                                import os as _os
-
                                 env = dict(**{k: v for k, v in _os.environ.items()})
                                 src_path = str((repo_root / "src").resolve())
-                                env["PYTHONPATH"] = src_path + (
-                                    (";" + env["PYTHONPATH"]) if env.get("PYTHONPATH") else ""
+                                prev = env.get("PYTHONPATH", "")
+                                env["PYTHONPATH"] = (
+                                    src_path + ((_os.pathsep + prev) if prev else "")
                                 )
                                 r = subprocess.run(
                                     [str(py), "-c", script],
@@ -1496,6 +1525,7 @@ class ShotPipeline:
                             path=prep.get("path"),
                             n_knots=prep.get("n_knots"),
                             residual_rms=prep.get("residual_rms_by_circuit"),
+                            n_voltage_violations=prep.get("n_voltage_violations_raw"),
                         )
                 except Exception as e:
                     _stage("planner", False, error=str(e))

@@ -644,6 +644,64 @@ def load_profile_trajectory_info(run_dir: Path) -> Dict[str, Any]:
     return out
 
 
+def load_planner_info(run_dir: Path) -> Dict[str, Any]:
+    """ADR-004 Phase 2 planner products for UI (read-only; never invents limits)."""
+    run_dir = Path(run_dir)
+    plan_rel = "07_planner/PLANNER.json"
+    resid_rel = "07_planner/planning_residual_vs_measured_V.csv"
+    plot_rel = "07_planner/planning_voltage_residual.png"
+    limits_rel = "inputs/coil_limits_authority/coil_limits_authority.json"
+    auth_rel = "inputs/planner_authority/planner_authority.json"
+    meta = _safe_json(run_dir / plan_rel)
+    limits = _safe_json(run_dir / limits_rel)
+    auth = _safe_json(run_dir / auth_rel)
+    out: Dict[str, Any] = {
+        "present": bool(meta),
+        "status": None,
+        "n_knots": None,
+        "residual_rms_mean_V": None,
+        "residual_rms_mean_measured_V": None,
+        "n_voltage_violations_raw": None,
+        "citation": None,
+        "plan_rel": plan_rel if (run_dir / plan_rel).is_file() else None,
+        "resid_rel": resid_rel if (run_dir / resid_rel).is_file() else None,
+        "plot_rel": plot_rel if (run_dir / plot_rel).is_file() else None,
+        "limits_rel": limits_rel if (run_dir / limits_rel).is_file() else None,
+        "auth_rel": auth_rel if (run_dir / auth_rel).is_file() else None,
+        "limits_status": None,
+        "detail": None,
+    }
+    if isinstance(limits, dict):
+        out["limits_status"] = limits.get("status")
+        out["citation"] = limits.get("citation")
+    if isinstance(meta, dict):
+        out["status"] = meta.get("status")
+        out["n_knots"] = meta.get("n_knots")
+        out["residual_rms_mean_V"] = meta.get("residual_rms_mean_V")
+        out["residual_rms_mean_measured_V"] = meta.get("residual_rms_mean_measured_V")
+        out["n_voltage_violations_raw"] = meta.get("n_voltage_violations_raw")
+        if not out["citation"]:
+            out["citation"] = meta.get("coil_limits_citation")
+        out["detail"] = (
+            f"status={out['status']} knots={out['n_knots']} "
+            f"rms_V={out['residual_rms_mean_V']} "
+            f"rms_meas_V={out['residual_rms_mean_measured_V']} "
+            f"V_viol={out['n_voltage_violations_raw']}"
+        )
+    elif isinstance(auth, dict) and not out["present"]:
+        out["detail"] = (
+            f"planner_authority snapshotted enabled={auth.get('enabled')} "
+            "(no PLANNER.json — execute_planner off or limits awaiting)"
+        )
+    elif out["limits_status"]:
+        out["detail"] = f"coil_limits status={out['limits_status']} (planner not run)"
+    else:
+        out["detail"] = (
+            "No planner products — execute_planner defaults false until cited coil limits exist."
+        )
+    return out
+
+
 def overview_kpis(run_dir: Path) -> Dict[str, Any]:
     """Compact KPI dict for the overview strip."""
     run_dir = Path(run_dir)
@@ -654,16 +712,21 @@ def overview_kpis(run_dir: Path) -> Dict[str, Any]:
     metrics = load_metrics(run_dir) or {}
     efit = load_efit_compare(run_dir) or {}
     ptraj = load_profile_trajectory_info(run_dir)
+    planner = load_planner_info(run_dir)
     window = summary.get("window") or man.get("time_window") or {}
     blocking = list(summary.get("blocking_errors") or man.get("blocking_errors") or progress.get("blocking_errors") or [])
     evo = audit.get("evolutive_ip") if isinstance(audit, dict) else {}
     status = summary.get("status") or man.get("status") or progress.get("status") or "unknown"
     # Stage-log hint for profile_trajectory soft-skip
     stage_status = None
+    planner_stage = None
     for s in progress.get("stage_log") or man.get("stage_log") or []:
-        if isinstance(s, dict) and s.get("stage") == "profile_trajectory":
+        if not isinstance(s, dict):
+            continue
+        if s.get("stage") == "profile_trajectory":
             stage_status = s.get("status") or s.get("note")
-            break
+        if s.get("stage") == "planner":
+            planner_stage = s.get("note") or ("ok" if s.get("ok") else "failed")
     return {
         "shot": summary.get("shot") or man.get("shot") or run_dir.name,
         "status": status,
@@ -680,6 +743,13 @@ def overview_kpis(run_dir: Path) -> Dict[str, Any]:
         "profile_n_knots": ptraj.get("n_knots"),
         "profile_sha256_short": ptraj.get("sha256_short"),
         "profile_traj_rel": ptraj.get("trajectory_rel"),
+        "planner_status": planner.get("status") or planner_stage,
+        "planner_n_knots": planner.get("n_knots"),
+        "planner_rms_V": planner.get("residual_rms_mean_measured_V")
+        if planner.get("residual_rms_mean_measured_V") is not None
+        else planner.get("residual_rms_mean_V"),
+        "planner_v_violations": planner.get("n_voltage_violations_raw"),
+        "planner_present": bool(planner.get("present")),
         "blocking_n": len(blocking),
         "blocking": blocking[:8],
         "modes": summary.get("modes") or {},
@@ -693,6 +763,7 @@ _COMPARE_NUMERIC_KEYS = (
     "window_dt",
     "n_scored",
     "evolutive_rms_A",
+    "planner_rms_V",
     "blocking_n",
 )
 
@@ -761,6 +832,8 @@ def compare_scorecard(
         ("profile_source", "Profile source"),
         ("profile_fit_mode", "Profile fit mode"),
         ("profile_n_knots", "Profile knots"),
+        ("planner_status", "Planner status"),
+        ("planner_rms_V", "Planner ΔV RMS [V]"),
         ("efit_ok", "EFIT archive ok"),
         ("blocking_n", "Blocking errors"),
     )
@@ -835,6 +908,12 @@ def overview_text(run_dir: Path) -> str:
             f"fit={k.get('profile_fit_mode')} knots={k.get('profile_n_knots')}"
             + (f" sha={k.get('profile_sha256_short')}" if k.get("profile_sha256_short") else "")
         )
+    if k.get("planner_status") or k.get("planner_present"):
+        lines.append(
+            "Planner: "
+            f"status={k.get('planner_status')} knots={k.get('planner_n_knots')} "
+            f"rms_V={k.get('planner_rms_V')}"
+        )
     if k["blocking"]:
         lines.append("Blocking errors:")
         for e in k["blocking"]:
@@ -887,6 +966,8 @@ _PREFERRED_DOWNLOADS = (
     "07_planner/PLANNER.json",
     "07_planner/PLANNER.md",
     "07_planner/planning_residual_vs_measured_V.csv",
+    "07_planner/planning_residual_timeseries.csv",
+    "07_planner/planning_voltage_residual.png",
 )
 
 

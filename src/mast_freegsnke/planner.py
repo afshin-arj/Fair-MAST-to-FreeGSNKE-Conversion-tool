@@ -13,22 +13,26 @@ GS Picard shape terms deferred to a later increment (shape targets recorded for 
 from __future__ import annotations
 
 import json
-import math
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
 
-from .coil_limits import CoilLimitsAuthority, CoilLimitsError, load_coil_limits, write_coil_limits
+from .coil_limits import CoilLimitsAuthority
 
 
 class PlannerError(RuntimeError):
     pass
 
 
-FIT_MODES = ()  # reserved
+def _strict_bool(value: Any, name: str, *, default: Optional[bool] = None) -> bool:
+    if value is None and default is not None:
+        return default
+    if not isinstance(value, bool):
+        raise PlannerError(f"{name} must be a JSON boolean (got {type(value).__name__})")
+    return value
 
 
 @dataclass(frozen=True)
@@ -79,8 +83,8 @@ def load_planner_authority(path: Path) -> PlannerAuthority:
     auth = PlannerAuthority(
         authority_name=str(obj.get("authority_name", "planner")),
         authority_version=str(obj.get("authority_version", "1.0.0")),
-        enabled=bool(obj.get("enabled", False)),
-        require=bool(obj.get("require", False)),
+        enabled=_strict_bool(obj.get("enabled"), "enabled", default=False),
+        require=_strict_bool(obj.get("require"), "require", default=False),
         output_relpath=str(obj.get("output_relpath", "07_planner")),
         n_knots=int(obj.get("n_knots", 21)),
         knot_policy=str(obj.get("knot_policy", "linspace_window_inclusive")),
@@ -226,11 +230,32 @@ def extract_circuit_dynamics_from_freegsnke_machine(
 
 
 def _interp_matrix(t_query: np.ndarray, t_src: np.ndarray, Y: np.ndarray) -> np.ndarray:
-    """Y shape (n_time, n_col) → interpolate each column at t_query."""
+    """Y shape (n_time, n_col) → interpolate each column at t_query (no extrapolation)."""
     out = np.zeros((len(t_query), Y.shape[1]), dtype=float)
     for j in range(Y.shape[1]):
         out[:, j] = np.interp(t_query, t_src, Y[:, j])
     return out
+
+
+def _require_window_covered(
+    *,
+    t_query: np.ndarray,
+    t_src: np.ndarray,
+    label: str,
+    atol: float = 1e-9,
+) -> None:
+    """Fail-closed if planner knots fall outside measured PF time coverage."""
+    if t_src.size < 2:
+        raise PlannerError(f"{label}: need >= 2 time samples")
+    t0 = float(np.min(t_src))
+    t1 = float(np.max(t_src))
+    q0 = float(np.min(t_query))
+    q1 = float(np.max(t_query))
+    if q0 < t0 - atol or q1 > t1 + atol:
+        raise PlannerError(
+            f"{label}: planner window [{q0:.6g},{q1:.6g}] not covered by measured "
+            f"time [{t0:.6g},{t1:.6g}] (no silent extrapolation)"
+        )
 
 
 def _load_pf_matrix(inputs_dir: Path, filename: str, circuit_order: Sequence[str]) -> Tuple[np.ndarray, np.ndarray]:
@@ -355,14 +380,13 @@ def solve_trajectory_qp(
         I = I_new
 
     V = voltages_from_dynamics(I, R=R, L=L, dt=dt)
-    V_clipped = np.clip(V, V_lo, V_hi)
+    viol = (V > V_hi) | (V < V_lo)
     return {
         "I": I,
         "V": V,
-        "V_clipped": V_clipped,
         "cost_history": hist_cost,
-        "n_voltage_violations_raw": int(np.sum((V > V_hi) | (V < V_lo))),
-        "n_voltage_clip_changes": int(np.sum(np.abs(V - V_clipped) > 1e-12)),
+        "n_voltage_violations_raw": int(np.sum(viol)),
+        "voltage_violation_mask": viol,
     }
 
 
@@ -408,6 +432,8 @@ def run_planner_stage(
     if float(t_end) <= float(t_start):
         raise PlannerError("require t_end > t_start")
     dt = float(times[1] - times[0])
+    _require_window_covered(t_query=times, t_src=t_I, label="pf_currents.csv")
+    _require_window_covered(t_query=times, t_src=t_V, label="pf_voltages.csv")
     I_tgt = _interp_matrix(times, t_I, I_src)
     V_obs = _interp_matrix(times, t_V, V_meas)
 
@@ -438,6 +464,10 @@ def run_planner_stage(
     )
     I_plan = sol["I"]
     V_plan = sol["V"]
+    n_v_viol = int(sol["n_voltage_violations_raw"])
+    # Cited Vmax/Vmin are hard box constraints — never claim success with over-limit V.
+    voltage_limit_ok = n_v_viol == 0
+    status = "ok" if voltage_limit_ok else "voltage_limit_violations"
 
     out_dir = Path(run_dir) / planner_auth.output_relpath
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -485,9 +515,77 @@ def run_planner_stage(
     resid_df = pd.DataFrame(resid_rows)
     resid_df.to_csv(out_dir / "planning_residual_vs_measured_V.csv", index=False)
 
+    # Per-time residual timeseries (expert UI / CSV download)
+    ts_rows: List[Dict[str, Any]] = []
+    for k, t in enumerate(times):
+        for i, c in enumerate(order):
+            ts_rows.append(
+                {
+                    "time": float(t),
+                    "circuit": c,
+                    "drive_label": drive_labels[c],
+                    "V_plan_V": float(V_plan[k, i]),
+                    "V_obs_V": float(V_obs[k, i]),
+                    "dV_V": float(V_plan[k, i] - V_obs[k, i]),
+                    "I_plan_A": float(I_plan[k, i]),
+                }
+            )
+    ts_df = pd.DataFrame(ts_rows)
+    ts_df.to_csv(out_dir / "planning_residual_timeseries.csv", index=False)
+
+    plots_written: List[str] = []
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        fig, axs = plt.subplots(2, 1, figsize=(9, 7), dpi=120, sharex=True)
+        for i, c in enumerate(order):
+            axs[0].plot(times, V_plan[:, i], label=f"{c} plan")
+            axs[0].plot(times, V_obs[:, i], "--", alpha=0.7, label=f"{c} obs")
+        axs[0].set_ylabel("V [V]")
+        axs[0].set_title("Planned vs observed voltages (honesty: see drive_labels)")
+        axs[0].grid(True, alpha=0.3)
+        axs[0].legend(fontsize=7, ncol=2, loc="best")
+        for i, c in enumerate(order):
+            axs[1].plot(times, V_plan[:, i] - V_obs[:, i], label=c)
+        axs[1].set_xlabel("t [s]")
+        axs[1].set_ylabel("ΔV plan−obs [V]")
+        axs[1].grid(True, alpha=0.3)
+        axs[1].legend(fontsize=7, ncol=4, loc="best")
+        fig.tight_layout()
+        plot_path = out_dir / "planning_voltage_residual.png"
+        fig.savefig(plot_path, bbox_inches="tight")
+        plt.close(fig)
+        plots_written.append(str(plot_path.name))
+    except Exception as e:
+        plots_written.append(f"plot_skipped:{type(e).__name__}")
+
+    # Inventory EFIT shape targets if present (Picard isoflux deferred — provenance only)
+    shape_targets_available: Dict[str, Any] = {"present": False, "paths": []}
+    for rel in (
+        "04_efit_compare/efit_shape_timeseries.csv",
+        "04_efit_compare/shape_scorecard.json",
+        "04_efit_compare/efit_lcfs.csv",
+    ):
+        if (Path(run_dir) / rel).is_file():
+            shape_targets_available["paths"].append(rel)
+            shape_targets_available["present"] = True
+    shape_targets_available["note"] = (
+        "EFIT/FreeGSNKE shape artifacts inventoried for future GS Picard isoflux cost; "
+        "v1 QP does not yet consume them."
+    )
+
+    mean_rms = float(np.mean([r["rms_V"] for r in resid_rows])) if resid_rows else None
+    measured_rms = [
+        r["rms_V"] for r in resid_rows if r["drive_label"] == "measured_fairmast_V"
+    ]
+    mean_rms_measured = float(np.mean(measured_rms)) if measured_rms else None
+
     meta = {
         "shot": shot,
-        "status": "ok",
+        "status": status,
         "authority_version": planner_auth.authority_version,
         "t_start": float(t_start),
         "t_end": float(t_end),
@@ -498,15 +596,19 @@ def run_planner_stage(
         "circuit_dynamics_source": circuit_dynamics.source,
         "coil_limits_citation": coil_limits.citation,
         "cost_history": sol["cost_history"],
-        "n_voltage_violations_raw": sol["n_voltage_violations_raw"],
-        "n_voltage_clip_changes": sol["n_voltage_clip_changes"],
+        "n_voltage_violations_raw": n_v_viol,
         "residual_rms_by_circuit": {r["circuit"]: r["rms_V"] for r in resid_rows},
+        "residual_rms_mean_V": mean_rms,
+        "residual_rms_mean_measured_V": mean_rms_measured,
+        "plots_written": plots_written,
+        "shape_targets_available": shape_targets_available,
         "limitations": [
             "v1 planner: current-tracking + circuit dynamics QP (GSPulse cost vocabulary); "
             "full GS Picard isoflux terms not yet wired",
             "Passives excluded while passive_resistivity awaiting_authority",
             "P3/P6 measured voltages may be ohmic_synthetic_IxR — residuals labeled honestly",
             "Never invents coil I/V limits — citation required",
+            "Voltage box limits are fail-closed: over-limit plans raise PlannerError",
         ],
         "notes": planner_auth.notes,
     }
@@ -516,9 +618,13 @@ def run_planner_stage(
         "",
         "ADR-004 Phase 2 — Python GSPulse-style feedforward planner (no MATLAB).",
         "",
+        f"- status: **{status}**",
         f"- knots: {n_k}  dt={dt:.6g}s  window=[{t_start:.6g},{t_end:.6g}]",
         f"- dynamics: `{circuit_dynamics.source}`",
         f"- limits citation: {coil_limits.citation}",
+        f"- voltage-limit violations (raw dynamics V): {n_v_viol}",
+        f"- mean residual RMS (all circuits): {mean_rms}",
+        f"- mean residual RMS (measured V only): {mean_rms_measured}",
         "",
         "## Planning residual vs voltages (RMS)",
         "",
@@ -528,16 +634,36 @@ def run_planner_stage(
             f"- **{r['circuit']}** ({r['drive_label']}): rms={r['rms_V']:.6g} V"
         )
     md.append("")
+    md.append("## Artifacts")
+    md.append("- `planned_currents.csv` / `planned_voltages.csv`")
+    md.append("- `planning_residual_vs_measured_V.csv` (per-circuit summary)")
+    md.append("- `planning_residual_timeseries.csv` (per-time ΔV)")
+    if plots_written:
+        md.append(f"- plots: {', '.join(plots_written)}")
+    md.append("")
+    md.append("## Shape targets (inventory only)")
+    md.append(f"- present={shape_targets_available['present']}: {shape_targets_available['paths']}")
+    md.append(f"- {shape_targets_available['note']}")
+    md.append("")
     md.append("## Limitations")
     for lim in meta["limitations"]:
         md.append(f"- {lim}")
     (out_dir / "PLANNER.md").write_text("\n".join(md) + "\n", encoding="utf-8")
 
+    if not voltage_limit_ok:
+        raise PlannerError(
+            f"planner voltage box constraints violated at {n_v_viol} knot×circuit samples "
+            f"(cited coil_limits); see {out_dir / 'PLANNER.json'} — never relax limits silently"
+        )
+
     return {
         "ok": True,
-        "status": "ok",
+        "status": status,
         "path": str(out_dir),
         "n_knots": n_k,
         "residual_rms_by_circuit": meta["residual_rms_by_circuit"],
+        "residual_rms_mean_V": mean_rms,
+        "residual_rms_mean_measured_V": mean_rms_measured,
+        "n_voltage_violations_raw": n_v_viol,
         "meta": meta,
     }

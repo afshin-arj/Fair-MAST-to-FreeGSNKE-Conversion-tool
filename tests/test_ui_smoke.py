@@ -169,6 +169,45 @@ def _fixture_shot(run_dir: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
+    # ADR-004 Phase 2 planner products
+    planner = run_dir / "07_planner"
+    planner.mkdir(parents=True, exist_ok=True)
+    (planner / "PLANNER.json").write_text(
+        json.dumps(
+            {
+                "status": "ok",
+                "n_knots": 21,
+                "residual_rms_mean_V": 12.5,
+                "residual_rms_mean_measured_V": 8.0,
+                "n_voltage_violations_raw": 0,
+                "coil_limits_citation": "https://example.test/limits",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (planner / "planning_residual_vs_measured_V.csv").write_text(
+        "circuit,drive_label,rms_V,mae_V,max_abs_V,n\nSolenoid,measured_fairmast_V,1.0,0.5,2.0,21\n",
+        encoding="utf-8",
+    )
+    (run_dir / "inputs" / "coil_limits_authority").mkdir(parents=True, exist_ok=True)
+    (run_dir / "inputs" / "coil_limits_authority" / "coil_limits_authority.json").write_text(
+        json.dumps(
+            {
+                "authority_name": "coil_limits",
+                "status": "cited",
+                "citation": "https://example.test/limits",
+                "circuits": {"Solenoid": {"Imax_A": 1e5, "Vmax_V": 1e3}},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "inputs" / "planner_authority").mkdir(parents=True, exist_ok=True)
+    (run_dir / "inputs" / "planner_authority" / "planner_authority.json").write_text(
+        json.dumps({"authority_name": "planner", "enabled": True, "require": False}) + "\n",
+        encoding="utf-8",
+    )
 
 
 def test_list_and_overview(tmp_path: Path) -> None:
@@ -186,7 +225,12 @@ def test_list_and_overview(tmp_path: Path) -> None:
     assert k["profile_source"] == "profile_trajectory_authority"
     assert k["profile_fit_mode"] == "scalar_bridge"
     assert k["profile_n_knots"] == 2
+    assert k["planner_status"] == "ok"
+    assert k["planner_rms_V"] == 8.0
+    assert k["planner_v_violations"] == 0
     assert "Profile trajectory" in text
+    assert "Planner:" in text
+    assert art.load_planner_info(shot_dir)["present"] is True
 
 
 def test_metrics_auth_catalog_zip(tmp_path: Path) -> None:
@@ -205,6 +249,8 @@ def test_metrics_auth_catalog_zip(tmp_path: Path) -> None:
     snap = art.authority_snapshot(shot_dir)
     assert any(i["label"] == "voltage_map.sha256" for i in snap["items"])
     assert any(m["label"] == "profile_trajectory" for m in snap["matrix"])
+    assert any(m["label"] == "coil_limits_authority" for m in snap["matrix"])
+    assert any(m["label"] == "planner_authority" for m in snap["matrix"])
     assert any(
         m["label"] == "profile_trajectory" and m.get("status") == "present" for m in snap["matrix"]
     )

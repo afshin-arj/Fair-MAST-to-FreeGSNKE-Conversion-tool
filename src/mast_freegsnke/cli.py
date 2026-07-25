@@ -531,6 +531,12 @@ def main(argv=None) -> int:
                             f"[OK] planner_authority: enabled={auth.enabled} "
                             f"require={auth.require} out={auth.output_relpath}"
                         )
+                        if not auth.enabled:
+                            print(
+                                "[FAIL] planner_authority.enabled=false while "
+                                "execute_planner=true — enable authority or disable planner"
+                            )
+                            ok = False
                 except Exception as e:
                     print(f"[FAIL] {label} invalid: {e}")
                     ok = False

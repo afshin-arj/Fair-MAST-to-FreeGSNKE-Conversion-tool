@@ -90,6 +90,15 @@ def shot_dossier(
                 )
             ),
         ),
+        chip(
+            "Planner",
+            k.get("planner_status") or ("off" if not k.get("planner_present") else "—"),
+            tone="ok"
+            if k.get("planner_status") == "ok"
+            else ("warn" if k.get("planner_status") else ""),
+        ),
+        chip("ΔV RMS", k.get("planner_rms_V")),
+        chip("V viol", k.get("planner_v_violations")),
         chip("L2 cache", cache_val, tone=cache_tone),
     ]
     if k.get("blocking_n"):
@@ -134,6 +143,8 @@ def quick_links(shot: int, run_dir: Path) -> Any:
         ("04_efit_compare/COMPARE.json", "COMPARE"),
         ("inputs/profile_trajectory_authority/profile_trajectory.json", "profile traj"),
         ("03_reconstruction/evolutive/evolutive_meta.json", "evolutive meta"),
+        ("07_planner/PLANNER.json", "planner"),
+        ("07_planner/planning_residual_vs_measured_V.csv", "planner ΔV"),
         ("02_measured_data/00_index/catalog.json", "L2 catalog"),
         ("02_measured_data/00_index/optional_diagnostics.json", "optional L2"),
     ):
@@ -1241,6 +1252,61 @@ def auth_panel(shot: int, run_dir: Path) -> Any:
         )
     )
 
+    # ADR-004 Phase 2 planner card
+    pinfo = art.load_planner_info(run_dir)
+    pl_chips = [
+        chip("status", pinfo.get("status") or "—"),
+        chip("knots", pinfo.get("n_knots")),
+        chip("rms_V", pinfo.get("residual_rms_mean_V")),
+        chip("rms_meas_V", pinfo.get("residual_rms_mean_measured_V")),
+        chip("V_viol", pinfo.get("n_voltage_violations_raw")),
+        chip("limits", pinfo.get("limits_status") or "—"),
+    ]
+    pl_links: List[Any] = []
+    for rel, label in (
+        (pinfo.get("plan_rel"), "PLANNER.json"),
+        ("07_planner/PLANNER.md", "PLANNER.md"),
+        (pinfo.get("resid_rel"), "residual summary CSV"),
+        ("07_planner/planning_residual_timeseries.csv", "residual timeseries"),
+        (pinfo.get("plot_rel"), "ΔV plot"),
+        (pinfo.get("limits_rel"), "coil_limits"),
+        (pinfo.get("auth_rel"), "planner_authority"),
+    ):
+        if not rel:
+            continue
+        if art.safe_resolve_under(run_dir, str(rel)):
+            pl_links.append(
+                html.A(
+                    label,
+                    href=art.file_url(shot, str(rel)),
+                    target="_blank",
+                    className="compare-file-chip",
+                )
+            )
+    plot_body: Any = None
+    if pinfo.get("plot_rel") and art.safe_resolve_under(run_dir, str(pinfo["plot_rel"])):
+        plot_body = html.Img(
+            src=art.file_url(shot, str(pinfo["plot_rel"])),
+            className="img-fluid mt-2",
+            style={"maxHeight": "360px"},
+            alt="Planner voltage residual",
+        )
+    children.append(
+        ui_kit.section(
+            "Feedforward planner (ADR-004 Phase 2)",
+            "GSPulse-style trajectory QP under cited coil limits — default off; never invents Imax/Vmax. "
+            "Residuals vs measured voltages; P3/P6 may be ohmic_synthetic_IxR.",
+            html.Div(
+                [
+                    html.Div(pl_chips, className="compare-chip-row mb-2"),
+                    html.P(pinfo.get("detail") or "—", className="small text-muted mb-2"),
+                    html.Div(pl_links, className="compare-file-chip-row") if pl_links else None,
+                    plot_body,
+                ]
+            ),
+        )
+    )
+
     matrix = snap.get("matrix") or []
     if matrix:
         mrows = []
@@ -2227,7 +2293,7 @@ TAB_META = {
     "compare": "Browse-only A|B console — basename-aligned KPIs, Level-2, residuals, and GIFs.",
     "efit": "Archive shape scorecard first (ADR-002) — not a live EFIT solve.",
     "gifs": "Inverse / forward / evolutive equilibrium GIFs with mode badges.",
-    "auth": "Authority matrix + ADR-004 profile trajectory — never invent metrology.",
+    "auth": "Authority matrix + profile trajectory + planner (ADR-004) — never invent metrology.",
     "files": "Grouped, filterable artifact downloads + copy path.",
 }
 

@@ -245,6 +245,27 @@ def kpi_scorecard_rows(kpis: Dict[str, Any]) -> List[Dict[str, Any]]:
             "value": kpis.get("profile_n_knots"),
         },
         {
+            "key": "planner_status",
+            "label": "Planner status (ADR-004)",
+            "value": kpis.get("planner_status"),
+            "tone": (
+                "ok"
+                if kpis.get("planner_status") == "ok"
+                else ("warn" if kpis.get("planner_status") else "")
+            ),
+        },
+        {
+            "key": "planner_rms_V",
+            "label": "Planner ΔV RMS [V]",
+            "value": kpis.get("planner_rms_V"),
+        },
+        {
+            "key": "planner_v_violations",
+            "label": "Planner V-limit violations",
+            "value": kpis.get("planner_v_violations"),
+            "tone": "fail" if (kpis.get("planner_v_violations") or 0) else "",
+        },
+        {
             "key": "efit_ok",
             "label": "EFIT archive ok",
             "value": kpis.get("efit_ok"),

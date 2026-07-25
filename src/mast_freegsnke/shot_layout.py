@@ -158,6 +158,7 @@ def finalize_shot_layout(run_dir: Path, *, shot: int) -> Dict[str, Any]:
             "  4) 02_measured_data/              FAIR-MAST measured signals",
             "  5) 05_downstream/                 optional TORAX geometry",
             "  6) 06_authorities/                cited authorities + hashes",
+            "  7) 07_planner/                    optional GSPulse-style planner (ADR-004)",
             "",
             "Tooling (leave alone unless debugging):",
             "  inputs/   mapped CSVs + authority snapshots for FreeGSNKE scripts",
