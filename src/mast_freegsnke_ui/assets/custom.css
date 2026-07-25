@@ -1172,6 +1172,29 @@ body {
   }
 }
 
+.l2-family-radio {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  align-items: center;
+}
+
+.l2-family-option {
+  color: var(--fg-ink-muted, #9fb0c3);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.l2-detail {
+  min-height: 8rem;
+  border-top: 1px solid var(--fg-line, #243044);
+  padding-top: 0.75rem;
+}
+
+.l2-panel .l2-family-radio label {
+  margin-bottom: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;

@@ -259,7 +259,8 @@ def test_fill_all_tabs_have_distinct_content(tmp_path: Path) -> None:
     # Level-2 / EFIT / GIFs galleries must mention their image filenames
     assert "01_plasma_ip.png" in bodies["level2"]
     assert "ip.csv" in bodies["level2"]
-    assert "fg-accordion" in bodies["level2"] or "accordion" in bodies["level2"].lower()
+    assert "l2-family" in bodies["level2"] or "l2-detail" in bodies["level2"]
+    assert "Plasma" in bodies["level2"]
     assert "lcfs_compare.png" in bodies["efit"]
     assert "inverse_equilibria.gif" in bodies["gifs"]
     assert "fl_01" in bodies["residuals"]

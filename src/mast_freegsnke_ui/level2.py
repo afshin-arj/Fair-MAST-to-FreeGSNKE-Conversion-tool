@@ -112,7 +112,8 @@ def _csv_section(rel: str) -> str:
     return "other"
 
 
-def measured_csv_inventory(run_dir: Path) -> List[Dict[str, Any]]:
+def measured_csv_inventory(run_dir: Path, *, disk_walk: bool = True) -> List[Dict[str, Any]]:
+    """Inventory Level-2 CSVs. Prefer catalog paths; optional shallow disk walk."""
     root = measured_root(run_dir)
     if root is None:
         return []
@@ -160,22 +161,46 @@ def measured_csv_inventory(run_dir: Path) -> List[Dict[str, Any]]:
                     p = root / Path(rel).name
                 _add(p, str(fam))
 
-    for sub in ("01_plasma", "02_pf", "03_magnetics", "04_geometry"):
-        opened = art._open_dir(root / sub)
-        if opened is None:
-            continue
-        try:
-            for dirpath, dirnames, filenames in os.walk(opened, topdown=True, followlinks=False):
-                base = Path(dirpath)
-                depth = len(base.parts) - len(opened.parts)
-                if depth > 1:
-                    dirnames[:] = []
-                dirnames[:] = [n for n in dirnames if not art._is_reparse_point(base / n)]
-                for name in filenames:
-                    if name.lower().endswith(".csv"):
-                        _add(base / name, Path(name).stem)
-        except OSError:
-            continue
+    # Catalog is enough for the happy path — skip deep walks unless asked.
+    if disk_walk and not items:
+        for sub in ("01_plasma", "02_pf", "03_magnetics", "04_geometry"):
+            opened = art._open_dir(root / sub)
+            if opened is None:
+                continue
+            try:
+                for dirpath, dirnames, filenames in os.walk(opened, topdown=True, followlinks=False):
+                    base = Path(dirpath)
+                    depth = len(base.parts) - len(opened.parts)
+                    if depth > 1:
+                        dirnames[:] = []
+                    dirnames[:] = [n for n in dirnames if not art._is_reparse_point(base / n)]
+                    for name in filenames:
+                        if name.lower().endswith(".csv"):
+                            _add(base / name, Path(name).stem)
+            except OSError:
+                continue
+    elif disk_walk:
+        # Optional diagnostic folders only (core paths already come from catalog).
+        for sub in (
+            "06_summary",
+            "07_pulse_schedule",
+            "08_spectrometer_visible",
+            "09_soft_x_rays",
+            "10_thomson_scattering",
+            "11_charge_exchange",
+            "12_gas_injection",
+            "13_equilibrium",
+        ):
+            opened = art._open_dir(root / sub)
+            if opened is None:
+                continue
+            try:
+                for p in opened.glob("*.csv"):
+                    _add(p, p.stem)
+                for p in opened.glob("*/*.csv"):
+                    _add(p, p.stem)
+            except OSError:
+                continue
 
     items.sort(key=lambda x: (str(x.get("section") or ""), str(x.get("rel") or "")))
     return items

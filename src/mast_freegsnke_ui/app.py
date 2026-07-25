@@ -937,6 +937,25 @@ def create_app(
         body = panels.fill_one_tab(tid, shot_i, run_dir)
         return heading, body
 
+    @app.callback(
+        Output("l2-detail", "children"),
+        Input("l2-family", "value"),
+        State("active-shot", "data"),
+        prevent_initial_call=True,
+    )
+    def on_l2_family(family_key, active_shot):
+        """Load one Level-2 family on demand (keeps tab switches smooth)."""
+        if active_shot is None or not family_key:
+            return no_update
+        try:
+            shot_i = int(active_shot)
+        except (TypeError, ValueError):
+            return no_update
+        run_dir = art.run_dir_for(runs_dir, shot_i)
+        if not run_dir.is_dir():
+            return html.P("Shot folder missing.", className="text-muted small")
+        return panels.level2_family_detail(shot_i, run_dir, str(family_key))
+
     return app
 
 

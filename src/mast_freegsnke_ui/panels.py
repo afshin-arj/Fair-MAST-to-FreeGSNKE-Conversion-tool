@@ -725,8 +725,31 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
     )
 
 
-def _csv_section_block(shot: int, run_dir: Path, section: str, items: List[Dict[str, Any]]) -> Any:
-    """CSV inventory + optional small previews for one Level-2 family."""
+_L2_FAMILY_DEFS: tuple[tuple[str, str], ...] = (
+    ("plasma", "Plasma"),
+    ("pf", "PF coils"),
+    ("magnetics", "Magnetics"),
+    ("geometry", "Geometry"),
+    ("summary", "Summary profiles"),
+    ("pulse_schedule", "Pulse schedule"),
+    ("spectrometer", "Spectrometer (visible)"),
+    ("soft_x_rays", "Soft X-rays"),
+    ("thomson", "Thomson scattering"),
+    ("cxrs", "CXRS"),
+    ("gas", "Gas injection"),
+    ("equilibrium_l2", "Equilibrium L2 scalars"),
+)
+
+
+def _csv_section_block(
+    shot: int,
+    run_dir: Path,
+    section: str,
+    items: List[Dict[str, Any]],
+    *,
+    with_preview: bool = False,
+) -> Any:
+    """CSV inventory for one Level-2 family (link table; preview optional)."""
     html, _, dbc = _require()
     from mast_freegsnke_ui import level2 as l2
 
@@ -755,13 +778,11 @@ def _csv_section_block(shot: int, run_dir: Path, section: str, items: List[Dict[
                 ]
             )
         )
+        if not with_preview or len(previews) >= _MAX_CSV_PREVIEW:
+            continue
         path = art.safe_resolve_under(run_dir, rel)
-        if (
-            path is not None
-            and int(it.get("bytes") or 0) <= 1_500_000
-            and len(previews) < _MAX_CSV_PREVIEW
-        ):
-            preview = l2.csv_preview_rows(path)
+        if path is not None and int(it.get("bytes") or 0) <= 400_000:
+            preview = l2.csv_preview_rows(path, max_bytes=400_000)
             if preview:
                 ph = html.Tr([html.Th(c) for c in preview[0].keys()])
                 pb = [html.Tr([html.Td(str(v)[:48]) for v in row.values()]) for row in preview]
@@ -776,49 +797,99 @@ def _csv_section_block(shot: int, run_dir: Path, section: str, items: List[Dict[
                 )
     if not rows:
         return None
-    return html.Div(
-        [
-            dbc.Table(
-                [
-                    html.Thead(
-                        html.Tr([html.Th(h) for h in ("Family", "Path", "Bytes", "Rows≈", "Columns", "Actions")])
-                    ),
-                    html.Tbody(rows),
-                ],
-                bordered=False,
-                hover=True,
-                size="sm",
-                responsive=True,
-                className="mb-3",
-            ),
-            html.Div(previews) if previews else html.P(
-                "Large CSVs are download-only (preview skipped above ~1.5 MB).",
+    kids: List[Any] = [
+        dbc.Table(
+            [
+                html.Thead(
+                    html.Tr([html.Th(h) for h in ("Family", "Path", "Bytes", "Rows≈", "Columns", "Actions")])
+                ),
+                html.Tbody(rows),
+            ],
+            bordered=False,
+            hover=True,
+            size="sm",
+            responsive=True,
+            className="mb-2",
+        )
+    ]
+    if previews:
+        kids.append(html.Div(previews))
+    else:
+        kids.append(
+            html.P(
+                "Open/Download CSV above. Inline preview is skipped on tab open for speed.",
                 className="small text-muted mb-0",
-            ),
-        ]
+            )
+        )
+    return html.Div(kids)
+
+
+def level2_family_detail(shot: int, run_dir: Path, family_key: str) -> Any:
+    """Full plots + CSV for one Level-2 family (built on demand)."""
+    html, _, dbc = _require()
+    from mast_freegsnke_ui import level2 as l2
+
+    key = (family_key or "plasma").strip().lower()
+    title = dict(_L2_FAMILY_DEFS).get(key, key)
+    grouped = l2.measured_plots_grouped(run_dir)
+    # Catalog-first inventory; light optional-folder scan only.
+    csvs = l2.measured_csv_inventory(run_dir, disk_walk=True)
+    plots = grouped.get(key) or []
+    csv_block = _csv_section_block(shot, run_dir, key, csvs, with_preview=False)
+    plot_block = (
+        file_link_list(shot, plots, run_dir, empty=f"No {title} plots.", limit=_MAX_FILE_LINKS)
+        if plots
+        else html.P(f"No {title} plots in this pack.", className="small text-muted")
     )
+    kids: List[Any] = [
+        html.H3(title, className="h6 text-info mb-2"),
+        html.Div([html.Div("Plots", className="fg-quick-label mb-1"), plot_block], className="mb-3"),
+    ]
+    if key == "plasma" and plots:
+        kids.append(
+            html.Div(
+                [
+                    html.Div("Quick preview", className="fg-quick-label mb-2"),
+                    media_gallery(shot, plots[:2], run_dir, ""),
+                ],
+                className="mb-3",
+            )
+        )
+    kids.append(
+        html.Div(
+            [
+                html.Div("CSV", className="fg-quick-label mb-1"),
+                csv_block
+                if csv_block is not None
+                else html.P(f"No {title} CSV files.", className="small text-muted mb-0"),
+            ]
+        )
+    )
+    return html.Div(kids, className="l2-family-detail")
 
 
 def level2_panel(shot: int, run_dir: Path) -> Any:
-    """FAIR-MAST Level-2 measured pack — link-first (fast); light preview only."""
-    html, _, dbc = _require()
+    """FAIR-MAST Level-2 — fast shell; one family detail at a time (all families kept)."""
+    html, dcc, dbc = _require()
     from mast_freegsnke_ui import level2 as l2
 
     catalog = l2.load_measured_catalog(run_dir)
     grouped = l2.measured_plots_grouped(run_dir)
-    csvs = l2.measured_csv_inventory(run_dir)
+    # Cheap presence: plots + catalog paths only (no deep CSV walk on tab open).
+    csv_light = l2.measured_csv_inventory(run_dir, disk_walk=False)
     status = l2.level2_status_files(run_dir)
-    if not catalog and not grouped and not csvs:
+    if not catalog and not grouped and not csv_light:
         return empty_state(
             "No Level-2 measured pack yet",
             "Run the pipeline with enable_experimental_data so 02_measured_data/ is built from the FAIR-MAST extract.",
         )
 
-    def _plot_links(key: str, title: str) -> Any:
-        paths = grouped.get(key) or []
-        if not paths:
-            return None
-        return file_link_list(shot, paths, run_dir, empty=f"No {title} plots.", limit=_MAX_FILE_LINKS)
+    present_keys = []
+    for key, _lab in _L2_FAMILY_DEFS:
+        if grouped.get(key) or any(i.get("section") == key for i in csv_light):
+            present_keys.append(key)
+    if not present_keys:
+        present_keys = ["plasma"]
 
     index_bits: List[Any] = []
     if catalog:
@@ -827,7 +898,7 @@ def level2_panel(shot: int, run_dir: Path) -> Any:
             html.P(
                 f"Shot {catalog.get('shot', shot)} · families={len(fams) if isinstance(fams, dict) else 0} · "
                 f"plots={len(catalog.get('plots') or [])} · window={catalog.get('window_s')}",
-                className="small text-muted",
+                className="small text-muted mb-1",
             )
         )
         if catalog.get("warnings"):
@@ -849,114 +920,74 @@ def level2_panel(shot: int, run_dir: Path) -> Any:
             )
         )
 
-    l1 = status.get("l1") or {}
-    l3 = status.get("l3") or {}
-    meta_body = html.Div(
+    default_key = "plasma" if "plasma" in present_keys else present_keys[0]
+    options = [{"label": lab, "value": key} for key, lab in _L2_FAMILY_DEFS if key in present_keys]
+    # Keep every known family selectable so optional packs appear after reconstruct.
+    for key, lab in _L2_FAMILY_DEFS:
+        if key not in present_keys:
+            options.append({"label": f"{lab} (empty)", "value": key})
+
+    meta_links = html.Div(
         [
-            html.P(
-                f"L1: {l1.get('status') or l1.get('ok') or 'see STATUS.json'} · "
-                f"L3: {l3.get('status') or l3.get('ok') or 'see STATUS.json'}",
-                className="small",
-            ),
-            html.Div(
-                [
-                    html.A(
-                        "L1 STATUS.json",
-                        href=art.file_url(shot, "02_measured_data/l1/STATUS.json"),
-                        target="_blank",
-                        className="btn btn-sm btn-outline-secondary me-1",
-                    )
-                    if art.safe_resolve_under(run_dir, "02_measured_data/l1/STATUS.json")
-                    else None,
-                    html.A(
-                        "L3 STATUS.json",
-                        href=art.file_url(shot, "02_measured_data/l3/STATUS.json"),
-                        target="_blank",
-                        className="btn btn-sm btn-outline-secondary me-1",
-                    )
-                    if art.safe_resolve_under(run_dir, "02_measured_data/l3/STATUS.json")
-                    else None,
-                    html.A(
-                        "catalog.json",
-                        href=art.file_url(shot, "02_measured_data/00_index/catalog.json"),
-                        target="_blank",
-                        className="btn btn-sm btn-outline-secondary",
-                    )
-                    if art.safe_resolve_under(run_dir, "02_measured_data/00_index/catalog.json")
-                    else None,
-                ]
-            ),
-        ]
+            html.A(
+                "L1 STATUS",
+                href=art.file_url(shot, "02_measured_data/l1/STATUS.json"),
+                target="_blank",
+                className="btn btn-sm btn-outline-secondary me-1",
+            )
+            if art.safe_resolve_under(run_dir, "02_measured_data/l1/STATUS.json")
+            else None,
+            html.A(
+                "L3 STATUS",
+                href=art.file_url(shot, "02_measured_data/l3/STATUS.json"),
+                target="_blank",
+                className="btn btn-sm btn-outline-secondary me-1",
+            )
+            if art.safe_resolve_under(run_dir, "02_measured_data/l3/STATUS.json")
+            else None,
+            html.A(
+                "catalog.json",
+                href=art.file_url(shot, "02_measured_data/00_index/catalog.json"),
+                target="_blank",
+                className="btn btn-sm btn-outline-secondary",
+            )
+            if art.safe_resolve_under(run_dir, "02_measured_data/00_index/catalog.json")
+            else None,
+        ],
+        className="mb-2",
     )
 
-    def _fam(key: str, title: str) -> List[tuple]:
-        return [
-            (f"{title} — plots", _plot_links(key, title), False),
-            (f"{title} — CSV", _csv_section_block(shot, run_dir, key, csvs), False),
-        ]
-
-    # Tiny inline preview only (not every family) — keeps first paint fast.
-    preview = None
-    plasma_plots = (grouped.get("plasma") or [])[:2]
-    if plasma_plots:
-        preview = html.Div(
-            [
-                html.Div("Quick preview (plasma)", className="fg-quick-label mb-2"),
-                media_gallery(shot, plasma_plots, run_dir, ""),
-            ],
-            className="mb-3",
-        )
-
-    sections: List[tuple] = [
-        ("Index & availability", html.Div(index_bits), False),
-        *_fam("plasma", "Plasma"),
-        *_fam("pf", "PF coils"),
-        *_fam("magnetics", "Magnetics"),
-        *_fam("geometry", "Geometry"),
-        *_fam("summary", "Summary profiles"),
-        *_fam("pulse_schedule", "Pulse schedule"),
-        *_fam("spectrometer", "Spectrometer (visible)"),
-        *_fam("soft_x_rays", "Soft X-rays"),
-        *_fam("thomson", "Thomson scattering"),
-        *_fam("cxrs", "CXRS"),
-        *_fam("gas", "Gas injection"),
-        *_fam("equilibrium_l2", "Equilibrium L2 scalars"),
-        ("L1 / L3 status", meta_body, False),
-    ]
     return html.Div(
         [
             tab_banner(
                 "FAIR-MAST Level-2 measured data",
-                "Link-first browser for speed — Open plots/CSV in a new tab. Expand a family for the file list.",
+                "Pick a family below — plots and CSV load on demand so tab switches stay smooth. Everything remains available.",
             ),
+            html.Div(index_bits, className="mb-2"),
+            meta_links,
             html.Div(
                 [
-                    html.Span("Present", className="fg-quick-label"),
-                    html.Div(
-                        [
-                            html.Span(lab, className="fg-family-pill")
-                            for lab, key in (
-                                ("Plasma", "plasma"),
-                                ("PF", "pf"),
-                                ("Magnetics", "magnetics"),
-                                ("Geometry", "geometry"),
-                                ("Summary", "summary"),
-                                ("SXR", "soft_x_rays"),
-                                ("Thomson", "thomson"),
-                                ("CXRS", "cxrs"),
-                                ("Gas", "gas"),
-                            )
-                            if grouped.get(key) or any(i.get("section") == key for i in csvs)
-                        ]
-                        or [html.Span("Core pack only — optional diagnostics not exported yet", className="small text-muted")],
-                        className="fg-family-pills",
+                    html.Span("Family", className="fg-quick-label"),
+                    dcc.RadioItems(
+                        id="l2-family",
+                        options=options,
+                        value=default_key,
+                        className="l2-family-radio",
+                        inputClassName="me-1",
+                        labelClassName="l2-family-option me-2",
+                        inline=True,
                     ),
                 ],
                 className="fg-quick-bar mb-3",
             ),
-            preview,
-            accordion(sections, always_open=True),
-        ]
+            # Initial detail for default family (tests + first paint); callback refreshes on change.
+            html.Div(
+                level2_family_detail(shot, run_dir, default_key),
+                id="l2-detail",
+                className="l2-detail",
+            ),
+        ],
+        className="l2-panel",
     )
 
 
