@@ -258,6 +258,7 @@ def test_evolutive_authority_cover_window() -> None:
     assert ea.max_steps == 50
     assert ea.full_timestep_s == 0.02
     assert ea.scale_paxis_with_ip is False
+    assert ea.per_step_timeout_s == 180.0
     # Shot 30201-like window ~0.177 s → ceil(0.1768/0.02)=9
     plan = resolve_n_steps(ea, t_start=0.2012, t_end=0.378)
     assert plan["mode"] == "cover_window"

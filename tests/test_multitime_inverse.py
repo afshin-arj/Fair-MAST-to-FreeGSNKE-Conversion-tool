@@ -114,6 +114,33 @@ def test_runner_kills_script_on_timeout(tmp_path: Path) -> None:
     assert "TIMEOUT" in stderr
 
 
+def test_runner_pins_blas_threads_by_default() -> None:
+    r = FreeGSNKERunner(timeout_s=1.0)
+    assert r.env.get("OMP_NUM_THREADS") == "1"
+    assert r.env.get("MKL_NUM_THREADS") == "1"
+    assert r.env.get("OPENBLAS_NUM_THREADS") == "1"
+
+
+def test_evolutive_partial_history_n(tmp_path: Path) -> None:
+    from mast_freegsnke.freegsnke_runner import evolutive_partial_history_n
+
+    run_dir = tmp_path / "30202"
+    evo = run_dir / "evolutive"
+    evo.mkdir(parents=True)
+    (evo / "history.csv").write_text(
+        "t_abs,Ip,step_ok\n0.1,1e5,True\n0.12,9e4,True\n0.14,nan,False\n",
+        encoding="utf-8",
+    )
+    assert evolutive_partial_history_n(run_dir) == 2
+
+
+def test_evolutive_template_has_per_step_watchdog() -> None:
+    tpl = (REPO / "templates" / "evolutive_run.py.tpl").read_text(encoding="utf-8")
+    assert "_arm_step_watchdog" in tpl
+    assert "per_step_timeout_s" in tpl
+    assert "os._exit(124)" in tpl
+
+
 def test_runner_success_untimed(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir(parents=True)

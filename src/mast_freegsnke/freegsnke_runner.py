@@ -123,6 +123,11 @@ class FreeGSNKERunner:
         self.env = dict(os.environ)
         # Unbuffered child stdout so long FreeGSNKE inits (nl_solver) appear in logs.
         self.env.setdefault("PYTHONUNBUFFERED", "1")
+        # Pin BLAS/OpenMP to one thread unless the user already set them.
+        # Multi-threaded OpenBLAS/MKL has caused indefinite hangs in FreeGSNKE
+        # nlstepper on Windows for some MAST shots (e.g. 30202 step stalls).
+        for key in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+            self.env.setdefault(key, "1")
         if env:
             self.env.update({str(k): str(v) for k, v in env.items()})
         src = resolve_repo_src(repo_root)
@@ -191,3 +196,40 @@ def write_execution_report(run_dir: Path, report: Dict[str, Any]) -> Path:
     out = run_dir / "freegsnke_execution.json"
     out.write_text(json.dumps(report, indent=2, sort_keys=True))
     return out
+
+
+def evolutive_partial_history_n(run_dir: Path) -> int:
+    """Count successful evolutive history rows (crash-safe incremental CSV).
+
+    Used when a hung nlstepper is hard-killed: prior steps remain useful and
+    should not discard an otherwise successful inverse/forward run.
+    """
+    run_dir = Path(run_dir)
+    for rel in (
+        "03_reconstruction/evolutive/history.csv",
+        "evolutive/history.csv",
+    ):
+        p = run_dir / rel
+        if not p.is_file():
+            continue
+        try:
+            import csv
+
+            with p.open("r", encoding="utf-8", newline="") as f:
+                rows = list(csv.DictReader(f))
+        except OSError:
+            continue
+        n = 0
+        for row in rows:
+            ok = str(row.get("step_ok", "")).strip().lower()
+            if ok in {"1", "true", "yes"}:
+                n += 1
+            elif ok == "" and row.get("Ip") not in (None, "", "nan", "NaN"):
+                # Older history without step_ok still counts finite Ip rows.
+                try:
+                    float(row.get("Ip"))
+                    n += 1
+                except (TypeError, ValueError):
+                    pass
+        return n
+    return 0

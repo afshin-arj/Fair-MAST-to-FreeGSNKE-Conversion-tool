@@ -40,6 +40,8 @@ class EvolutiveAuthority:
     scale_paxis_with_ip: bool = False
     snapshot_equilibria_every_n: int = 5
     min_dIy_dI: Optional[float] = None
+    # Hard kill for a single hung nlstepper call (Windows FreeGSNKE native hangs).
+    per_step_timeout_s: float = 180.0
     notes: str = ""
 
     def validate(self) -> None:
@@ -71,6 +73,14 @@ class EvolutiveAuthority:
         )
         _require(_is_number(self.max_mode_frequency) and float(self.max_mode_frequency) > 0.0, "max_mode_frequency must be > 0")
         _require(_is_number(self.script_timeout_s) and float(self.script_timeout_s) > 0.0, "script_timeout_s must be > 0")
+        _require(
+            _is_number(self.per_step_timeout_s) and float(self.per_step_timeout_s) > 0.0,
+            "per_step_timeout_s must be > 0",
+        )
+        _require(
+            float(self.per_step_timeout_s) <= float(self.script_timeout_s),
+            "per_step_timeout_s must be <= script_timeout_s",
+        )
         _require(
             isinstance(self.snapshot_equilibria_every_n, int) and self.snapshot_equilibria_every_n >= 0,
             "snapshot_equilibria_every_n must be int >= 0 (0 disables mid-run snapshots)",
@@ -166,6 +176,7 @@ def load_evolutive_authority(path: Path) -> EvolutiveAuthority:
         script_timeout_s=float(obj["script_timeout_s"]),
         snapshot_equilibria_every_n=int(obj.get("snapshot_equilibria_every_n", 5)),
         min_dIy_dI=(float(obj["min_dIy_dI"]) if obj.get("min_dIy_dI") is not None else None),
+        per_step_timeout_s=float(obj.get("per_step_timeout_s", 180.0)),
         notes=str(obj.get("notes", "")),
     )
     ea.validate()

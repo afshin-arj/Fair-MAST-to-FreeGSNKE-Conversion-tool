@@ -28,7 +28,7 @@ from .window_consensus import ConsensusWindow, infer_consensus_window
 from .probe_geometry import build_geometry_from_machine_dir, write_geometry_json, write_geometry_pickle, write_geometry_pickle_internal
 from .machine_authority import machine_authority_from_dir, snapshot_machine_authority
 from .provenance import write_provenance, write_manifest_v2
-from .freegsnke_runner import FreeGSNKERunner, write_execution_report
+from .freegsnke_runner import FreeGSNKERunner, evolutive_partial_history_n, write_execution_report
 from .diagnostic_contracts import (
     load_contracts,
     resolve_contracts_for_run,
@@ -1074,10 +1074,23 @@ class ShotPipeline:
                             exec_summary["evolutive"] = er.__dict__
                             write_execution_report(run_dir, exec_summary)
                             if not er.ok:
-                                blocking_errors.append(
-                                    f"freegsnke_evolutive_failed (see {er.stderr_path})"
-                                )
-                                _stage("evolutive_execute", False, error_hint=er.error_hint)
+                                n_partial = evolutive_partial_history_n(run_dir)
+                                # Hung/timed-out nlstepper after useful steps: keep
+                                # inverse/forward success; do not fail-closed the shot.
+                                if (er.timed_out or int(er.returncode) == 124) and n_partial >= 1:
+                                    _stage(
+                                        "evolutive_execute",
+                                        False,
+                                        error_hint=er.error_hint or "freegsnke_script_timeout",
+                                        note="partial_timeout_with_history",
+                                        n_steps_recorded=n_partial,
+                                        duration_s=er.duration_s,
+                                    )
+                                else:
+                                    blocking_errors.append(
+                                        f"freegsnke_evolutive_failed (see {er.stderr_path})"
+                                    )
+                                    _stage("evolutive_execute", False, error_hint=er.error_hint)
                             else:
                                 _stage("evolutive_execute", True, duration_s=er.duration_s)
                     else:

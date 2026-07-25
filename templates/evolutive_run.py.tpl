@@ -96,6 +96,30 @@ def _resolve_n_steps(ea_evolv: dict, t_start: float, t_end: float) -> dict:
     }
 
 
+def _arm_step_watchdog(timeout_s: float, step: int):
+    """Hard-kill the process if nlstepper hangs in native code (Windows).
+
+    threading.Timer can call os._exit even while FreeGSNKE is inside C/Fortran;
+    soft Exception handling cannot escape that hang.
+    """
+    import os
+    import threading
+
+    def _boom() -> None:
+        print(
+            f"[TIMEOUT] evolutive nlstepper step {step} exceeded "
+            f"per_step_timeout_s={timeout_s} — process hard-killed "
+            f"(partial history.csv retained if flushed)",
+            flush=True,
+        )
+        os._exit(124)
+
+    t = threading.Timer(float(timeout_s), _boom)
+    t.daemon = True
+    t.start()
+    return t
+
+
 def _load_execution_authority_bundle() -> dict:
     bp = INPUTS / "execution_authority" / "execution_authority_bundle.json"
     return _load_json(bp)
@@ -247,6 +271,9 @@ def main() -> None:
     max_mode_freq = float(ea_evolv["max_mode_frequency"])
     snap_every = int(ea_evolv.get("snapshot_equilibria_every_n", 5))
     min_dIy = ea_evolv.get("min_dIy_dI")
+    per_step_timeout_s = float(ea_evolv.get("per_step_timeout_s", 180.0))
+    if not (per_step_timeout_s > 0.0):
+        raise ValueError("evolutive_authority.per_step_timeout_s must be > 0")
     # If presentation wants GIFs but authority left snapshots off, enable every step
     # (declared by presentation_authority.json — not a silent invent).
     try:
@@ -513,6 +540,7 @@ def main() -> None:
             flush=True,
         )
         step_ok = True
+        wd = _arm_step_watchdog(per_step_timeout_s, step)
         try:
             stepping.nlstepper(
                 active_voltage_vec=vvec,
@@ -535,7 +563,13 @@ def main() -> None:
             history["voltages"].append(vvec.tolist())
             history["currents"].append([])
             history["paxis"].append(float(paxis_step))
+            _write_history_csv(OUT / "history.csv", history, coil_names)
             break
+        finally:
+            try:
+                wd.cancel()
+            except Exception:
+                pass
 
         t_rel += float(getattr(stepping, "dt_step", full_dt))
         # Record post-step state
@@ -616,6 +650,7 @@ def main() -> None:
         "scale_paxis_with_ip": scale_paxis,
         "plasma_resistivity_ohm_m": eta,
         "max_solving_iterations": max_iter,
+        "per_step_timeout_s": per_step_timeout_s,
         "active_circuit_order": coil_names,
         "coil_resist_ohm": resist_snapshot,
         "drive_policy": {
