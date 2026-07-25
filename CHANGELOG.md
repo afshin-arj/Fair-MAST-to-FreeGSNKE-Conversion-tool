@@ -1,3 +1,9 @@
+## 11.12.0 — Classic MAST FreeGSNKE|EFIT side-by-side + Planner edit/replan
+- EFIT tab: FreeGSNKE | FAIR-MAST EFIT++ side-by-side GIF (classic MAST; archive only — mirrors FreeGSNKE README layout).
+- Planner: collapsible decks (start open), media gallery Open/Download, Files catalog for `07_planner/`.
+- Planner: edit cited R/L + passive ρ (citation required) and re-calculate via `mast-freegsnke plan` / UI.
+- All `ui_kit.section` / accordion subsections start expanded and are click-to-collapse. Version **11.12.0**.
+
 ## 11.11.0 — ADR-004 Phase 2b GSPulse-method planner (Path B)
 - Path B0–B4 + B6-full + B7: honesty labels, EFIT shape targets, vacuum isoflux / x-point B, Picard plasma freeze, ψ_bry (Ejima only when Rp+L_I cited), Planner tab + Compare A|B ΔI/ΔV.
 - Certify **YELLOW** when Picard/isoflux soft-skipped; passives (B5) still blocked on classic-MAST `passive_resistivity`.

@@ -31,5 +31,8 @@
   "lcfs_vars": ["lcfs_r", "lcfs_z"],
   "psi_var": "psi",
   "time_policy": "nearest_to_window_midpoint",
-  "notes": "ADR-002/v11.10. Shape scorecard metrics follow Pentland et al. arXiv:2407.12432 (axis, midplane R, X-point, LCFS distance). Mode is reconstruction_vs_archive, not EFIT++→FreeGSNKE forward replay."
+  "write_side_by_side_gif": true,
+  "side_by_side_n_frames": 16,
+  "side_by_side_fps": 2.0,
+  "notes": "ADR-002/v11.11. Shape scorecard + optional FreeGSNKE|EFIT++ side-by-side GIF (classic MAST; archive EFIT++ only). Mode is reconstruction_vs_archive, not forward replay."
 }

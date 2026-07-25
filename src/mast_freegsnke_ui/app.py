@@ -20,18 +20,19 @@ _dcc = None
 _Input = None
 _Output = None
 _State = None
+_ALL = None
 _no_update = None
 
 _POLL_IDLE_MS = 4000
 
 
 def _require_dash() -> None:
-    global _dash, _dbc, _html, _dcc, _Input, _Output, _State, _no_update
+    global _dash, _dbc, _html, _dcc, _Input, _Output, _State, _ALL, _no_update
     if _dash is not None:
         return
     try:
         import dash
-        from dash import Input, Output, State, dcc, html, no_update
+        from dash import ALL, Input, Output, State, dcc, html, no_update
         import dash_bootstrap_components as dbc
     except ImportError as e:
         raise SystemExit(
@@ -46,6 +47,7 @@ def _require_dash() -> None:
     _Input = Input
     _Output = Output
     _State = State
+    _ALL = ALL
     _no_update = no_update
 
 
@@ -158,6 +160,8 @@ def create_app(
     _require_dash()
     dash, dbc, html, dcc = _dash, _dbc, _html, _dcc
     Input, Output, State, no_update = _Input, _Output, _State, _no_update
+    ALL = _ALL
+    dash = _dash
 
     repo_root = Path(repo_root).resolve()
     runs_dir = Path(runs_dir)
@@ -1089,6 +1093,118 @@ def create_app(
         if not n_clicks:
             return no_update, no_update
         return shot_b, shot_a
+
+    @app.callback(
+        Output("planner-edit-status", "children"),
+        Output("refresh-token", "data", allow_duplicate=True),
+        Input("planner-btn-save", "n_clicks"),
+        Input("planner-btn-replan", "n_clicks"),
+        State({"type": "planner-r", "circuit": ALL}, "value"),
+        State({"type": "planner-r", "circuit": ALL}, "id"),
+        State({"type": "planner-l", "circuit": ALL}, "value"),
+        State({"type": "planner-l", "circuit": ALL}, "id"),
+        State("planner-rl-citation", "value"),
+        State("planner-passive-json", "value"),
+        State("active-shot", "data"),
+        State("refresh-token", "data"),
+        prevent_initial_call=True,
+    )
+    def on_planner_edit(
+        n_save,
+        n_replan,
+        r_vals,
+        r_ids,
+        l_vals,
+        l_ids,
+        citation,
+        passive_json,
+        active_shot,
+        refresh_token,
+    ):
+        """Save R/L + passive ρ to configs/; optionally re-run planner-only."""
+        ctx = dash.callback_context
+        if not ctx.triggered:
+            return no_update, no_update
+        trig = str(ctx.triggered[0]["prop_id"])
+        try:
+            from mast_freegsnke.planner_replan import (
+                PlannerReplanError,
+                apply_circuit_rl_edits,
+                apply_passive_resistivity_edits,
+            )
+        except Exception as e:
+            return f"Import error: {e}", no_update
+
+        edits: dict = {}
+        for vid, val in zip(r_ids or [], r_vals or []):
+            if not isinstance(vid, dict):
+                continue
+            name = str(vid.get("circuit") or "")
+            if not name:
+                continue
+            edits.setdefault(name, {})
+            if val is not None and str(val).strip() != "":
+                try:
+                    edits[name]["R_ohm"] = float(val)
+                except (TypeError, ValueError):
+                    return f"Invalid R_ohm for {name}", no_update
+        for vid, val in zip(l_ids or [], l_vals or []):
+            if not isinstance(vid, dict):
+                continue
+            name = str(vid.get("circuit") or "")
+            if not name:
+                continue
+            edits.setdefault(name, {})
+            if val is not None and str(val).strip() != "":
+                try:
+                    edits[name]["L_henry"] = float(val)
+                except (TypeError, ValueError):
+                    return f"Invalid L_henry for {name}", no_update
+
+        msgs = []
+        try:
+            if edits:
+                apply_circuit_rl_edits(
+                    repo_root,
+                    edits,
+                    citation_note=str(citation).strip() if citation else None,
+                )
+                msgs.append(f"Saved R/L for {len(edits)} circuit(s).")
+            # Passiveives: empty object clears to awaiting
+            import json as _json
+
+            comps = {}
+            raw = (passive_json or "").strip()
+            if raw:
+                comps = _json.loads(raw)
+                if not isinstance(comps, dict):
+                    return "Passive JSON must be an object of components", no_update
+            apply_passive_resistivity_edits(repo_root, comps)
+            msgs.append(
+                f"Passive resistivity: {len(comps)} component(s) "
+                f"({'cited' if comps else 'awaiting_authority'})."
+            )
+        except PlannerReplanError as e:
+            return f"Save failed: {e}", no_update
+        except Exception as e:
+            return f"Save failed: {e}", no_update
+
+        if "planner-btn-replan" in trig:
+            if active_shot is None:
+                return " ".join(msgs) + " Open a shot before re-calculate.", no_update
+            try:
+                shot_i = int(active_shot)
+            except (TypeError, ValueError):
+                return " ".join(msgs) + " Invalid active shot.", no_update
+            try:
+                manager.start_plan(shot_i, config=config_path, cwd=repo_root)
+            except Exception as e:
+                return " ".join(msgs) + f" Replan start failed: {e}", no_update
+            msgs.append(f"Planner re-calculate started for SHOT/{shot_i}.")
+            tok = int(refresh_token or 0) + 1
+            return " ".join(msgs), tok
+
+        return " ".join(msgs) or "Nothing to save.", no_update
 
     @app.callback(
         Output("files-table", "children"),

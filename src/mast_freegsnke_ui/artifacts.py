@@ -250,9 +250,33 @@ def efit_plot_paths(run_dir: Path) -> List[Path]:
             run_dir / "04_efit_compare" / "plots",
             run_dir / "efit_compare" / "plots",
         ],
-        exts={".png"},
-        limit=32,
+        exts={".png", ".gif"},
+        limit=48,
     )
+
+
+def planner_plot_paths(run_dir: Path) -> List[Path]:
+    run_dir = Path(run_dir)
+    return _first_images(
+        [run_dir / "07_planner"],
+        exts={".png", ".gif"},
+        limit=24,
+    )
+
+
+def planner_csv_paths(run_dir: Path) -> List[Path]:
+    run_dir = Path(run_dir)
+    d = _open_dir(run_dir / "07_planner")
+    if d is None:
+        return []
+    out: List[Path] = []
+    try:
+        for name in sorted(os.listdir(d)):
+            if name.lower().endswith(".csv"):
+                out.append(d / name)
+    except OSError:
+        return []
+    return out[:48]
 
 
 def gif_paths(run_dir: Path) -> List[Path]:
@@ -261,6 +285,7 @@ def gif_paths(run_dir: Path) -> List[Path]:
     for rel in (
         "03_reconstruction/presentation",
         "03_reconstruction/evolutive",
+        "04_efit_compare/plots",
         "presentation",
         "evolutive",
     ):
@@ -1141,6 +1166,8 @@ _PREFERRED_DOWNLOADS = (
     "07_planner/plasma_scalars.json",
     "07_planner/planned_currents.csv",
     "07_planner/planned_voltages.csv",
+    "04_efit_compare/plots/freegsnke_efit_side_by_side.gif",
+    "04_efit_compare/plots/side_by_side_meta.json",
     "inputs/shape_targets_authority/shape_targets.json",
 )
 
@@ -1176,11 +1203,11 @@ def catalog_downloadables(run_dir: Path) -> List[Dict[str, Any]]:
     items = catalog_quick(run_dir)
     seen = {it["rel"] for it in items}
     groups = [
-        ("plots", measured_plot_paths(run_dir) + residual_plot_paths(run_dir) + efit_plot_paths(run_dir)),
+        ("plots", measured_plot_paths(run_dir) + residual_plot_paths(run_dir) + efit_plot_paths(run_dir) + planner_plot_paths(run_dir)),
         ("gifs", gif_paths(run_dir)),
-        ("csv", residual_csv_paths(run_dir)),
+        ("csv", residual_csv_paths(run_dir) + planner_csv_paths(run_dir)),
     ]
-    for rel_dir in ("02_measured_data", "04_efit_compare", "03_reconstruction/metrics"):
+    for rel_dir in ("02_measured_data", "04_efit_compare", "03_reconstruction/metrics", "07_planner"):
         d = _open_dir(run_dir / rel_dir)
         if d is None:
             continue

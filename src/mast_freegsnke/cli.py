@@ -240,6 +240,13 @@ def main(argv=None) -> int:
         help="Disable ADR-002 FAIR-MAST EFIT++ compare stage",
     )
 
+    plan = sub.add_parser(
+        "plan",
+        help="Re-run GSPulse-method planner only on an existing SHOT/<N>/ (after R/L or ρ edits)",
+    )
+    plan.add_argument("--shot", type=int, required=True)
+    plan.add_argument("--config", type=str, required=True)
+
     cert = sub.add_parser(
         "certify",
         help="Reviewer-grade certify for SHOT/<N> (reviewer-pack + replay -> CERTIFY_REPORT.json)",
@@ -1073,6 +1080,24 @@ def main(argv=None) -> int:
             rep["tokamak_validation"] = validate_classic_tokamak(out)
         print(json.dumps(rep, indent=2, sort_keys=True))
         return 0 if rep.get("ok") else 16
+
+    if args.cmd == "plan":
+        from .planner_replan import PlannerReplanError, replan_shot
+
+        try:
+            rep = replan_shot(
+                shot=int(args.shot),
+                repo_root=Path.cwd(),
+                config_path=Path(args.config),
+            )
+        except PlannerReplanError as e:
+            print(f"[FAIL] plan: {e}")
+            return 2
+        except Exception as e:
+            print(f"[FAIL] plan: {e}")
+            return 1
+        print(json.dumps(rep, indent=2, default=str))
+        return 0 if rep.get("ok") else 1
 
     if args.cmd == "run":
         if (args.shot is None) == (args.shots is None):

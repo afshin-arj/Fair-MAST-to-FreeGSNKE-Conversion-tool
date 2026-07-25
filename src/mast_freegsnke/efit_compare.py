@@ -72,10 +72,14 @@ class EfitCompareAuthority:
     lcfs_vars: Tuple[str, ...] = ("lcfs_r", "lcfs_z")
     psi_var: str = "psi"
     time_policy: str = "nearest_to_window_midpoint"
+    write_side_by_side_gif: bool = True
+    side_by_side_n_frames: int = 16
+    side_by_side_fps: float = 2.0
     notes: str = (
-        "ADR-002/v11.10. Shape scorecard metrics follow Pentland et al. arXiv:2407.12432 "
+        "ADR-002/v11.11. Shape scorecard metrics follow Pentland et al. arXiv:2407.12432 "
         "(axis, midplane R, X-point, LCFS distance). Mode is reconstruction_vs_archive, "
-        "not EFIT++→FreeGSNKE forward replay."
+        "not EFIT++→FreeGSNKE forward replay. Optional FreeGSNKE|EFIT++ side-by-side GIF "
+        "mirrors FreeGSNKE README MAST-U demo for classic MAST archive products."
     )
 
     def validate(self) -> None:
@@ -148,6 +152,9 @@ def load_efit_compare_authority(path: Path) -> EfitCompareAuthority:
         lcfs_vars=tuple(obj.get("lcfs_vars") or ("lcfs_r", "lcfs_z")),
         psi_var=str(obj.get("psi_var", "psi")),
         time_policy=str(obj.get("time_policy", "nearest_to_window_midpoint")),
+        write_side_by_side_gif=bool(obj.get("write_side_by_side_gif", True)),
+        side_by_side_n_frames=int(obj.get("side_by_side_n_frames", 16) or 16),
+        side_by_side_fps=float(obj.get("side_by_side_fps", 2.0) or 2.0),
         notes=str(obj.get("notes", EfitCompareAuthority().notes)),
     )
     auth.validate()
@@ -647,6 +654,38 @@ def run_efit_compare(
             plt.close(fig)
             report.plots_written.append(_rel(run_dir, p))
 
+    # Classic MAST FreeGSNKE | EFIT++ side-by-side animation (FreeGSNKE README-style)
+    try:
+        from .efit_side_by_side import write_freegsnke_efit_side_by_side_gif
+
+        n_sbs = int(getattr(auth, "side_by_side_n_frames", 16) or 16)
+        fps_sbs = float(getattr(auth, "side_by_side_fps", 2.0) or 2.0)
+        if bool(getattr(auth, "write_side_by_side_gif", True)) and _HAS_MPL:
+            sbs = write_freegsnke_efit_side_by_side_gif(
+                run_dir=run_dir,
+                shot=int(shot),
+                ds=ds,
+                times=times,
+                lcfs_r_name=auth.lcfs_vars[0] if auth.lcfs_vars else "lcfs_r",
+                lcfs_z_name=auth.lcfs_vars[1] if len(auth.lcfs_vars) > 1 else "lcfs_z",
+                psi_var=auth.psi_var,
+                out_dir=plots_dir,
+                n_frames=n_sbs,
+                fps=fps_sbs,
+            )
+            report.warnings.extend([f"side_by_side:{n}" for n in (sbs.get("notes") or [])])
+            if sbs.get("gif_rel"):
+                report.plots_written.append(str(sbs["gif_rel"]))
+            if sbs.get("meta_rel"):
+                report.files_written.append(str(sbs["meta_rel"]))
+            for fr in sbs.get("frame_rels") or []:
+                report.files_written.append(str(fr))
+            if not sbs.get("ok"):
+                for e in sbs.get("errors") or []:
+                    report.warnings.append(f"side_by_side_gif:{e}")
+    except Exception as e:
+        report.warnings.append(f"side_by_side_gif_failed:{e}")
+
     # COMPARE.md
     md_lines = [
         f"# Shot {shot}: FreeGSNKE vs FAIR-MAST EFIT++",
@@ -702,7 +741,7 @@ def run_efit_compare(
         "- `efit_snapshot.json`",
         "- `efit_lcfs.csv` (when available)",
         "- `efit_psi.npz` (when available)",
-        "- `plots/`",
+        "- `plots/` (incl. `freegsnke_efit_side_by_side.gif` when written)",
         "",
         "## Honesty",
         "",
@@ -710,6 +749,8 @@ def run_efit_compare(
         "TokaMark uses the same derived equilibrium signals as ML targets.",
         "Shape metrics follow the family used in arXiv:2407.12432; agreement like that paper requires",
         "matched EFIT++ currents+profiles into FreeGSNKE **forward** (not enabled here).",
+        "The side-by-side GIF mirrors FreeGSNKE's public MAST-U demo layout for **classic MAST**",
+        "using FAIR-MAST archive reconstructions (not a live EFIT++ run).",
         "",
     ]
     if report.warnings:

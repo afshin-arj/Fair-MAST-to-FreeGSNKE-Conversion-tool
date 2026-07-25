@@ -10,7 +10,7 @@ This toolkit downloads [FAIR-MAST](https://github.com/ukaea/fair-mast) Level-2 d
 | **Machine** | Classic MAST (not MAST-U) |
 | **Solver** | [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke) only |
 | **EFIT insight** | Compare to archived FAIR-MAST EFIT++ (not a live EFIT++ / Py-EFIT / efit-ai run) |
-| **Version** | **11.11.0** |
+| **Version** | **11.12.0** |
 
 ```mermaid
 flowchart LR
@@ -239,12 +239,12 @@ Opens `http://127.0.0.1:8050` with:
 - **Overview** — KPIs + SUMMARY  
 - **Level-2** — diagnostic families (plots + CSV), collapsed by default  
 - **Residuals** — contract metrics + traces  
-- **Planner** — GSPulse-method feedforward (I/V, ΔV/shape RMS, Picard, authority hashes)  
+- **Planner** — GSPulse-method I/V gallery, downloads, R/L + ρ edit / re-calc  
 - **Compare** — browse-only A|B KPIs, Level-2, residuals, planner ΔI/ΔV, GIFs  
-- **EFIT** — archive compare scorecard  
+- **EFIT** — archive compare + FreeGSNKE|EFIT++ side-by-side GIF (classic MAST)  
 - **GIFs / Authorities / Files** — visuals, hashes, ZIP download  
 
-Happy path still uses `configs/default.json` — no extra prompts.
+Happy path still uses `configs/default.json` — no extra prompts. Subsections start **open**; click to collapse.
 
 ---
 

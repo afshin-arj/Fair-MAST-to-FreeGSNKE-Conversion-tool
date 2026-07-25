@@ -1,6 +1,7 @@
 """Dash panel builders for the shot results browser."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -124,26 +125,31 @@ def quick_links(shot: int, run_dir: Path) -> Any:
 
 
 def accordion(sections: List[tuple[str, Any, bool]], *, always_open: bool = True) -> Any:
-    """Click-to-expand expert subsections — all start collapsed."""
+    """Click-to-collapse expert subsections — all start expanded (open)."""
     html, _, dbc = _require()
     items = []
-    for i, (title, body, _start_open) in enumerate(sections):
+    active: List[str] = []
+    for i, (title, body, start_open) in enumerate(sections):
         if body is None:
             continue
+        item_id = f"sec-{i}"
         items.append(
             dbc.AccordionItem(
                 html.Div(body, className="accordion-body-pad"),
                 title=title,
-                item_id=f"sec-{i}",
+                item_id=item_id,
             )
         )
+        # Third flag defaults to open; only skip when explicitly False.
+        if start_open is not False:
+            active.append(item_id)
     if not items:
         return html.Div()
     return dbc.Accordion(
         items,
         always_open=always_open,
-        start_collapsed=True,
-        active_item=[] if always_open else None,
+        start_collapsed=False,
+        active_item=active if always_open else (active[0] if active else None),
         class_name="fg-accordion",
     )
 
@@ -559,33 +565,46 @@ def overview_panel(shot: int, run_dir: Path) -> Any:
     )
 
 
+def _planner_passive_textarea_default() -> str:
+    """Current configs/passive_resistivity components JSON for the Planner edit box."""
+    try:
+        from mast_freegsnke.planner_replan import load_editable_passive
+
+        root = Path(__file__).resolve().parents[2]
+        obj = load_editable_passive(root)
+        comps = obj.get("components") if isinstance(obj, dict) else {}
+        return json.dumps(comps or {}, indent=2)
+    except Exception:
+        return "{}"
+
+
 def planner_panel(shot: int, run_dir: Path) -> Any:
-    """Path B6-full: GSPulse-method planner tab (I/V, residuals, Picard, ψ_bry, authorities)."""
-    html, _, dbc = _require()
+    """Path B6-full+: GSPulse-method planner — collapsible decks, media gallery, R/L edit."""
+    html, dcc, dbc = _require()
     pinfo = art.load_planner_info(run_dir)
-    children: List[Any] = [
-        tab_banner(
-            "Feedforward planner",
-            "Python GSPulse-method trajectory (Path B) — not upstream MATLAB/MEQ. "
-            "Planned vs measured I/V, isoflux/ψ_bry RMS, Picard status, authority hashes. "
-            "Never invents Imax/Vmax.",
-        )
-    ]
+    banner = tab_banner(
+        "Feedforward planner",
+        "Python GSPulse-method trajectory (Path B) — not upstream MATLAB/MEQ. "
+        "Planned vs measured I/V, isoflux/ψ_bry RMS, Picard, authority hashes. "
+        "Edit cited R/L or passive ρ below and re-run planner only. Never invents Imax/Vmax/ρ.",
+    )
     if not pinfo.get("present") and not pinfo.get("auth_rel") and not pinfo.get("limits_rel"):
-        children.append(
-            empty_state(
-                "No planner products",
-                pinfo.get("detail")
-                or "Run with execute_planner=true and cited coil_limits + circuit_dynamics.",
-                steps=[
-                    "Ensure configs/default.json has execute_planner=true",
-                    "Cite coil_limits_authority + circuit_dynamics_authority",
-                    "Reconstruct — products land under SHOT/<N>/07_planner/",
-                ],
-                kind="empty",
-            )
+        return html.Div(
+            [
+                banner,
+                empty_state(
+                    "No planner products",
+                    pinfo.get("detail")
+                    or "Run with execute_planner=true and cited coil_limits + circuit_dynamics.",
+                    steps=[
+                        "Ensure configs/default.json has execute_planner=true",
+                        "Cite coil_limits_authority + circuit_dynamics_authority",
+                        "Reconstruct — products land under SHOT/<N>/07_planner/",
+                    ],
+                    kind="empty",
+                ),
+            ]
         )
-        return html.Div(children)
 
     method = pinfo.get("method") or ("gspulse_python" if pinfo.get("present") else "—")
     picard = pinfo.get("picard")
@@ -610,30 +629,13 @@ def planner_panel(shot: int, run_dir: Path) -> Any:
             "yes" if pinfo.get("psi_bry_cost") else ("no" if pinfo.get("psi_bry_cost") is False else "—"),
             tone="ok" if pinfo.get("psi_bry_cost") else ("warn" if pinfo.get("psi_bry_cost") is False else ""),
         ),
-        chip("psi_bry_mode", pinfo.get("psi_bry_mode") or "—"),
         chip("status", pinfo.get("status") or "—", tone=ui_kit.planner_status_tone(pinfo.get("status"))),
         chip("knots", pinfo.get("n_knots")),
         chip("mutuals", pinfo.get("circuit_dynamics_mutuals") or "—"),
     ]
-    children.append(
-        ui_kit.section(
-            "Honesty labels (Path B0–B4)",
-            "Certify YELLOW if Picard / isoflux / ψ_bry soft-skipped.",
-            html.Div(
-                [
-                    html.Div(honesty, className="compare-chip-row mb-2"),
-                    html.P(pinfo.get("detail") or "—", className="small text-muted mb-0"),
-                ]
-            ),
-        )
-    )
 
     hashes = pinfo.get("authority_hashes") or {}
-    hash_chips = [
-        chip(k, v or "—")
-        for k, v in hashes.items()
-        if v or k in ("planner_authority", "coil_limits")
-    ]
+    hash_chips = [chip(k, v or "—") for k, v in hashes.items() if v or k in ("planner_authority", "coil_limits")]
     hash_chips.extend(
         [
             chip("limits", pinfo.get("limits_status") or "—"),
@@ -641,18 +643,6 @@ def planner_panel(shot: int, run_dir: Path) -> Any:
             chip("margin", pinfo.get("margin_factor")),
             chip("citation", (str(pinfo.get("citation") or "—")[:48])),
         ]
-    )
-    children.append(
-        ui_kit.section(
-            "Authority hashes & limits policy",
-            "SHA-256 prefixes of snapshotted JSON under inputs/ — never invents Imax/Vmax.",
-            html.Div(
-                [
-                    html.Div(hash_chips, className="compare-chip-row mb-2"),
-                    html.P(pinfo.get("edit_hint") or "", className="small text-muted mb-0"),
-                ]
-            ),
-        )
     )
 
     gate_chips = [
@@ -667,350 +657,283 @@ def planner_panel(shot: int, run_dir: Path) -> Any:
             tone="fail" if (pinfo.get("n_voltage_violations_raw") or 0) else "",
         ),
     ]
-    children.append(
-        ui_kit.section(
-            "Residual KPIs (ΔV / shape)",
-            "Voltage RMS vs measured/ohmic; shape RMS when isoflux/ψ_bry sensors ran.",
-            html.Div(gate_chips, className="compare-chip-row mb-0"),
-        )
-    )
 
+    resid_table: Any = html.P("No ΔV residual CSV.", className="text-muted small mb-0")
     resid_rows = pinfo.get("residual_rows") or []
     if resid_rows:
         headers = ["circuit", "drive_label", "rms_V", "mae_V", "max_abs_V", "n"]
-        body_rows = []
-        for r in resid_rows:
-            body_rows.append(
-                html.Tr([html.Td(str(r.get(h, "—")), className="small") for h in headers])
-            )
-        children.append(
-            ui_kit.section(
-                "ΔV vs measured / ohmic voltages",
-                "Per-circuit planning residual (plan − obs).",
-                dbc.Table(
-                    [
-                        html.Thead(html.Tr([html.Th(h) for h in headers])),
-                        html.Tbody(body_rows),
-                    ],
-                    bordered=False,
-                    hover=True,
-                    size="sm",
-                    responsive=True,
-                    className="fg-scorecard",
-                ),
-            )
+        body_rows = [
+            html.Tr([html.Td(str(r.get(h, "—")), className="small") for h in headers])
+            for r in resid_rows
+        ]
+        resid_table = dbc.Table(
+            [html.Thead(html.Tr([html.Th(h) for h in headers])), html.Tbody(body_rows)],
+            bordered=False,
+            hover=True,
+            size="sm",
+            responsive=True,
+            className="fg-scorecard",
         )
 
-    plot_children: List[Any] = []
-    if pinfo.get("plot_i_rel") and art.safe_resolve_under(run_dir, str(pinfo["plot_i_rel"])):
-        plot_children.append(
-            html.Img(
-                src=art.file_url(shot, str(pinfo["plot_i_rel"])),
-                className="img-fluid mb-3",
-                style={"maxHeight": "420px"},
-                alt="Planner current residual",
-            )
-        )
-    if pinfo.get("plot_rel") and art.safe_resolve_under(run_dir, str(pinfo["plot_rel"])):
-        plot_children.append(
-            html.Img(
-                src=art.file_url(shot, str(pinfo["plot_rel"])),
-                className="img-fluid",
-                style={"maxHeight": "420px"},
-                alt="Planner voltage residual",
-            )
-        )
-    if plot_children:
-        children.append(
-            ui_kit.section(
-                "Planned vs measured I / V",
-                "Currents from pf_currents.csv; voltages may be measured or ohmic_synthetic_IxR.",
-                html.Div(plot_children),
-            )
-        )
+    plot_paths = art.planner_plot_paths(run_dir)
+    plots_body = media_gallery(
+        shot,
+        plot_paths,
+        run_dir,
+        "No planner residual plots yet — re-run with execute_planner=true.",
+    )
 
     rl = pinfo.get("rl_circuits") or {}
+    rl_table: Any = html.P("No cited R/L snapshot.", className="text-muted small")
     if rl:
-        rl_rows = []
-        for name, vals in rl.items():
-            rl_rows.append(
-                html.Tr(
-                    [
-                        html.Td(str(name), className="small"),
-                        html.Td(str(vals.get("R_ohm")), className="small"),
-                        html.Td(str(vals.get("L_henry")), className="small"),
-                    ]
-                )
+        rl_rows = [
+            html.Tr(
+                [
+                    html.Td(str(name), className="small"),
+                    html.Td(str(vals.get("R_ohm")), className="small"),
+                    html.Td(str(vals.get("L_henry")), className="small"),
+                ]
             )
-        children.append(
-            ui_kit.section(
-                "Cited circuit R / L",
-                "From circuit_dynamics_authority snapshot (active coils only).",
-                dbc.Table(
-                    [
-                        html.Thead(html.Tr([html.Th(h) for h in ("circuit", "R_ohm", "L_henry")])),
-                        html.Tbody(rl_rows),
-                    ],
-                    bordered=False,
-                    hover=True,
-                    size="sm",
-                    responsive=True,
-                    className="fg-scorecard",
+            for name, vals in rl.items()
+        ]
+        rl_table = dbc.Table(
+            [
+                html.Thead(html.Tr([html.Th(h) for h in ("circuit", "R_ohm", "L_henry")])),
+                html.Tbody(rl_rows),
+            ],
+            bordered=False,
+            hover=True,
+            size="sm",
+            responsive=True,
+            className="fg-scorecard",
+        )
+
+    # Editable R/L + passive ρ form (saves to configs/, then optional replan)
+    edit_rows: List[Any] = []
+    for name, vals in (rl or {}).items():
+        edit_rows.append(
+            html.Tr(
+                [
+                    html.Td(html.Code(str(name)), className="small"),
+                    html.Td(
+                        dbc.Input(
+                            id={"type": "planner-r", "circuit": str(name)},
+                            type="number",
+                            value=vals.get("R_ohm"),
+                            step="any",
+                            size="sm",
+                            className="fg-planner-edit",
+                        )
+                    ),
+                    html.Td(
+                        dbc.Input(
+                            id={"type": "planner-l", "circuit": str(name)},
+                            type="number",
+                            value=vals.get("L_henry"),
+                            step="any",
+                            size="sm",
+                            className="fg-planner-edit",
+                        )
+                    ),
+                ]
+            )
+        )
+    if not edit_rows:
+        edit_rows.append(
+            html.Tr([html.Td("No circuits in snapshot — open a completed planner run.", colSpan=3)])
+        )
+
+    edit_body = html.Div(
+        [
+            html.P(
+                "Edits write to configs/circuit_dynamics_authority.json and "
+                "configs/passive_resistivity.json (citation required for ρ). "
+                "Re-calculate runs the planner stage only against this SHOT folder. "
+                "Passives do not enter the QP until machine rebuild wires them (Path B5).",
+                className="small text-muted",
+            ),
+            dbc.Label("Citation note for R/L edit (optional but recommended)", className="fg-label"),
+            dbc.Input(id="planner-rl-citation", type="text", placeholder="e.g. MAST CS table DOI…", size="sm"),
+            html.Div("Active coil R / L", className="compare-subhead mt-2"),
+            dbc.Table(
+                [
+                    html.Thead(html.Tr([html.Th("circuit"), html.Th("R_ohm"), html.Th("L_henry")])),
+                    html.Tbody(edit_rows),
+                ],
+                bordered=False,
+                size="sm",
+                responsive=True,
+                className="fg-scorecard",
+            ),
+            html.Div("Passive resistivity (cited only)", className="compare-subhead mt-2"),
+            dbc.Textarea(
+                id="planner-passive-json",
+                className="fg-planner-passive",
+                style={"minHeight": "110px", "fontFamily": "var(--fg-mono)", "fontSize": "0.8rem"},
+                value=_planner_passive_textarea_default(),
+                placeholder=(
+                    '{\n  "vessel": {"resistivity_ohm_m": 1.0e-6, "source": "citation DOI"}\n}'
                 ),
+            ),
+            html.Div(
+                [
+                    dbc.Button("Save R/L + passives", id="planner-btn-save", color="secondary", size="sm", className="me-2"),
+                    dbc.Button("Re-calculate planner", id="planner-btn-replan", color="primary", size="sm"),
+                ],
+                className="mt-2 mb-2",
+            ),
+            html.Div(id="planner-edit-status", className="small"),
+        ]
+    )
+
+    # Downloads — same Open/Download pattern as other decks
+    dl_paths = list(plot_paths) + list(art.planner_csv_paths(run_dir))
+    for rel in (
+        pinfo.get("plan_rel"),
+        "07_planner/PLANNER.md",
+        pinfo.get("resid_rel"),
+        "07_planner/planning_residual_timeseries.csv",
+        "07_planner/planned_currents.csv",
+        "07_planner/planned_voltages.csv",
+        pinfo.get("shape_rel"),
+        "07_planner/isoflux_residual.json",
+        "07_planner/picard.json",
+        "07_planner/plasma_scalars.json",
+        pinfo.get("limits_rel"),
+        pinfo.get("dyn_rel"),
+        pinfo.get("auth_rel"),
+    ):
+        if not rel:
+            continue
+        resolved = art.safe_resolve_under(run_dir, str(rel))
+        if resolved is not None and resolved.is_file() and resolved not in dl_paths:
+            dl_paths.append(resolved)
+    dl_chips: List[Any] = []
+    for pth in dl_paths[:40]:
+        try:
+            rel = art.rel_posix(pth, run_dir)
+        except Exception:
+            continue
+        view = art.file_url(shot, rel, download=False)
+        dl = art.file_url(shot, rel, download=True)
+        dl_chips.append(
+            html.Span(
+                [
+                    html.A(Path(rel).name, href=view, target="_blank", className="compare-file-chip"),
+                    html.A("↓", href=dl, className="compare-file-chip compare-file-dl", title="Download"),
+                ],
+                className="me-1",
             )
         )
 
     st_chips = [
-        chip(
-            "present",
-            "yes" if pinfo.get("shape_targets_present") else "no",
-            tone="ok" if pinfo.get("shape_targets_present") else "warn",
-        ),
+        chip("present", "yes" if pinfo.get("shape_targets_present") else "no", tone="ok" if pinfo.get("shape_targets_present") else "warn"),
         chip("status", pinfo.get("shape_targets_status") or "—"),
         chip("LCFS knots", pinfo.get("shape_targets_n_lcfs")),
     ]
-    scalars = pinfo.get("shape_targets_found_scalars") or []
-    st_body: List[Any] = [
-        html.Div(st_chips, className="compare-chip-row mb-2"),
-        html.P(
-            "Feeds vacuum-coil Green's isoflux when enable_isoflux and LCFS/x-points exist.",
-            className="small text-muted mb-2",
-        ),
-    ]
-    if scalars:
-        st_body.append(
-            html.P(
-                "scalars: " + ", ".join(str(s) for s in scalars[:24]),
-                className="small mb-2",
-            )
-        )
-    if pinfo.get("shape_rel") and art.safe_resolve_under(run_dir, str(pinfo["shape_rel"])):
-        st_body.append(
-            html.A(
-                "shape_targets.json",
-                href=art.file_url(shot, str(pinfo["shape_rel"])),
-                target="_blank",
-                className="compare-file-chip",
-            )
-        )
-    children.append(
-        ui_kit.section(
-            "Shape targets (Path B1)",
-            "EFIT++ archive LCFS / scalars — never invented.",
-            html.Div(st_body),
-        )
-    )
-
-    iso_chips = [
-        chip(
-            "used",
-            "yes" if pinfo.get("isoflux_cost") else "no",
-            tone="ok" if pinfo.get("isoflux_cost") else "warn",
-        ),
-        chip("mode", pinfo.get("isoflux_mode") or "—"),
-        chip("status", pinfo.get("isoflux_status") or "—"),
-        chip("isoflux_rms", pinfo.get("isoflux_rms_mean")),
-        chip("xpoint_B_rms", pinfo.get("xpoint_B_rms_mean")),
-        chip("psi_bry_rms", pinfo.get("psi_bry_rms_mean")),
-    ]
-    iso_links: List[Any] = []
-    iso_rel = "07_planner/isoflux_residual.json"
-    if art.safe_resolve_under(run_dir, iso_rel):
-        iso_links.append(
-            html.A(
-                "isoflux_residual.json",
-                href=art.file_url(shot, iso_rel),
-                target="_blank",
-                className="compare-file-chip",
-            )
-        )
-    children.append(
-        ui_kit.section(
-            "Isoflux / x-point B / ψ_bry (Path B2–B4)",
-            "Vacuum-coil Green's; plasma offsets when Picard succeeds.",
-            html.Div(
-                [
-                    html.Div(iso_chips, className="compare-chip-row mb-2"),
-                    html.Div(iso_links) if iso_links else html.Span(),
-                ]
-            ),
-        )
-    )
-
-    inv = pinfo.get("plasma_inventory") or {}
-    pb = pinfo.get("plasma_psi_bry") or {}
-    plasma_chips = [
-        chip("Ip", "yes" if inv.get("ip_present") else "no", tone="ok" if inv.get("ip_present") else "warn"),
-        chip("profile_traj", inv.get("profile_trajectory_status") or "—"),
-        chip("fit", inv.get("profile_fit_mode_used") or "—"),
-        chip("psi_bry", "yes" if (pb.get("used") or pinfo.get("psi_bry_cost")) else "no"),
-        chip("psi_mode", pb.get("mode") or pinfo.get("psi_bry_mode") or "—"),
-        chip("psi_status", pb.get("status") or pinfo.get("psi_bry_status") or "—"),
-    ]
-    plasma_links: List[Any] = []
-    if pinfo.get("plasma_rel") and art.safe_resolve_under(run_dir, str(pinfo["plasma_rel"])):
-        plasma_links.append(
-            html.A(
-                "plasma_scalars.json",
-                href=art.file_url(shot, str(pinfo["plasma_rel"])),
-                target="_blank",
-                className="compare-file-chip",
-            )
-        )
-    children.append(
-        ui_kit.section(
-            "Plasma scalars / ψ_bry (Path B4)",
-            "Ip + profile_trajectory inventory; Ejima only when Rp+L_I cited.",
-            html.Div(
-                [
-                    html.Div(plasma_chips, className="compare-chip-row mb-2"),
-                    html.P(str(pb.get("note") or ""), className="small text-muted mb-2")
-                    if pb.get("note")
-                    else html.Span(),
-                    html.Div(plasma_links) if plasma_links else html.Span(),
-                ]
-            ),
-        )
-    )
-
     pic_chips = [
-        chip(
-            "used",
-            "yes" if pinfo.get("picard") else "no",
-            tone="ok" if pinfo.get("picard") else "warn",
-        ),
+        chip("used", "yes" if pinfo.get("picard") else "no", tone="ok" if pinfo.get("picard") else "warn"),
         chip("mode", pinfo.get("picard_mode") or "—"),
         chip("status", pinfo.get("picard_status") or "—"),
     ]
-    pic_body: List[Any] = [html.Div(pic_chips, className="compare-chip-row mb-2")]
-    hist = pinfo.get("picard_history") or []
-    if hist:
-        hrows = []
-        for h in hist:
-            if not isinstance(h, dict):
-                continue
-            hrows.append(
-                html.Tr(
-                    [
-                        html.Td(str(h.get("outer", h.get("knot", "—"))), className="small"),
-                        html.Td(str(h.get("n_gs_ok", h.get("status", "—"))), className="small"),
-                        html.Td(str(h.get("n_gs_fail", h.get("error", "—"))), className="small"),
-                        html.Td(str(h.get("profile_source", "—")), className="small"),
-                        html.Td(str(h.get("cost_final", "—")), className="small"),
-                    ]
-                )
-            )
-        if hrows:
-            pic_body.append(
-                dbc.Table(
-                    [
-                        html.Thead(
-                            html.Tr(
-                                [
-                                    html.Th(h)
-                                    for h in ("outer/knot", "gs_ok/status", "gs_fail/err", "profile", "cost")
-                                ]
-                            )
-                        ),
-                        html.Tbody(hrows),
-                    ],
-                    bordered=False,
-                    hover=True,
-                    size="sm",
-                    responsive=True,
-                    className="fg-scorecard mb-2",
-                )
-            )
-    if pinfo.get("picard_rel") and art.safe_resolve_under(run_dir, str(pinfo["picard_rel"])):
-        pic_body.append(
-            html.A(
-                "picard.json",
-                href=art.file_url(shot, str(pinfo["picard_rel"])),
-                target="_blank",
-                className="compare-file-chip",
-            )
-        )
-    children.append(
-        ui_kit.section(
-            "Picard outer loop (Path B3)",
-            "FreeGSNKE forward GS → freeze plasma ψ/B → re-QP.",
-            html.Div(pic_body),
-        )
-    )
 
-    gif_rels = pinfo.get("gif_rels") or []
-    if gif_rels:
-        gif_nodes = []
-        for rel in gif_rels[:4]:
-            if art.safe_resolve_under(run_dir, str(rel)):
-                gif_nodes.append(
-                    html.Img(
-                        src=art.file_url(shot, str(rel)),
-                        className="img-fluid me-2 mb-2",
-                        style={"maxHeight": "180px"},
-                        alt=str(rel),
-                    )
-                )
-        if gif_nodes:
-            children.append(
-                ui_kit.section(
-                    "Equilibria GIFs (reconstruction context)",
-                    "Inverse/forward/evolutive presentation GIFs — not Picard knot exports "
-                    "(planner does not write knot GIFs yet).",
-                    html.Div(gif_nodes),
-                )
-            )
-
-    pl_links: List[Any] = []
-    for rel, label in (
-        (pinfo.get("plan_rel"), "PLANNER.json"),
-        ("07_planner/PLANNER.md", "PLANNER.md"),
-        (pinfo.get("resid_rel"), "residual summary"),
-        ("07_planner/planning_residual_timeseries.csv", "residual timeseries"),
-        (pinfo.get("plot_i_rel"), "ΔI plot"),
-        (pinfo.get("plot_rel"), "ΔV plot"),
-        ("07_planner/planned_currents.csv", "planned I"),
-        ("07_planner/planned_voltages.csv", "planned V"),
-        (pinfo.get("shape_rel"), "shape_targets"),
-        ("07_planner/isoflux_residual.json", "isoflux residual"),
-        ("07_planner/picard.json", "picard"),
-        ("07_planner/plasma_scalars.json", "plasma scalars"),
-        (pinfo.get("limits_rel"), "coil_limits"),
-        (pinfo.get("dyn_rel"), "circuit R/L"),
-        (pinfo.get("auth_rel"), "planner_authority"),
-    ):
-        if not rel:
-            continue
-        if art.safe_resolve_under(run_dir, str(rel)):
-            pl_links.append(
-                html.A(
-                    label,
-                    href=art.file_url(shot, str(rel)),
-                    target="_blank",
-                    className="compare-file-chip",
-                )
-            )
-    if pl_links:
-        children.append(
-            ui_kit.section(
-                "Artifacts",
-                "Open under 07_planner/ and inputs/.",
-                html.Div(pl_links, className="compare-file-chip-row"),
-            )
-        )
-
+    sections = [
+        (
+            "Honesty labels",
+            html.Div(
+                [
+                    html.P("Certify YELLOW if Picard / isoflux / ψ_bry soft-skipped.", className="small text-muted"),
+                    html.Div(honesty, className="compare-chip-row mb-2"),
+                    html.P(pinfo.get("detail") or "—", className="small text-muted mb-0"),
+                ]
+            ),
+            True,
+        ),
+        (
+            "Authority hashes & limits",
+            html.Div(
+                [
+                    html.P("SHA-256 prefixes of snapshotted JSON — never invents Imax/Vmax.", className="small text-muted"),
+                    html.Div(hash_chips, className="compare-chip-row"),
+                ]
+            ),
+            True,
+        ),
+        (
+            "Residual KPIs (ΔV / shape)",
+            html.Div(
+                [
+                    html.P("Voltage RMS vs measured/ohmic; shape RMS when isoflux/ψ_bry ran.", className="small text-muted"),
+                    html.Div(gate_chips, className="compare-chip-row mb-2"),
+                    resid_table,
+                ]
+            ),
+            True,
+        ),
+        (
+            "Planned vs measured I / V",
+            html.Div(
+                [
+                    html.P(
+                        "Open / download like other decks (media gallery). Currents from pf_currents.csv.",
+                        className="small text-muted",
+                    ),
+                    plots_body,
+                ]
+            ),
+            True,
+        ),
+        (
+            "Cited circuit R / L",
+            html.Div(
+                [
+                    html.P("From circuit_dynamics_authority snapshot (active coils).", className="small text-muted"),
+                    rl_table,
+                ]
+            ),
+            True,
+        ),
+        (
+            "Edit R/L · passives · re-calculate",
+            edit_body,
+            True,
+        ),
+        (
+            "Shape / isoflux / Picard",
+            html.Div(
+                [
+                    html.Div(st_chips, className="compare-chip-row mb-2"),
+                    html.Div(pic_chips, className="compare-chip-row mb-2"),
+                    html.P(
+                        "Isoflux uses vacuum-coil Green’s; Picard freezes plasma offsets when GS succeeds.",
+                        className="small text-muted mb-0",
+                    ),
+                ]
+            ),
+            True,
+        ),
+        (
+            "Downloads",
+            html.Div(
+                [
+                    html.P("Plots, CSV, and JSON under 07_planner/ — also listed on the Files tab.", className="small text-muted"),
+                    html.Div(dl_chips, className="compare-file-chip-row") if dl_chips else html.P("No artifacts.", className="text-muted small"),
+                ]
+            ),
+            True,
+        ),
+    ]
     lims = pinfo.get("limitations") or []
     if lims:
-        children.append(
-            ui_kit.section(
-                "Limitations (from PLANNER.json)",
-                "Honest Path B caveats — passives still awaiting resistivity authority.",
+        sections.append(
+            (
+                "Limitations",
                 html.Ul([html.Li(str(x), className="small") for x in lims], className="mb-0"),
+                True,
             )
         )
 
-    return html.Div(children)
-
+    return html.Div([banner, accordion(sections, always_open=True)], className="planner-panel")
 def residuals_panel(shot: int, run_dir: Path) -> Any:
     html, dcc, dbc = _require()
     metrics = art.load_metrics(run_dir)
@@ -1198,11 +1121,17 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
             responsive=True,
             className="fg-scorecard",
         )
+    plots = art.efit_plot_paths(run_dir)
+    sbs = [p for p in plots if "side_by_side" in p.name.lower()]
+    other = [p for p in plots if p not in sbs]
+    ordered_plots = sbs + other
     return html.Div(
         [
             tab_banner(
                 "EFIT archive compare",
-                "FreeGSNKE vs FAIR-MAST Level-2 EFIT++ archive (ADR-002) — not a live EFIT++ / efit-ai / Py-EFIT solve.",
+                "FreeGSNKE vs FAIR-MAST Level-2 EFIT++ archive (ADR-002) — classic MAST. "
+                "Side-by-side GIF mirrors FreeGSNKE's public MAST-U demo layout using archive EFIT++ "
+                "(not a live EFIT++ / efit-ai / Py-EFIT solve).",
             ),
             lead,
             ui_kit.section(
@@ -1212,27 +1141,46 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
             ),
             accordion(
                 [
-                    ("COMPARE.json fields", compare_body, False),
                     (
-                        "EFIT plots",
+                        "FreeGSNKE | EFIT++ side-by-side",
+                        html.Div(
+                            [
+                                html.P(
+                                    "Left: FreeGSNKE LCFS · Right: FAIR-MAST EFIT++ archive ψ/LCFS "
+                                    "(classic MAST). Open / download like other decks.",
+                                    className="small text-muted",
+                                ),
+                                media_gallery(
+                                    shot,
+                                    sbs or ordered_plots[:1],
+                                    run_dir,
+                                    "No side-by-side GIF yet — re-run with compare_efit_archive=true.",
+                                ),
+                            ]
+                        ),
+                        True,
+                    ),
+                    ("COMPARE.json fields", compare_body, True),
+                    (
+                        "EFIT plots & downloads",
                         file_link_list(
                             shot,
-                            art.efit_plot_paths(run_dir),
+                            ordered_plots,
                             run_dir,
                             empty="No EFIT compare plots yet.",
                             limit=_MAX_FILE_LINKS,
                         ),
-                        False,
+                        True,
                     ),
                     (
-                        "Light PNG preview",
+                        "Light media preview",
                         media_gallery(
                             shot,
-                            art.efit_plot_paths(run_dir)[:_MAX_GALLERY],
+                            ordered_plots[:_MAX_GALLERY],
                             run_dir,
                             "No EFIT compare plots yet.",
                         ),
-                        False,
+                        True,
                     ),
                 ]
             ),

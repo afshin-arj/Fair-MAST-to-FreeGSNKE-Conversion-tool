@@ -1683,6 +1683,29 @@ a.btn,
   padding-top: 0.75rem;
   border-top: 1px solid var(--fg-line-soft);
 }
+.fg-section-collapsible {
+  padding-top: 0.35rem;
+}
+.fg-section-summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+.fg-section-summary::-webkit-details-marker {
+  display: none;
+}
+.fg-section-summary::before {
+  content: "▾ ";
+  color: var(--fg-accent);
+  font-family: var(--fg-mono);
+  font-size: 0.85rem;
+}
+details.fg-section-collapsible:not([open]) > .fg-section-summary::before {
+  content: "▸ ";
+}
+.fg-section-body {
+  padding-top: 0.45rem;
+}
 .fg-section-head {
   display: flex;
   flex-wrap: wrap;

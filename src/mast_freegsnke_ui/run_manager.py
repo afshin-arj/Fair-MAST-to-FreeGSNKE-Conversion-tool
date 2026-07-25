@@ -78,6 +78,52 @@ class RunManager:
         self._reader = threading.Thread(target=self._pump, args=(proc,), daemon=True)
         self._reader.start()
 
+    def start_plan(
+        self,
+        shot: int,
+        *,
+        config: Path,
+        cwd: Path,
+        python_exe: Optional[Path] = None,
+    ) -> None:
+        """Re-run planner-only CLI against an existing SHOT folder."""
+        if self.is_running:
+            raise RuntimeError("A run is already in progress")
+        shot = int(shot)
+        config = Path(config)
+        cwd = Path(cwd)
+        py = str(python_exe or sys.executable)
+        cmd = [
+            py,
+            "-m",
+            "mast_freegsnke.cli",
+            "plan",
+            "--shot",
+            str(shot),
+            "--config",
+            str(config),
+        ]
+        with self._lock:
+            self._log.clear()
+            self._shot = shot
+            self._returncode = None
+            self._cancelled = False
+            self._started_at = time.time()
+            self._proc = subprocess.Popen(
+                cmd,
+                cwd=str(cwd),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+                env={**os.environ},
+            )
+            proc = self._proc
+        self._reader = threading.Thread(target=self._pump, args=(proc,), daemon=True)
+        self._reader.start()
+
     def _pump(self, proc: subprocess.Popen[str]) -> None:
         assert proc.stdout is not None
         try:
