@@ -440,6 +440,100 @@ def overview_kpis(run_dir: Path) -> Dict[str, Any]:
     }
 
 
+_COMPARE_NUMERIC_KEYS = (
+    "t_start",
+    "t_end",
+    "n_scored",
+    "evolutive_rms_A",
+    "blocking_n",
+)
+
+
+def _kpi_delta(a: Any, b: Any) -> Any:
+    """B − A for numeric KPIs; None when either side is missing/non-numeric."""
+    try:
+        if a is None or b is None:
+            return None
+        return float(b) - float(a)
+    except (TypeError, ValueError):
+        return None
+
+
+def compare_scorecard(
+    run_a: Optional[Path],
+    run_b: Optional[Path],
+    *,
+    shot_a: Optional[int] = None,
+    shot_b: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Paired KPIs for browse-only shot A vs B (no invented metrology).
+
+    Returns ``{shot_a, shot_b, a, b, rows}`` where each row is
+    ``{key, label, a, b, delta}``. Missing run dirs yield empty KPI dicts.
+    """
+    a_present = run_a is not None and Path(run_a).is_dir()
+    b_present = run_b is not None and Path(run_b).is_dir()
+    ka = overview_kpis(Path(run_a)) if a_present else {}
+    kb = overview_kpis(Path(run_b)) if b_present else {}
+    if shot_a is not None and a_present:
+        ka = {**ka, "shot": int(shot_a)}
+    if shot_b is not None and b_present:
+        kb = {**kb, "shot": int(shot_b)}
+
+    labels = (
+        ("status", "Status"),
+        ("t_start", "Window t_start [s]"),
+        ("t_end", "Window t_end [s]"),
+        ("n_scored", "Contracts scored"),
+        ("metrics_ok", "Metrics ok"),
+        ("evolutive_ok", "Evolutive Ip ok"),
+        ("evolutive_rms_A", "Evolutive Ip RMS [A]"),
+        ("efit_ok", "EFIT archive ok"),
+        ("blocking_n", "Blocking errors"),
+    )
+    rows: List[Dict[str, Any]] = []
+    for key, label in labels:
+        va = ka.get(key)
+        vb = kb.get(key)
+        delta = _kpi_delta(va, vb) if key in _COMPARE_NUMERIC_KEYS else None
+        rows.append({"key": key, "label": label, "a": va, "b": vb, "delta": delta})
+
+    # Modes as a compact string row (no numeric delta).
+    def _modes_txt(k: Dict[str, Any]) -> Optional[str]:
+        modes = k.get("modes") or {}
+        if not isinstance(modes, dict) or not modes:
+            return None
+        return ", ".join(f"{mk}={mv}" for mk, mv in modes.items())
+
+    rows.insert(
+        1,
+        {
+            "key": "modes",
+            "label": "Modes",
+            "a": _modes_txt(ka),
+            "b": _modes_txt(kb),
+            "delta": None,
+        },
+    )
+    return {
+        "shot_a": int(shot_a) if shot_a is not None else (ka.get("shot") if a_present else None),
+        "shot_b": int(shot_b) if shot_b is not None else (kb.get("shot") if b_present else None),
+        "a_present": a_present,
+        "b_present": b_present,
+        "a": ka,
+        "b": kb,
+        "rows": rows,
+    }
+
+
+def pair_paths_by_name(paths_a: List[Path], paths_b: List[Path]) -> List[Dict[str, Optional[Path]]]:
+    """Align two path lists by basename for side-by-side display (A-only / B-only allowed)."""
+    map_a = {p.name: p for p in paths_a}
+    map_b = {p.name: p for p in paths_b}
+    names = sorted(set(map_a) | set(map_b))
+    return [{"name": n, "a": map_a.get(n), "b": map_b.get(n)} for n in names]
+
+
 def overview_text(run_dir: Path) -> str:
     """Human-readable overview from SUMMARY.json / manifest / science_audit."""
     k = overview_kpis(run_dir)

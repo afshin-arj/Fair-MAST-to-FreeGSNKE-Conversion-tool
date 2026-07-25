@@ -1227,3 +1227,62 @@ a.btn,
 .log-panel::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* Compare tab — browse-only side-by-side */
+.compare-controls {
+  margin-bottom: 0.75rem;
+}
+.compare-col-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--fg-line-soft);
+}
+.compare-col-kicker {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+}
+.compare-col-shot {
+  font-family: var(--fg-mono);
+  font-size: 0.78rem;
+}
+.compare-col-shot-present {
+  color: var(--fg-ok);
+}
+.compare-col-shot-missing {
+  color: var(--fg-fail);
+}
+.compare-col {
+  min-width: 0;
+}
+.compare-row {
+  margin-bottom: 0.25rem;
+}
+.compare-sep {
+  border-color: var(--fg-line-soft);
+  opacity: 0.7;
+  margin: 1.1rem 0 0.9rem;
+}
+.compare-scorecard {
+  margin-bottom: 0.5rem;
+}
+.compare-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.65rem;
+}
+.compare-detail {
+  min-width: 0;
+}
+.compare-detail-inner {
+  min-width: 0;
+}
+.compare-side-miss {
+  padding: 0.5rem 0.15rem 0.25rem;
+}

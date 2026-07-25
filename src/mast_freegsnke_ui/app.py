@@ -185,6 +185,9 @@ def create_app(
             dcc.Store(id="refresh-token", data=0),
             dcc.Store(id="poll-cache", data={}),
             dcc.Store(id="library-fp", data=library_fp),
+            dcc.Store(id="compare-shot-a", data=None),
+            dcc.Store(id="compare-shot-b", data=None),
+            dcc.Store(id="compare-family-store", data="plasma"),
             dcc.Interval(id="poll", interval=_POLL_IDLE_MS, n_intervals=0),
             html.Header(
                 [
@@ -904,9 +907,12 @@ def create_app(
         Input("results-tabs", "value"),
         Input("refresh-token", "data"),
         Input("btn-refresh", "n_clicks"),
+        State("compare-shot-a", "data"),
+        State("compare-shot-b", "data"),
+        State("compare-family-store", "data"),
         prevent_initial_call=False,
     )
-    def on_results(active_shot, active_tab, _refresh_token, _n_refresh):
+    def on_results(active_shot, active_tab, _refresh_token, _n_refresh, cmp_a, cmp_b, cmp_fam):
         """Fill the active tab. Shot changes always rebuild Overview (even if tab value is unchanged)."""
         triggered = None
         try:
@@ -934,8 +940,81 @@ def create_app(
                 if candidate.is_dir():
                     run_dir = candidate
         heading = panels.results_heading(shot_i, tid)
-        body = panels.fill_one_tab(tid, shot_i, run_dir)
+        if tid == "compare":
+            lib_opts = _shot_library_options(
+                runs_dir, cache_dir=cache_dir, required_groups=required_groups
+            )
+            lib_shots = art.list_shot_dirs(runs_dir)
+            def_a, def_b = panels.default_compare_pair(shot_i, lib_shots)
+            try:
+                shot_a = int(cmp_a) if cmp_a is not None else def_a
+            except (TypeError, ValueError):
+                shot_a = def_a
+            try:
+                shot_b = int(cmp_b) if cmp_b is not None else def_b
+            except (TypeError, ValueError):
+                shot_b = def_b
+            fam = str(cmp_fam or "plasma")
+            body = panels.compare_panel(
+                runs_dir,
+                library_options=lib_opts,
+                shot_a=shot_a,
+                shot_b=shot_b,
+                family=fam,
+            )
+        else:
+            body = panels.fill_one_tab(tid, shot_i, run_dir)
         return heading, body
+
+    @app.callback(
+        Output("compare-detail", "children"),
+        Output("compare-shot-a", "data"),
+        Output("compare-shot-b", "data"),
+        Output("compare-family-store", "data"),
+        Input("compare-dd-a", "value"),
+        Input("compare-dd-b", "value"),
+        Input("compare-family", "value"),
+        prevent_initial_call=True,
+    )
+    def on_compare(shot_a, shot_b, family):
+        """Update Compare detail when A/B/family pickers change."""
+        try:
+            a = int(shot_a) if shot_a is not None and str(shot_a).strip() != "" else None
+        except (TypeError, ValueError):
+            a = None
+        try:
+            b = int(shot_b) if shot_b is not None and str(shot_b).strip() != "" else None
+        except (TypeError, ValueError):
+            b = None
+        fam = str(family or "plasma")
+        return panels.compare_detail(runs_dir, a, b, fam), a, b, fam
+
+    @app.callback(
+        Output("compare-shot-a", "data", allow_duplicate=True),
+        Output("compare-shot-b", "data", allow_duplicate=True),
+        Input("results-tabs", "value"),
+        State("active-shot", "data"),
+        State("compare-shot-a", "data"),
+        State("compare-shot-b", "data"),
+        prevent_initial_call=True,
+    )
+    def seed_compare_defaults(tab, active_shot, cmp_a, cmp_b):
+        """Persist default A/B when opening Compare with empty stores."""
+        if (tab or "").strip().lower() != "compare":
+            return no_update, no_update
+        if cmp_a is not None and cmp_b is not None:
+            return no_update, no_update
+        lib_shots = art.list_shot_dirs(runs_dir)
+        try:
+            active_i = int(active_shot) if active_shot is not None else None
+        except (TypeError, ValueError):
+            active_i = None
+        def_a, def_b = panels.default_compare_pair(active_i, lib_shots)
+        out_a = cmp_a if cmp_a is not None else def_a
+        out_b = cmp_b if cmp_b is not None else def_b
+        if out_a is None and out_b is None:
+            return no_update, no_update
+        return out_a, out_b
 
     @app.callback(
         Output("l2-detail", "children"),

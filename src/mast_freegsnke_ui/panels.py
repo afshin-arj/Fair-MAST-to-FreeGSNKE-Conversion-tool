@@ -1045,10 +1045,443 @@ def auth_panel(shot: int, run_dir: Path) -> Any:
     return html.Div(children)
 
 
+_COMPARE_FAMILY_DEFS: tuple[tuple[str, str], ...] = (
+    ("plasma", "Plasma"),
+    ("pf", "PF coils"),
+    ("magnetics", "Magnetics"),
+)
+
+
+def _compare_side_empty(shot: Optional[int], *, label: str) -> Any:
+    html, _, _ = _require()
+    if shot is None:
+        return html.P(
+            f"{label}: pick a shot from the library dropdown.",
+            className="text-muted small compare-side-miss mb-0",
+        )
+    return html.Div(
+        [
+            html.P(
+                f"{label} · SHOT/{int(shot)} is missing on disk.",
+                className="text-muted small mb-1",
+            ),
+            html.P(
+                "Compare is browse-only — Open or Reconstruct that shot first, then reselect it here.",
+                className="small text-muted mb-0",
+            ),
+        ],
+        className="compare-side-miss",
+    )
+
+
+def _compare_column_header(label: str, shot: Optional[int], present: bool) -> Any:
+    html, _, _ = _require()
+    shot_txt = f"SHOT/{int(shot)}" if shot is not None else "—"
+    tone = "present" if present else "missing"
+    return html.Div(
+        [
+            html.Span(label, className="compare-col-kicker"),
+            html.Span(shot_txt, className=f"compare-col-shot compare-col-shot-{tone}"),
+        ],
+        className="compare-col-head",
+    )
+
+
+def _compare_scorecard_table(card: Dict[str, Any]) -> Any:
+    html, _, dbc = _require()
+    sa = card.get("shot_a")
+    sb = card.get("shot_b")
+    header = html.Tr(
+        [
+            html.Th("KPI"),
+            html.Th(f"A · {sa}" if sa is not None else "A"),
+            html.Th(f"B · {sb}" if sb is not None else "B"),
+            html.Th("Δ (B−A)"),
+        ]
+    )
+    body = []
+    for row in card.get("rows") or []:
+        body.append(
+            html.Tr(
+                [
+                    html.Td(row.get("label") or row.get("key")),
+                    html.Td(_fmt_kpi(row.get("a"))),
+                    html.Td(_fmt_kpi(row.get("b"))),
+                    html.Td(_fmt_kpi(row.get("delta"))),
+                ]
+            )
+        )
+    return dbc.Table(
+        [html.Thead(header), html.Tbody(body)],
+        bordered=False,
+        hover=True,
+        size="sm",
+        responsive=True,
+        className="compare-scorecard",
+    )
+
+
+def _compare_side_gallery(
+    shot: Optional[int],
+    run_dir: Optional[Path],
+    paths: List[Path],
+    *,
+    empty: str,
+) -> Any:
+    """Plot/GIF gallery only (no duplicate file-link dump)."""
+    html, _, _ = _require()
+    if shot is None or run_dir is None or not Path(run_dir).is_dir():
+        return html.P(empty, className="text-muted small mb-0")
+    if not paths:
+        return html.P(empty, className="text-muted small mb-0")
+    return media_gallery(int(shot), paths[:_MAX_GALLERY], Path(run_dir), empty)
+
+
+def _compare_side_csv_links(
+    shot: Optional[int],
+    run_dir: Optional[Path],
+    items: List[Dict[str, Any]],
+    *,
+    empty: str,
+) -> Any:
+    html, _, _ = _require()
+    if shot is None or run_dir is None or not items:
+        return html.P(empty, className="text-muted small mb-0")
+    links = []
+    for it in items[:_MAX_FILE_LINKS]:
+        rel = it.get("rel")
+        if not rel:
+            continue
+        # Reject traversal; only serve paths under the run dir.
+        if art.safe_resolve_under(Path(run_dir), str(rel)) is None:
+            continue
+        name = it.get("name") or Path(str(rel)).name
+        links.append(
+            html.A(
+                str(name),
+                href=art.file_url(int(shot), str(rel), download=True),
+                className="btn btn-sm btn-outline-secondary me-1 mb-1",
+            )
+        )
+    if not links:
+        return html.P(empty, className="text-muted small mb-0")
+    return html.Div(links)
+
+
+def _compare_residual_chips(run_dir: Optional[Path]) -> Any:
+    html, _, _ = _require()
+    if run_dir is None or not Path(run_dir).is_dir():
+        return html.P("No metrics.", className="text-muted small mb-0")
+    metrics = art.load_metrics(Path(run_dir))
+    if not metrics:
+        return html.P("No reconstruction_metrics.json.", className="text-muted small mb-0")
+    ok = metrics.get("ok")
+    if ok is True:
+        tone = "ok"
+    elif ok is False:
+        tone = "fail"
+    else:
+        tone = ""
+    return html.Div(
+        [
+            chip("ok", ok, tone=tone),
+            chip("n_scored", metrics.get("n_scored")),
+            chip("skipped_nan", metrics.get("n_skipped_all_nan")),
+        ],
+        className="compare-chip-row",
+    )
+
+
+def compare_detail(
+    runs_dir: Path,
+    shot_a: Optional[int],
+    shot_b: Optional[int],
+    family: str = "plasma",
+) -> Any:
+    """Browse-only side-by-side body for two finished SHOT folders."""
+    html, _, dbc = _require()
+    from mast_freegsnke_ui import level2 as l2
+
+    runs_dir = Path(runs_dir)
+    fam = (family or "plasma").strip().lower()
+    if fam not in {k for k, _ in _COMPARE_FAMILY_DEFS}:
+        fam = "plasma"
+    fam_title = dict(_COMPARE_FAMILY_DEFS).get(fam, fam)
+
+    run_a = art.run_dir_for(runs_dir, int(shot_a)) if shot_a is not None else None
+    run_b = art.run_dir_for(runs_dir, int(shot_b)) if shot_b is not None else None
+    a_ok = run_a is not None and run_a.is_dir()
+    b_ok = run_b is not None and run_b.is_dir()
+
+    if not a_ok and not b_ok:
+        return empty_state(
+            "Select two reconstructed shots",
+            "Compare never downloads or solves. Pick shots that already have SHOT/<N>/ products.",
+            steps=[
+                "Use the A / B dropdowns above (library of local SHOT folders)",
+                "Reconstruct missing shots from Shot control if needed",
+                "KPIs, Level-2 plots, residuals, and GIFs appear side-by-side",
+            ],
+        )
+
+    card = art.compare_scorecard(
+        run_a if a_ok else None,
+        run_b if b_ok else None,
+        shot_a=shot_a,
+        shot_b=shot_b,
+    )
+
+    # Measured family plots / CSVs
+    plots_a = (l2.measured_plots_grouped(run_a).get(fam) or []) if a_ok else []
+    plots_b = (l2.measured_plots_grouped(run_b).get(fam) or []) if b_ok else []
+    csv_a = (
+        [it for it in l2.measured_csv_inventory(run_a, disk_walk=True) if it.get("section") == fam]
+        if a_ok
+        else []
+    )
+    csv_b = (
+        [it for it in l2.measured_csv_inventory(run_b, disk_walk=True) if it.get("section") == fam]
+        if b_ok
+        else []
+    )
+
+    resid_png_a = art.residual_plot_paths(run_a) if a_ok else []
+    resid_png_b = art.residual_plot_paths(run_b) if b_ok else []
+    resid_csv_a = art.residual_csv_paths(run_a) if a_ok else []
+    resid_csv_b = art.residual_csv_paths(run_b) if b_ok else []
+    gifs_a = art.gif_paths(run_a)[:_MAX_GIFS] if a_ok else []
+    gifs_b = art.gif_paths(run_b)[:_MAX_GIFS] if b_ok else []
+
+    same_shot_note = None
+    if shot_a is not None and shot_b is not None and int(shot_a) == int(shot_b):
+        same_shot_note = dbc.Alert(
+            "Shot A and Shot B are the same number — side-by-side will mirror identical folders.",
+            color="warning",
+            className="py-2 small",
+        )
+
+    def _measured_col(label: str, shot: Optional[int], ok: bool, run: Optional[Path], plots, csvs) -> Any:
+        return dbc.Col(
+            [
+                _compare_column_header(label, shot, ok),
+                _compare_side_empty(shot, label=label)
+                if not ok
+                else html.Div(
+                    [
+                        _compare_side_gallery(
+                            shot, run, plots, empty=f"No {fam_title} plots for {label}."
+                        ),
+                        html.Div("CSV", className="fg-quick-label mt-2 mb-1"),
+                        _compare_side_csv_links(
+                            shot, run, csvs, empty=f"No {fam_title} CSVs for {label}."
+                        ),
+                    ]
+                ),
+            ],
+            md=6,
+            className="compare-col",
+        )
+
+    measured_row = dbc.Row(
+        [
+            _measured_col("Shot A", shot_a, a_ok, run_a, plots_a, csv_a),
+            _measured_col("Shot B", shot_b, b_ok, run_b, plots_b, csv_b),
+        ],
+        className="g-3 compare-row",
+    )
+
+    def _resid_col(label: str, shot: Optional[int], ok: bool, run: Optional[Path], pngs, csvs) -> Any:
+        return dbc.Col(
+            [
+                _compare_column_header(label, shot, ok),
+                _compare_side_empty(shot, label=label)
+                if not ok
+                else html.Div(
+                    [
+                        _compare_residual_chips(run),
+                        _compare_side_gallery(shot, run, pngs, empty=f"No residual PNGs for {label}."),
+                        html.Div("residual_*.csv", className="fg-quick-label mt-2 mb-1"),
+                        file_link_list(
+                            int(shot),
+                            csvs,
+                            Path(run),
+                            empty=f"No residual_*.csv for {label}.",
+                            limit=_MAX_FILE_LINKS,
+                        )
+                        if shot is not None and run is not None
+                        else None,
+                    ]
+                ),
+            ],
+            md=6,
+            className="compare-col",
+        )
+
+    residuals_row = dbc.Row(
+        [
+            _resid_col("Shot A", shot_a, a_ok, run_a, resid_png_a, resid_csv_a),
+            _resid_col("Shot B", shot_b, b_ok, run_b, resid_png_b, resid_csv_b),
+        ],
+        className="g-3 compare-row",
+    )
+
+    gifs_row = dbc.Row(
+        [
+            dbc.Col(
+                [
+                    _compare_column_header("Shot A", shot_a, a_ok),
+                    _compare_side_empty(shot_a, label="Shot A")
+                    if not a_ok
+                    else media_gallery(
+                        int(shot_a), gifs_a, Path(run_a), "No equilibrium GIFs for A."
+                    ),
+                ],
+                md=6,
+                className="compare-col",
+            ),
+            dbc.Col(
+                [
+                    _compare_column_header("Shot B", shot_b, b_ok),
+                    _compare_side_empty(shot_b, label="Shot B")
+                    if not b_ok
+                    else media_gallery(
+                        int(shot_b), gifs_b, Path(run_b), "No equilibrium GIFs for B."
+                    ),
+                ],
+                md=6,
+                className="compare-col",
+            ),
+        ],
+        className="g-3 compare-row",
+    )
+
+    return html.Div(
+        [
+            same_shot_note,
+            html.H3("Scorecard", className="h6 text-info mb-2"),
+            _compare_scorecard_table(card),
+            html.Hr(className="compare-sep"),
+            html.H3(f"Measured · {fam_title}", className="h6 text-info mb-2"),
+            html.P(
+                "Existing Level-2 plots/CSVs side-by-side — no cross-shot time alignment.",
+                className="small text-muted",
+            ),
+            measured_row,
+            html.Hr(className="compare-sep"),
+            html.H3("Residuals", className="h6 text-info mb-2"),
+            html.P(
+                "Per-shot contract metrics and residual assets (not recomputed across shots).",
+                className="small text-muted",
+            ),
+            residuals_row,
+            html.Hr(className="compare-sep"),
+            html.H3("Equilibria", className="h6 text-info mb-2"),
+            gifs_row,
+        ],
+        className="compare-detail-inner",
+    )
+
+
+def compare_panel(
+    runs_dir: Path,
+    *,
+    library_options: List[Dict[str, Any]],
+    shot_a: Optional[int] = None,
+    shot_b: Optional[int] = None,
+    family: str = "plasma",
+) -> Any:
+    """Compare tab shell: A/B pickers + measured family + detail region."""
+    html, dcc, dbc = _require()
+    fam = (family or "plasma").strip().lower()
+    if fam not in {k for k, _ in _COMPARE_FAMILY_DEFS}:
+        fam = "plasma"
+    fam_opts = [{"label": lab, "value": key} for key, lab in _COMPARE_FAMILY_DEFS]
+    return html.Div(
+        [
+            tab_banner(
+                "Compare two shots",
+                "Browse-only. Reuses existing SHOT/<N>/ plots and CSVs side-by-side. "
+                "Does not download, reconstruct, or invent a common timebase.",
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                            dbc.Label("Shot A", html_for="compare-dd-a", className="fg-label"),
+                            dcc.Dropdown(
+                                id="compare-dd-a",
+                                options=library_options,
+                                value=int(shot_a) if shot_a is not None else None,
+                                placeholder="Select shot A…",
+                                clearable=True,
+                            ),
+                        ],
+                        md=4,
+                    ),
+                    dbc.Col(
+                        [
+                            dbc.Label("Shot B", html_for="compare-dd-b", className="fg-label"),
+                            dcc.Dropdown(
+                                id="compare-dd-b",
+                                options=library_options,
+                                value=int(shot_b) if shot_b is not None else None,
+                                placeholder="Select shot B…",
+                                clearable=True,
+                            ),
+                        ],
+                        md=4,
+                    ),
+                    dbc.Col(
+                        [
+                            dbc.Label("Measured family", html_for="compare-family", className="fg-label"),
+                            dcc.Dropdown(
+                                id="compare-family",
+                                options=fam_opts,
+                                value=fam,
+                                clearable=False,
+                            ),
+                        ],
+                        md=4,
+                    ),
+                ],
+                className="g-2 mb-3 compare-controls",
+            ),
+            html.Div(
+                id="compare-detail",
+                children=compare_detail(runs_dir, shot_a, shot_b, fam),
+            ),
+        ],
+        className="compare-panel",
+    )
+
+
+def default_compare_pair(
+    active_shot: Optional[int],
+    library_shots: List[int],
+) -> tuple[Optional[int], Optional[int]]:
+    """Default A = active (or first library); B = first other library shot."""
+    shots = [int(s) for s in library_shots]
+    a: Optional[int] = None
+    if active_shot is not None:
+        try:
+            a = int(active_shot)
+        except (TypeError, ValueError):
+            a = None
+    if a is None and shots:
+        a = shots[0]
+    b: Optional[int] = None
+    for s in shots:
+        if a is None or s != a:
+            b = s
+            break
+    return a, b
+
+
 TAB_DEFS = (
     ("overview", "Overview"),
     ("level2", "Level-2"),
     ("residuals", "Residuals"),
+    ("compare", "Compare"),
     ("efit", "EFIT"),
     ("gifs", "Equilibria"),
     ("auth", "Authorities"),
@@ -1060,6 +1493,7 @@ TAB_META = {
     "level2": "FAIR-MAST measured pack — plasma, PF, magnetics, SXR, Thomson, CXRS, … (plots + CSV).",
     "measured": "FAIR-MAST measured pack — plasma, PF, magnetics, SXR, Thomson, CXRS, … (plots + CSV).",
     "residuals": "Contract residuals: synthetic vs experimental traces.",
+    "compare": "Browse-only side-by-side of two finished SHOT folders (KPIs, measured, residuals, GIFs).",
     "efit": "FreeGSNKE vs FAIR-MAST EFIT++ archive (ADR-002) — not a live EFIT solve.",
     "gifs": "Inverse / forward / evolutive equilibrium GIFs.",
     "auth": "Snapshotted authorities and provenance hashes (fail-fast if missing).",
@@ -1076,6 +1510,17 @@ def fill_one_tab(tab_id: Optional[str], shot: Optional[int], run_dir: Optional[P
     tid = (tab_id or "overview").lower()
     if tid == "measured":
         tid = "level2"
+    # Compare is browse-only dual-shot; built by app.create_app via compare_panel.
+    if tid == "compare":
+        return empty_state(
+            "Compare",
+            "Select Shot A and Shot B in the Compare tab controls (local SHOT library).",
+            steps=[
+                "Open the Compare tab",
+                "Pick two finished shots from the library",
+                "Review scorecard, measured, residuals, and equilibria side-by-side",
+            ],
+        )
     if shot is None or run_dir is None or not run_dir.is_dir():
         label = _TAB_LABELS.get(tid, "Overview")
         return empty_state(
@@ -1127,6 +1572,18 @@ def results_heading(shot: Optional[int], tab_id: Optional[str] = None) -> Any:
         tid = "level2"
     label = _TAB_LABELS.get(tid, "Overview")
     meta = TAB_META.get(tid, "")
+    if tid == "compare":
+        kids_c: List[Any] = [
+            html.Div(
+                [
+                    html.Span(label, className="results-title"),
+                    html.Span("A vs B", className="results-shot-pill"),
+                ],
+                className="results-title-row",
+            ),
+            html.Div(meta, className="results-meta") if meta else None,
+        ]
+        return html.Div(kids_c, className="results-heading-wrap")
     if shot is None:
         kids: List[Any] = [
             html.Div("Results browser", className="results-title"),

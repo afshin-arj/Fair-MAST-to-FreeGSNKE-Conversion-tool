@@ -180,6 +180,18 @@ def measured_csv_inventory(run_dir: Path, *, disk_walk: bool = True) -> List[Dic
             except OSError:
                 continue
     elif disk_walk:
+        # Fill any core CSVs the catalog omitted (incomplete indexes), then optionals.
+        for sub in ("01_plasma", "02_pf", "03_magnetics", "04_geometry"):
+            opened = art._open_dir(root / sub)
+            if opened is None:
+                continue
+            try:
+                for p in opened.glob("*.csv"):
+                    _add(p, p.stem)
+                for p in opened.glob("*/*.csv"):
+                    _add(p, p.stem)
+            except OSError:
+                continue
         # Optional diagnostic folders only (core paths already come from catalog).
         for sub in (
             "06_summary",
