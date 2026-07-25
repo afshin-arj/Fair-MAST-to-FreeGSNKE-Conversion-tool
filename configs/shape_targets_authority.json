@@ -1,0 +1,30 @@
+{
+  "authority_name": "shape_targets",
+  "authority_version": "1.0.0",
+  "enabled": true,
+  "require": false,
+  "source": "fairmast_level2_equilibrium",
+  "equilibrium_group": "equilibrium",
+  "knot_policy": "linspace_window_inclusive",
+  "n_knots": 21,
+    "shape_scalars": [
+    "elongation",
+    "elongation_axis",
+    "triangularity_upper",
+    "triangularity_lower",
+    "minor_radius",
+    "magnetic_axis_r",
+    "magnetic_axis_z",
+    "x_point_r",
+    "x_point_z",
+    "q95",
+    "wmhd",
+    "li",
+    "vloop_dynamic"
+  ],
+  "lcfs_vars": ["lcfs_r", "lcfs_z"],
+  "n_control_points": 32,
+  "control_point_policy": "subsample_lcfs_evenly",
+  "tokamark_aligned": true,
+  "notes": "ADR-004 Path B1. Declared EFIT++ archive shape targets for GSPulse-style vacuum isoflux (B2) and future Picard (B3). TokaMark-aligned derived-equilibrium taxonomy. require=false soft-skips when archive lacks fields — never invent LCFS/x-points."
+}

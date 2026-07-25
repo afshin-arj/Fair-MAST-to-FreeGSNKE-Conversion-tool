@@ -64,8 +64,11 @@ def _mini_shot(run_dir: Path, shot: int, *, rms: float, t0: float, t1: float) ->
 def test_compare_in_tab_defs() -> None:
     ids = [k for k, _ in panels.TAB_DEFS]
     assert "compare" in ids
-    assert ids.index("compare") == ids.index("residuals") + 1
+    assert "planner" in ids
+    assert ids.index("planner") == ids.index("residuals") + 1
+    assert ids.index("compare") == ids.index("planner") + 1
     assert "compare" in panels.TAB_META
+    assert "planner" in panels.TAB_META["compare"].lower()
 
 
 def test_compare_scorecard_deltas(tmp_path: Path) -> None:
@@ -185,3 +188,44 @@ def test_compare_missing_side_is_soft(tmp_path: Path) -> None:
     text = str(detail)
     assert "99999" in text
     assert "browse-only" in text.lower() or "missing" in text.lower()
+
+
+def test_compare_planner_section_b6_full(tmp_path: Path) -> None:
+    """Path B6-full: Compare shows A|B planner ΔI/ΔV when products exist."""
+    runs = tmp_path / "SHOT"
+    for shot, rms in ((30203, 1.0), (30204, 2.5)):
+        rd = runs / str(shot)
+        _mini_shot(rd, shot, rms=100.0, t0=0.2, t1=0.4)
+        pl = rd / "07_planner"
+        pl.mkdir(parents=True, exist_ok=True)
+        (pl / "PLANNER.json").write_text(
+            json.dumps(
+                {
+                    "method": "gspulse_python",
+                    "method_version": "v1.3",
+                    "picard": True,
+                    "picard_status": "ok",
+                    "isoflux_cost": True,
+                    "status": "ok",
+                    "n_knots": 21,
+                    "residual_rms_mean_measured_V": rms,
+                    "n_voltage_violations_raw": 0,
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (pl / "planning_residual_vs_measured_V.csv").write_text(
+            f"circuit,drive_label,rms_V,mae_V,max_abs_V,n\nP4,measured,{rms},0.1,1.0,21\n",
+            encoding="utf-8",
+        )
+        (pl / "planning_voltage_residual.png").write_bytes(_PNG)
+        (pl / "planning_current_residual.png").write_bytes(_PNG)
+    detail = panels.compare_detail(runs, 30203, 30204, "plasma")
+    text = str(detail)
+    assert "Planner" in text
+    assert "planning_current_residual" in text or "planning_voltage_residual" in text or "ΔV" in text
+    card = art.compare_scorecard(runs / "30203", runs / "30204", shot_a=30203, shot_b=30204)
+    by = {r["key"]: r for r in card["rows"]}
+    assert by["planner_status"]["a"] == "ok"
+    assert by["planner_rms_V"]["delta"] == 1.5

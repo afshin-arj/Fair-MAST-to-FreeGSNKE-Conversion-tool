@@ -360,6 +360,8 @@ def authority_snapshot(run_dir: Path) -> Dict[str, Any]:
         ("execution_authority", "inputs/execution_authority/execution_authority_bundle.json"),
         ("profile_trajectory", "inputs/profile_trajectory_authority/profile_trajectory.json"),
         ("profile_trajectory_policy", "inputs/profile_trajectory_authority/profile_trajectory_authority.json"),
+        ("shape_targets", "inputs/shape_targets_authority/shape_targets.json"),
+        ("shape_targets_authority", "inputs/shape_targets_authority/shape_targets_authority.json"),
         ("planner_authority", "inputs/planner_authority/planner_authority.json"),
         ("coil_limits_authority", "inputs/coil_limits_authority/coil_limits_authority.json"),
         ("circuit_dynamics_authority", "inputs/circuit_dynamics_authority/circuit_dynamics_authority.json"),
@@ -663,18 +665,35 @@ def load_profile_trajectory_info(run_dir: Path) -> Dict[str, Any]:
 
 
 def load_planner_info(run_dir: Path) -> Dict[str, Any]:
-    """ADR-004 Phase 2 planner products for UI (read-only; never invents limits)."""
+    """ADR-004 Phase 2 / Path B6 planner products for UI (read-only; never invents limits)."""
+    import hashlib
+
     run_dir = Path(run_dir)
     plan_rel = "07_planner/PLANNER.json"
     resid_rel = "07_planner/planning_residual_vs_measured_V.csv"
     plot_rel = "07_planner/planning_voltage_residual.png"
+    plot_i_rel = "07_planner/planning_current_residual.png"
     limits_rel = "inputs/coil_limits_authority/coil_limits_authority.json"
     auth_rel = "inputs/planner_authority/planner_authority.json"
     dyn_rel = "inputs/circuit_dynamics_authority/circuit_dynamics_authority.json"
+    plasma_rel = "07_planner/plasma_scalars.json"
+    picard_rel = "07_planner/picard.json"
     meta = _safe_json(run_dir / plan_rel)
     limits = _safe_json(run_dir / limits_rel)
     auth = _safe_json(run_dir / auth_rel)
     dyn = _safe_json(run_dir / dyn_rel)
+    plasma = _safe_json(run_dir / plasma_rel)
+    picard_obj = _safe_json(run_dir / picard_rel)
+
+    def _sha_short(rel: str) -> Optional[str]:
+        path = run_dir / rel
+        if not path.is_file():
+            return None
+        try:
+            return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+        except Exception:
+            return None
+
     out: Dict[str, Any] = {
         "present": bool(meta),
         "status": None,
@@ -689,17 +708,45 @@ def load_planner_info(run_dir: Path) -> Dict[str, Any]:
         "plan_rel": plan_rel if (run_dir / plan_rel).is_file() else None,
         "resid_rel": resid_rel if (run_dir / resid_rel).is_file() else None,
         "plot_rel": plot_rel if (run_dir / plot_rel).is_file() else None,
+        "plot_i_rel": plot_i_rel if (run_dir / plot_i_rel).is_file() else None,
         "limits_rel": limits_rel if (run_dir / limits_rel).is_file() else None,
         "auth_rel": auth_rel if (run_dir / auth_rel).is_file() else None,
         "dyn_rel": dyn_rel if (run_dir / dyn_rel).is_file() else None,
+        "plasma_rel": plasma_rel if (run_dir / plasma_rel).is_file() else None,
+        "picard_rel": picard_rel if (run_dir / picard_rel).is_file() else None,
         "limits_status": None,
         "detail": None,
+        "authority_hashes": {
+            "planner_authority": _sha_short(auth_rel),
+            "coil_limits": _sha_short(limits_rel),
+            "circuit_dynamics": _sha_short(dyn_rel),
+            "plasma_scalars_authority": _sha_short(
+                "inputs/plasma_scalars_authority/plasma_scalars_authority.json"
+            ),
+            "PLANNER.json": _sha_short(plan_rel),
+        },
+        "picard_history": [],
+        "plasma_inventory": {},
+        "gif_rels": [],
+        "limitations": [],
         "edit_hint": (
             "To change Vmax/Imax headroom or PF R/L before the next run, edit "
             "configs/coil_limits_authority.json (margin_factor) and "
             "configs/circuit_dynamics_authority.json — no new shot-only prompts."
         ),
     }
+    if isinstance(plasma, dict):
+        inv = plasma.get("inventory") if isinstance(plasma.get("inventory"), dict) else {}
+        out["plasma_inventory"] = inv
+        pb = plasma.get("psi_bry") if isinstance(plasma.get("psi_bry"), dict) else {}
+        out["plasma_psi_bry"] = pb
+        if pb:
+            out["psi_bry_cost"] = pb.get("used")
+            out["psi_bry_mode"] = pb.get("mode")
+            out["psi_bry_status"] = pb.get("status")
+    if isinstance(picard_obj, dict):
+        out["picard_history"] = list(picard_obj.get("history") or [])[:12]
+        out["picard_note_file"] = picard_obj.get("note")
     if isinstance(limits, dict):
         out["limits_status"] = limits.get("status")
         out["citation"] = limits.get("citation")
@@ -719,14 +766,45 @@ def load_planner_info(run_dir: Path) -> Dict[str, Any]:
         out["residual_rms_mean_V"] = meta.get("residual_rms_mean_V")
         out["residual_rms_mean_measured_V"] = meta.get("residual_rms_mean_measured_V")
         out["n_voltage_violations_raw"] = meta.get("n_voltage_violations_raw")
+        out["method"] = meta.get("method") or "gspulse_python"
+        out["method_version"] = meta.get("method_version")
+        out["picard"] = meta.get("picard")
+        out["picard_mode"] = meta.get("picard_mode")
+        out["picard_status"] = meta.get("picard_status")
+        out["psi_bry_cost"] = meta.get("psi_bry_cost")
+        out["psi_bry_mode"] = meta.get("psi_bry_mode")
+        out["psi_bry_status"] = meta.get("psi_bry_status")
+        out["isoflux_cost"] = meta.get("isoflux_cost")
+        out["isoflux_mode"] = meta.get("isoflux_mode")
+        out["isoflux_status"] = meta.get("isoflux_status")
+        out["limitations"] = list(meta.get("limitations") or [])[:8]
+        iso_res = meta.get("isoflux_residuals") if isinstance(meta.get("isoflux_residuals"), dict) else {}
+        planned = iso_res.get("planned") if isinstance(iso_res.get("planned"), dict) else {}
+        out["isoflux_rms_mean"] = planned.get("isoflux_rms_mean")
+        out["xpoint_B_rms_mean"] = planned.get("xpoint_B_rms_mean")
+        out["psi_bry_rms_mean"] = planned.get("psi_bry_rms_mean")
+        out["circuit_dynamics_mutuals"] = meta.get("circuit_dynamics_mutuals")
+        out["gspulse_reference"] = meta.get("gspulse_reference")
+        st_av = meta.get("shape_targets_available") if isinstance(meta.get("shape_targets_available"), dict) else {}
+        out["shape_targets_present"] = bool(st_av.get("present"))
+        out["shape_targets_status"] = st_av.get("status")
+        out["shape_targets_found_scalars"] = st_av.get("found_scalars")
+        out["shape_targets_n_lcfs"] = st_av.get("n_knots_with_lcfs_control_points")
         if not out["citation"]:
             out["citation"] = meta.get("coil_limits_citation")
         out["detail"] = (
+            f"method={out.get('method')} v{out.get('method_version') or '?'} "
+            f"picard={out.get('picard')} mode={out.get('picard_mode')} "
+            f"isoflux={out.get('isoflux_cost')} "
+            f"isoflux_mode={out.get('isoflux_mode')} "
+            f"psi_bry={out.get('psi_bry_cost')} "
+            f"psi_bry_mode={out.get('psi_bry_mode')} "
             f"status={out['status']} knots={out['n_knots']} "
             f"rms_V={out['residual_rms_mean_V']} "
             f"rms_meas_V={out['residual_rms_mean_measured_V']} "
             f"V_viol={out['n_voltage_violations_raw']} "
-            f"margin={out['margin_factor']}"
+            f"margin={out['margin_factor']} "
+            f"mutuals={out.get('circuit_dynamics_mutuals')}"
         )
     elif isinstance(auth, dict) and not out["present"]:
         out["detail"] = (
@@ -744,6 +822,45 @@ def load_planner_info(run_dir: Path) -> Dict[str, Any]:
         out["detail"] = (
             "No planner products — set execute_planner=true and ensure cited coil limits + R/L."
         )
+    # Shape targets file even when PLANNER.json lacks the block
+    shape_rel = "07_planner/shape_targets.json"
+    shape_alt = "inputs/shape_targets_authority/shape_targets.json"
+    out["shape_rel"] = None
+    if (run_dir / shape_rel).is_file():
+        out["shape_rel"] = shape_rel
+    elif (run_dir / shape_alt).is_file():
+        out["shape_rel"] = shape_alt
+    if out["shape_rel"] and out.get("shape_targets_present") is None:
+        st_obj = _safe_json(run_dir / out["shape_rel"])
+        if isinstance(st_obj, dict):
+            out["shape_targets_present"] = bool(st_obj.get("present"))
+            out["shape_targets_status"] = st_obj.get("status")
+            out["shape_targets_found_scalars"] = st_obj.get("found_scalars")
+            out["shape_targets_n_lcfs"] = st_obj.get("n_knots_with_lcfs_control_points")
+    # Residual CSV rows for Planner tab table
+    out["residual_rows"] = []
+    if out.get("resid_rel"):
+        try:
+            import csv
+
+            with (run_dir / str(out["resid_rel"])).open(encoding="utf-8", newline="") as f:
+                reader = csv.DictReader(f)
+                for i, row in enumerate(reader):
+                    if i >= 32:
+                        break
+                    out["residual_rows"].append(dict(row))
+        except Exception:
+            out["residual_rows"] = []
+    try:
+        gifs = gif_paths(run_dir)[:6]
+        out["gif_rels"] = []
+        for g in gifs:
+            try:
+                out["gif_rels"].append(str(g.relative_to(run_dir)).replace("\\", "/"))
+            except ValueError:
+                pass
+    except Exception:
+        out["gif_rels"] = []
     return out
 
 
@@ -809,6 +926,8 @@ _COMPARE_NUMERIC_KEYS = (
     "n_scored",
     "evolutive_rms_A",
     "planner_rms_V",
+    "planner_n_knots",
+    "planner_v_violations",
     "blocking_n",
 )
 
@@ -879,6 +998,8 @@ def compare_scorecard(
         ("profile_n_knots", "Profile knots"),
         ("planner_status", "Planner status"),
         ("planner_rms_V", "Planner ΔV RMS [V]"),
+        ("planner_n_knots", "Planner knots"),
+        ("planner_v_violations", "Planner V violations"),
         ("efit_ok", "EFIT archive ok"),
         ("blocking_n", "Blocking errors"),
     )
@@ -1010,9 +1131,17 @@ _PREFERRED_DOWNLOADS = (
     "03_reconstruction/evolutive/evolutive_meta.json",
     "07_planner/PLANNER.json",
     "07_planner/PLANNER.md",
+    "07_planner/shape_targets.json",
     "07_planner/planning_residual_vs_measured_V.csv",
     "07_planner/planning_residual_timeseries.csv",
     "07_planner/planning_voltage_residual.png",
+    "07_planner/planning_current_residual.png",
+    "07_planner/isoflux_residual.json",
+    "07_planner/picard.json",
+    "07_planner/plasma_scalars.json",
+    "07_planner/planned_currents.csv",
+    "07_planner/planned_voltages.csv",
+    "inputs/shape_targets_authority/shape_targets.json",
 )
 
 

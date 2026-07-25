@@ -48,7 +48,7 @@ def shot_dossier(
                 html.Span("No active shot", className="dossier-empty"),
                 html.Span("Open a library entry or Start a reconstruction", className="dossier-hint"),
                 html.Span(
-                    ["Keys: ", html.Kbd("/"), " shot · ", html.Kbd("1–8"), " tabs · ", html.Kbd("r"), " refresh"],
+                    ["Keys: ", html.Kbd("/"), " shot · ", html.Kbd("1–9"), " tabs · ", html.Kbd("r"), " refresh"],
                     className="dossier-keys",
                 ),
             ],
@@ -193,11 +193,27 @@ def stage_timeline(progress: Optional[Dict[str, Any]], running: bool) -> Any:
         )
     stages = progress.get("stage_log") or []
     current = progress.get("current_stage")
+    friendly = {
+        "planner": "Planner (GSPulse-method)",
+        "planner_authority": "Planner authority",
+        "coil_limits_authority": "Coil limits",
+        "circuit_dynamics_authority": "Circuit R/L",
+        "shape_targets": "Shape targets (EFIT)",
+        "shape_targets_authority": "Shape targets authority",
+        "plasma_scalars_authority": "Plasma scalars authority",
+        "profile_trajectory": "Profile trajectory",
+        "efit_compare": "EFIT++ archive compare",
+        "execute_inverse": "Inverse GS",
+        "execute_forward": "Forward GS",
+        "execute_evolutive": "Evolutive",
+        "contract_metrics": "Contract residuals",
+    }
     items = []
     for st in stages:
         if not isinstance(st, dict):
             continue
         name = st.get("stage") or "?"
+        label = friendly.get(str(name), str(name))
         ok = bool(st.get("ok"))
         err = st.get("error") or st.get("error_hint")
         is_current = name == current and running
@@ -232,7 +248,7 @@ def stage_timeline(progress: Optional[Dict[str, Any]], running: bool) -> Any:
             html.Span(badge, className="stage-badge"),
             html.Span(
                 [
-                    html.Span(str(name), className="stage-name"),
+                    html.Span(str(label), className="stage-name", title=str(name)),
                     html.Span(detail, className="stage-note") if detail else None,
                     html.Span(str(err)[:120], className="stage-err") if err and not ok else None,
                 ]
@@ -513,7 +529,7 @@ def overview_panel(shot: int, run_dir: Path) -> Any:
             chip("snapshotted", present_n, tone="ok" if present_n else ""),
             chip("missing/awaiting", missing_n, tone="warn" if missing_n else ""),
             html.P(
-                "Full matrix, profile trajectory, and planner R/L live on the Authorities tab.",
+                "Full matrix and profile trajectory live on Authorities; planner detail on the Planner tab.",
                 className="small text-muted mb-0 mt-2",
             ),
         ]
@@ -542,6 +558,458 @@ def overview_panel(shot: int, run_dir: Path) -> Any:
         ]
     )
 
+
+def planner_panel(shot: int, run_dir: Path) -> Any:
+    """Path B6-full: GSPulse-method planner tab (I/V, residuals, Picard, ψ_bry, authorities)."""
+    html, _, dbc = _require()
+    pinfo = art.load_planner_info(run_dir)
+    children: List[Any] = [
+        tab_banner(
+            "Feedforward planner",
+            "Python GSPulse-method trajectory (Path B) — not upstream MATLAB/MEQ. "
+            "Planned vs measured I/V, isoflux/ψ_bry RMS, Picard status, authority hashes. "
+            "Never invents Imax/Vmax.",
+        )
+    ]
+    if not pinfo.get("present") and not pinfo.get("auth_rel") and not pinfo.get("limits_rel"):
+        children.append(
+            empty_state(
+                "No planner products",
+                pinfo.get("detail")
+                or "Run with execute_planner=true and cited coil_limits + circuit_dynamics.",
+                steps=[
+                    "Ensure configs/default.json has execute_planner=true",
+                    "Cite coil_limits_authority + circuit_dynamics_authority",
+                    "Reconstruct — products land under SHOT/<N>/07_planner/",
+                ],
+                kind="empty",
+            )
+        )
+        return html.Div(children)
+
+    method = pinfo.get("method") or ("gspulse_python" if pinfo.get("present") else "—")
+    picard = pinfo.get("picard")
+    isoflux = pinfo.get("isoflux_cost")
+    honesty = [
+        chip("method", method),
+        chip("version", pinfo.get("method_version") or "—"),
+        chip(
+            "picard",
+            "yes" if picard is True else ("no" if picard is False else "—"),
+            tone="ok" if picard is True else ("warn" if picard is False else ""),
+        ),
+        chip("picard_mode", pinfo.get("picard_mode") or "—"),
+        chip(
+            "isoflux",
+            "yes" if isoflux is True else ("no" if isoflux is False else "—"),
+            tone="ok" if isoflux is True else ("warn" if isoflux is False else ""),
+        ),
+        chip("isoflux_mode", pinfo.get("isoflux_mode") or "—"),
+        chip(
+            "psi_bry",
+            "yes" if pinfo.get("psi_bry_cost") else ("no" if pinfo.get("psi_bry_cost") is False else "—"),
+            tone="ok" if pinfo.get("psi_bry_cost") else ("warn" if pinfo.get("psi_bry_cost") is False else ""),
+        ),
+        chip("psi_bry_mode", pinfo.get("psi_bry_mode") or "—"),
+        chip("status", pinfo.get("status") or "—", tone=ui_kit.planner_status_tone(pinfo.get("status"))),
+        chip("knots", pinfo.get("n_knots")),
+        chip("mutuals", pinfo.get("circuit_dynamics_mutuals") or "—"),
+    ]
+    children.append(
+        ui_kit.section(
+            "Honesty labels (Path B0–B4)",
+            "Certify YELLOW if Picard / isoflux / ψ_bry soft-skipped.",
+            html.Div(
+                [
+                    html.Div(honesty, className="compare-chip-row mb-2"),
+                    html.P(pinfo.get("detail") or "—", className="small text-muted mb-0"),
+                ]
+            ),
+        )
+    )
+
+    hashes = pinfo.get("authority_hashes") or {}
+    hash_chips = [
+        chip(k, v or "—")
+        for k, v in hashes.items()
+        if v or k in ("planner_authority", "coil_limits")
+    ]
+    hash_chips.extend(
+        [
+            chip("limits", pinfo.get("limits_status") or "—"),
+            chip("policy", pinfo.get("limit_policy") or "—"),
+            chip("margin", pinfo.get("margin_factor")),
+            chip("citation", (str(pinfo.get("citation") or "—")[:48])),
+        ]
+    )
+    children.append(
+        ui_kit.section(
+            "Authority hashes & limits policy",
+            "SHA-256 prefixes of snapshotted JSON under inputs/ — never invents Imax/Vmax.",
+            html.Div(
+                [
+                    html.Div(hash_chips, className="compare-chip-row mb-2"),
+                    html.P(pinfo.get("edit_hint") or "", className="small text-muted mb-0"),
+                ]
+            ),
+        )
+    )
+
+    gate_chips = [
+        chip("rms_V", pinfo.get("residual_rms_mean_V")),
+        chip("rms_meas_V", pinfo.get("residual_rms_mean_measured_V")),
+        chip("isoflux_rms", pinfo.get("isoflux_rms_mean")),
+        chip("xpoint_B_rms", pinfo.get("xpoint_B_rms_mean")),
+        chip("psi_bry_rms", pinfo.get("psi_bry_rms_mean")),
+        chip(
+            "V_viol",
+            pinfo.get("n_voltage_violations_raw"),
+            tone="fail" if (pinfo.get("n_voltage_violations_raw") or 0) else "",
+        ),
+    ]
+    children.append(
+        ui_kit.section(
+            "Residual KPIs (ΔV / shape)",
+            "Voltage RMS vs measured/ohmic; shape RMS when isoflux/ψ_bry sensors ran.",
+            html.Div(gate_chips, className="compare-chip-row mb-0"),
+        )
+    )
+
+    resid_rows = pinfo.get("residual_rows") or []
+    if resid_rows:
+        headers = ["circuit", "drive_label", "rms_V", "mae_V", "max_abs_V", "n"]
+        body_rows = []
+        for r in resid_rows:
+            body_rows.append(
+                html.Tr([html.Td(str(r.get(h, "—")), className="small") for h in headers])
+            )
+        children.append(
+            ui_kit.section(
+                "ΔV vs measured / ohmic voltages",
+                "Per-circuit planning residual (plan − obs).",
+                dbc.Table(
+                    [
+                        html.Thead(html.Tr([html.Th(h) for h in headers])),
+                        html.Tbody(body_rows),
+                    ],
+                    bordered=False,
+                    hover=True,
+                    size="sm",
+                    responsive=True,
+                    className="fg-scorecard",
+                ),
+            )
+        )
+
+    plot_children: List[Any] = []
+    if pinfo.get("plot_i_rel") and art.safe_resolve_under(run_dir, str(pinfo["plot_i_rel"])):
+        plot_children.append(
+            html.Img(
+                src=art.file_url(shot, str(pinfo["plot_i_rel"])),
+                className="img-fluid mb-3",
+                style={"maxHeight": "420px"},
+                alt="Planner current residual",
+            )
+        )
+    if pinfo.get("plot_rel") and art.safe_resolve_under(run_dir, str(pinfo["plot_rel"])):
+        plot_children.append(
+            html.Img(
+                src=art.file_url(shot, str(pinfo["plot_rel"])),
+                className="img-fluid",
+                style={"maxHeight": "420px"},
+                alt="Planner voltage residual",
+            )
+        )
+    if plot_children:
+        children.append(
+            ui_kit.section(
+                "Planned vs measured I / V",
+                "Currents from pf_currents.csv; voltages may be measured or ohmic_synthetic_IxR.",
+                html.Div(plot_children),
+            )
+        )
+
+    rl = pinfo.get("rl_circuits") or {}
+    if rl:
+        rl_rows = []
+        for name, vals in rl.items():
+            rl_rows.append(
+                html.Tr(
+                    [
+                        html.Td(str(name), className="small"),
+                        html.Td(str(vals.get("R_ohm")), className="small"),
+                        html.Td(str(vals.get("L_henry")), className="small"),
+                    ]
+                )
+            )
+        children.append(
+            ui_kit.section(
+                "Cited circuit R / L",
+                "From circuit_dynamics_authority snapshot (active coils only).",
+                dbc.Table(
+                    [
+                        html.Thead(html.Tr([html.Th(h) for h in ("circuit", "R_ohm", "L_henry")])),
+                        html.Tbody(rl_rows),
+                    ],
+                    bordered=False,
+                    hover=True,
+                    size="sm",
+                    responsive=True,
+                    className="fg-scorecard",
+                ),
+            )
+        )
+
+    st_chips = [
+        chip(
+            "present",
+            "yes" if pinfo.get("shape_targets_present") else "no",
+            tone="ok" if pinfo.get("shape_targets_present") else "warn",
+        ),
+        chip("status", pinfo.get("shape_targets_status") or "—"),
+        chip("LCFS knots", pinfo.get("shape_targets_n_lcfs")),
+    ]
+    scalars = pinfo.get("shape_targets_found_scalars") or []
+    st_body: List[Any] = [
+        html.Div(st_chips, className="compare-chip-row mb-2"),
+        html.P(
+            "Feeds vacuum-coil Green's isoflux when enable_isoflux and LCFS/x-points exist.",
+            className="small text-muted mb-2",
+        ),
+    ]
+    if scalars:
+        st_body.append(
+            html.P(
+                "scalars: " + ", ".join(str(s) for s in scalars[:24]),
+                className="small mb-2",
+            )
+        )
+    if pinfo.get("shape_rel") and art.safe_resolve_under(run_dir, str(pinfo["shape_rel"])):
+        st_body.append(
+            html.A(
+                "shape_targets.json",
+                href=art.file_url(shot, str(pinfo["shape_rel"])),
+                target="_blank",
+                className="compare-file-chip",
+            )
+        )
+    children.append(
+        ui_kit.section(
+            "Shape targets (Path B1)",
+            "EFIT++ archive LCFS / scalars — never invented.",
+            html.Div(st_body),
+        )
+    )
+
+    iso_chips = [
+        chip(
+            "used",
+            "yes" if pinfo.get("isoflux_cost") else "no",
+            tone="ok" if pinfo.get("isoflux_cost") else "warn",
+        ),
+        chip("mode", pinfo.get("isoflux_mode") or "—"),
+        chip("status", pinfo.get("isoflux_status") or "—"),
+        chip("isoflux_rms", pinfo.get("isoflux_rms_mean")),
+        chip("xpoint_B_rms", pinfo.get("xpoint_B_rms_mean")),
+        chip("psi_bry_rms", pinfo.get("psi_bry_rms_mean")),
+    ]
+    iso_links: List[Any] = []
+    iso_rel = "07_planner/isoflux_residual.json"
+    if art.safe_resolve_under(run_dir, iso_rel):
+        iso_links.append(
+            html.A(
+                "isoflux_residual.json",
+                href=art.file_url(shot, iso_rel),
+                target="_blank",
+                className="compare-file-chip",
+            )
+        )
+    children.append(
+        ui_kit.section(
+            "Isoflux / x-point B / ψ_bry (Path B2–B4)",
+            "Vacuum-coil Green's; plasma offsets when Picard succeeds.",
+            html.Div(
+                [
+                    html.Div(iso_chips, className="compare-chip-row mb-2"),
+                    html.Div(iso_links) if iso_links else html.Span(),
+                ]
+            ),
+        )
+    )
+
+    inv = pinfo.get("plasma_inventory") or {}
+    pb = pinfo.get("plasma_psi_bry") or {}
+    plasma_chips = [
+        chip("Ip", "yes" if inv.get("ip_present") else "no", tone="ok" if inv.get("ip_present") else "warn"),
+        chip("profile_traj", inv.get("profile_trajectory_status") or "—"),
+        chip("fit", inv.get("profile_fit_mode_used") or "—"),
+        chip("psi_bry", "yes" if (pb.get("used") or pinfo.get("psi_bry_cost")) else "no"),
+        chip("psi_mode", pb.get("mode") or pinfo.get("psi_bry_mode") or "—"),
+        chip("psi_status", pb.get("status") or pinfo.get("psi_bry_status") or "—"),
+    ]
+    plasma_links: List[Any] = []
+    if pinfo.get("plasma_rel") and art.safe_resolve_under(run_dir, str(pinfo["plasma_rel"])):
+        plasma_links.append(
+            html.A(
+                "plasma_scalars.json",
+                href=art.file_url(shot, str(pinfo["plasma_rel"])),
+                target="_blank",
+                className="compare-file-chip",
+            )
+        )
+    children.append(
+        ui_kit.section(
+            "Plasma scalars / ψ_bry (Path B4)",
+            "Ip + profile_trajectory inventory; Ejima only when Rp+L_I cited.",
+            html.Div(
+                [
+                    html.Div(plasma_chips, className="compare-chip-row mb-2"),
+                    html.P(str(pb.get("note") or ""), className="small text-muted mb-2")
+                    if pb.get("note")
+                    else html.Span(),
+                    html.Div(plasma_links) if plasma_links else html.Span(),
+                ]
+            ),
+        )
+    )
+
+    pic_chips = [
+        chip(
+            "used",
+            "yes" if pinfo.get("picard") else "no",
+            tone="ok" if pinfo.get("picard") else "warn",
+        ),
+        chip("mode", pinfo.get("picard_mode") or "—"),
+        chip("status", pinfo.get("picard_status") or "—"),
+    ]
+    pic_body: List[Any] = [html.Div(pic_chips, className="compare-chip-row mb-2")]
+    hist = pinfo.get("picard_history") or []
+    if hist:
+        hrows = []
+        for h in hist:
+            if not isinstance(h, dict):
+                continue
+            hrows.append(
+                html.Tr(
+                    [
+                        html.Td(str(h.get("outer", h.get("knot", "—"))), className="small"),
+                        html.Td(str(h.get("n_gs_ok", h.get("status", "—"))), className="small"),
+                        html.Td(str(h.get("n_gs_fail", h.get("error", "—"))), className="small"),
+                        html.Td(str(h.get("profile_source", "—")), className="small"),
+                        html.Td(str(h.get("cost_final", "—")), className="small"),
+                    ]
+                )
+            )
+        if hrows:
+            pic_body.append(
+                dbc.Table(
+                    [
+                        html.Thead(
+                            html.Tr(
+                                [
+                                    html.Th(h)
+                                    for h in ("outer/knot", "gs_ok/status", "gs_fail/err", "profile", "cost")
+                                ]
+                            )
+                        ),
+                        html.Tbody(hrows),
+                    ],
+                    bordered=False,
+                    hover=True,
+                    size="sm",
+                    responsive=True,
+                    className="fg-scorecard mb-2",
+                )
+            )
+    if pinfo.get("picard_rel") and art.safe_resolve_under(run_dir, str(pinfo["picard_rel"])):
+        pic_body.append(
+            html.A(
+                "picard.json",
+                href=art.file_url(shot, str(pinfo["picard_rel"])),
+                target="_blank",
+                className="compare-file-chip",
+            )
+        )
+    children.append(
+        ui_kit.section(
+            "Picard outer loop (Path B3)",
+            "FreeGSNKE forward GS → freeze plasma ψ/B → re-QP.",
+            html.Div(pic_body),
+        )
+    )
+
+    gif_rels = pinfo.get("gif_rels") or []
+    if gif_rels:
+        gif_nodes = []
+        for rel in gif_rels[:4]:
+            if art.safe_resolve_under(run_dir, str(rel)):
+                gif_nodes.append(
+                    html.Img(
+                        src=art.file_url(shot, str(rel)),
+                        className="img-fluid me-2 mb-2",
+                        style={"maxHeight": "180px"},
+                        alt=str(rel),
+                    )
+                )
+        if gif_nodes:
+            children.append(
+                ui_kit.section(
+                    "Equilibria GIFs (reconstruction context)",
+                    "Inverse/forward/evolutive presentation GIFs — not Picard knot exports "
+                    "(planner does not write knot GIFs yet).",
+                    html.Div(gif_nodes),
+                )
+            )
+
+    pl_links: List[Any] = []
+    for rel, label in (
+        (pinfo.get("plan_rel"), "PLANNER.json"),
+        ("07_planner/PLANNER.md", "PLANNER.md"),
+        (pinfo.get("resid_rel"), "residual summary"),
+        ("07_planner/planning_residual_timeseries.csv", "residual timeseries"),
+        (pinfo.get("plot_i_rel"), "ΔI plot"),
+        (pinfo.get("plot_rel"), "ΔV plot"),
+        ("07_planner/planned_currents.csv", "planned I"),
+        ("07_planner/planned_voltages.csv", "planned V"),
+        (pinfo.get("shape_rel"), "shape_targets"),
+        ("07_planner/isoflux_residual.json", "isoflux residual"),
+        ("07_planner/picard.json", "picard"),
+        ("07_planner/plasma_scalars.json", "plasma scalars"),
+        (pinfo.get("limits_rel"), "coil_limits"),
+        (pinfo.get("dyn_rel"), "circuit R/L"),
+        (pinfo.get("auth_rel"), "planner_authority"),
+    ):
+        if not rel:
+            continue
+        if art.safe_resolve_under(run_dir, str(rel)):
+            pl_links.append(
+                html.A(
+                    label,
+                    href=art.file_url(shot, str(rel)),
+                    target="_blank",
+                    className="compare-file-chip",
+                )
+            )
+    if pl_links:
+        children.append(
+            ui_kit.section(
+                "Artifacts",
+                "Open under 07_planner/ and inputs/.",
+                html.Div(pl_links, className="compare-file-chip-row"),
+            )
+        )
+
+    lims = pinfo.get("limitations") or []
+    if lims:
+        children.append(
+            ui_kit.section(
+                "Limitations (from PLANNER.json)",
+                "Honest Path B caveats — passives still awaiting resistivity authority.",
+                html.Ul([html.Li(str(x), className="small") for x in lims], className="mb-0"),
+            )
+        )
+
+    return html.Div(children)
 
 def residuals_panel(shot: int, run_dir: Path) -> Any:
     html, dcc, dbc = _require()
@@ -1182,26 +1650,16 @@ def auth_panel(shot: int, run_dir: Path) -> Any:
                     className="compare-file-chip",
                 )
             )
-    plot_body: Any = None
-    if pinfo.get("plot_rel") and art.safe_resolve_under(run_dir, str(pinfo["plot_rel"])):
-        plot_body = html.Img(
-            src=art.file_url(shot, str(pinfo["plot_rel"])),
-            className="img-fluid mt-2",
-            style={"maxHeight": "360px"},
-            alt="Planner voltage residual",
-        )
     children.append(
         ui_kit.section(
-            "Feedforward planner (ADR-004 Phase 2)",
-            "GSPulse-style trajectory QP under cited coil limits — default off; never invents Imax/Vmax. "
-            "Residuals vs measured voltages; P3/P6 may be ohmic_synthetic_IxR.",
+            "Feedforward planner (ADR-004)",
+            "Full honesty labels, ΔV table, shape inventory, and isoflux residuals live on the Planner tab. "
+            "GSPulse-method Python QP — never invents Imax/Vmax.",
             html.Div(
                 [
                     html.Div(pl_chips, className="compare-chip-row mb-2"),
                     html.P(pinfo.get("detail") or "—", className="small text-muted mb-2"),
-                    html.P(pinfo.get("edit_hint") or "", className="small text-muted mb-2"),
                     html.Div(pl_links, className="compare-file-chip-row") if pl_links else None,
-                    plot_body,
                 ]
             ),
         )
@@ -1623,6 +2081,197 @@ def _compare_residual_chips(run_dir: Optional[Path]) -> Any:
     )
 
 
+def _compare_planner_chips(pinfo: Dict[str, Any]) -> Any:
+    """Path B6-full: compact planner KPIs for Compare A|B."""
+    html, _, _ = _require()
+    if not pinfo.get("present") and not pinfo.get("auth_rel"):
+        return html.P("No planner products.", className="text-muted small mb-0")
+    return html.Div(
+        [
+            chip(
+                "status",
+                pinfo.get("status") or "—",
+                tone=ui_kit.planner_status_tone(pinfo.get("status")),
+            ),
+            chip("knots", pinfo.get("n_knots")),
+            chip("rms_V", pinfo.get("residual_rms_mean_measured_V") or pinfo.get("residual_rms_mean_V")),
+            chip(
+                "V_viol",
+                pinfo.get("n_voltage_violations_raw"),
+                tone="fail" if (pinfo.get("n_voltage_violations_raw") or 0) else "",
+            ),
+            chip(
+                "picard",
+                "yes" if pinfo.get("picard") is True else ("no" if pinfo.get("picard") is False else "—"),
+                tone="ok" if pinfo.get("picard") is True else ("warn" if pinfo.get("picard") is False else ""),
+            ),
+            chip("picard_st", pinfo.get("picard_status") or "—"),
+            chip(
+                "isoflux",
+                "yes" if pinfo.get("isoflux_cost") is True else ("no" if pinfo.get("isoflux_cost") is False else "—"),
+                tone="ok" if pinfo.get("isoflux_cost") is True else ("warn" if pinfo.get("isoflux_cost") is False else ""),
+            ),
+            chip("isoflux_rms", pinfo.get("isoflux_rms_mean")),
+            chip("psi_bry_rms", pinfo.get("psi_bry_rms_mean")),
+            chip("method", pinfo.get("method") or "—"),
+        ],
+        className="compare-chip-row",
+    )
+
+
+def _compare_planner_delta_table(pinfo: Dict[str, Any]) -> Any:
+    html, _, dbc = _require()
+    rows = pinfo.get("residual_rows") or []
+    if not rows:
+        return html.P("No ΔV residual CSV.", className="text-muted small mb-0")
+    headers = ["circuit", "drive_label", "rms_V", "mae_V", "max_abs_V", "n"]
+    body = [
+        html.Tr([html.Td(str(r.get(h, "—")), className="small") for h in headers])
+        for r in rows[:16]
+        if isinstance(r, dict)
+    ]
+    return dbc.Table(
+        [
+            html.Thead(html.Tr([html.Th(h) for h in headers])),
+            html.Tbody(body),
+        ],
+        bordered=False,
+        hover=True,
+        size="sm",
+        responsive=True,
+        className="fg-scorecard",
+    )
+
+
+def _compare_planner_plot_paths(run_dir: Optional[Path], pinfo: Dict[str, Any]) -> List[Path]:
+    if run_dir is None:
+        return []
+    out: List[Path] = []
+    for rel in (pinfo.get("plot_i_rel"), pinfo.get("plot_rel")):
+        if not rel:
+            continue
+        resolved = art.safe_resolve_under(Path(run_dir), str(rel))
+        if resolved is not None and resolved.is_file():
+            out.append(resolved)
+    return out
+
+
+def _compare_planner_body(
+    shot_a: Optional[int],
+    run_a: Optional[Path],
+    shot_b: Optional[int],
+    run_b: Optional[Path],
+    *,
+    a_ok: bool,
+    b_ok: bool,
+    status_a: Any,
+    status_b: Any,
+) -> tuple[Any, int]:
+    """A|B planner residuals (KPIs, ΔV table, I/V plots). Returns (body, n_plot_pairs)."""
+    html, _, dbc = _require()
+    pa = art.load_planner_info(Path(run_a)) if a_ok and run_a is not None else {}
+    pb = art.load_planner_info(Path(run_b)) if b_ok and run_b is not None else {}
+    plots_a = _compare_planner_plot_paths(run_a, pa) if a_ok else []
+    plots_b = _compare_planner_plot_paths(run_b, pb) if b_ok else []
+    n_pairs = len(art.pair_paths_by_name(plots_a, plots_b)) if (a_ok and b_ok) else 0
+
+    if a_ok and b_ok:
+        body = html.Div(
+            [
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                _compare_column_header("Shot A", shot_a, True, status=status_a),
+                                _compare_planner_chips(pa),
+                            ],
+                            md=6,
+                        ),
+                        dbc.Col(
+                            [
+                                _compare_column_header("Shot B", shot_b, True, status=status_b),
+                                _compare_planner_chips(pb),
+                            ],
+                            md=6,
+                        ),
+                    ],
+                    className="g-3 mb-2",
+                ),
+                html.Div("ΔV residual summary", className="compare-subhead"),
+                dbc.Row(
+                    [
+                        dbc.Col(_compare_planner_delta_table(pa), md=6),
+                        dbc.Col(_compare_planner_delta_table(pb), md=6),
+                    ],
+                    className="g-3 mb-2",
+                ),
+                html.Div("Planned vs measured I / V", className="compare-subhead"),
+                _compare_paired_gallery(
+                    shot_a,
+                    run_a,
+                    plots_a,
+                    shot_b,
+                    run_b,
+                    plots_b,
+                    empty="No planner residual plots on either side.",
+                ),
+            ]
+        )
+    else:
+        body = dbc.Row(
+            [
+                dbc.Col(
+                    [
+                        _compare_column_header("Shot A", shot_a, a_ok, status=status_a),
+                        _compare_side_empty(shot_a, label="Shot A")
+                        if not a_ok
+                        else html.Div(
+                            [
+                                _compare_planner_chips(pa),
+                                html.Div("ΔV", className="compare-subhead"),
+                                _compare_planner_delta_table(pa),
+                                media_gallery(
+                                    int(shot_a),
+                                    plots_a[:_MAX_GALLERY],
+                                    Path(run_a),
+                                    "No planner plots for A.",
+                                )
+                                if plots_a
+                                else html.P("No planner plots for A.", className="text-muted small"),
+                            ]
+                        ),
+                    ],
+                    md=6,
+                ),
+                dbc.Col(
+                    [
+                        _compare_column_header("Shot B", shot_b, b_ok, status=status_b),
+                        _compare_side_empty(shot_b, label="Shot B")
+                        if not b_ok
+                        else html.Div(
+                            [
+                                _compare_planner_chips(pb),
+                                html.Div("ΔV", className="compare-subhead"),
+                                _compare_planner_delta_table(pb),
+                                media_gallery(
+                                    int(shot_b),
+                                    plots_b[:_MAX_GALLERY],
+                                    Path(run_b),
+                                    "No planner plots for B.",
+                                )
+                                if plots_b
+                                else html.P("No planner plots for B.", className="text-muted small"),
+                            ]
+                        ),
+                    ],
+                    md=6,
+                ),
+            ],
+            className="g-3",
+        )
+    return body, n_pairs
+
+
 def _compare_section(title: str, note: str, body: Any, *, meta: Optional[str] = None) -> Any:
     html, _, _ = _require()
     head_kids: List[Any] = [html.H3(title, className="compare-section-title")]
@@ -1817,6 +2466,17 @@ def compare_detail(
 
     status_a = (card.get("a") or {}).get("status") if a_ok else None
     status_b = (card.get("b") or {}).get("status") if b_ok else None
+
+    planner_body, n_planner_pairs = _compare_planner_body(
+        shot_a,
+        run_a,
+        shot_b,
+        run_b,
+        a_ok=a_ok,
+        b_ok=b_ok,
+        status_a=status_a,
+        status_b=status_b,
+    )
 
     if a_ok and b_ok:
         measured_body: Any = html.Div(
@@ -2042,6 +2702,12 @@ def compare_detail(
                 meta=f"{n_resid_pairs} plot pair(s)" if (a_ok and b_ok) else None,
             ),
             _compare_section(
+                "Planner",
+                "Path B GSPulse-method A|B — ΔV / ΔI residuals, Picard/isoflux flags (not a cross-shot replan).",
+                planner_body,
+                meta=f"{n_planner_pairs} plot pair(s)" if (a_ok and b_ok) else None,
+            ),
+            _compare_section(
                 "Equilibria",
                 "Inverse / forward / evolutive GIFs aligned by filename.",
                 gifs_body,
@@ -2071,8 +2737,8 @@ def compare_panel(
         [
             tab_banner(
                 "Compare two shots",
-                "Browse-only. Basename-aligned KPIs, Level-2 plots, residuals, and GIFs from existing "
-                "SHOT/<N>/ folders. Does not download, reconstruct, or invent a common timebase.",
+                "Browse-only. Basename-aligned KPIs, Level-2 plots, residuals, planner ΔI/ΔV, and GIFs "
+                "from existing SHOT/<N>/ folders. Does not download, reconstruct, or invent a common timebase.",
             ),
             html.Div(
                 [
@@ -2182,6 +2848,7 @@ TAB_DEFS = (
     ("overview", "Overview"),
     ("level2", "Level-2"),
     ("residuals", "Residuals"),
+    ("planner", "Planner"),
     ("compare", "Compare"),
     ("efit", "EFIT"),
     ("gifs", "Equilibria"),
@@ -2194,10 +2861,11 @@ TAB_META = {
     "level2": "Family TOC, calibration-await table, on-demand plots/CSV.",
     "measured": "Family TOC, calibration-await table, on-demand plots/CSV.",
     "residuals": "Contract residuals sorted by RMS (worst first).",
-    "compare": "Browse-only A|B console — basename-aligned KPIs, Level-2, residuals, and GIFs.",
+    "planner": "GSPulse-method feedforward (Path B6-full): I/V, ΔV/shape RMS, Picard, ψ_bry, authority hashes.",
+    "compare": "Browse-only A|B — KPIs, Level-2, residuals, planner ΔI/ΔV, and GIFs.",
     "efit": "Archive shape scorecard first (ADR-002) — not a live EFIT solve.",
     "gifs": "Inverse / forward / evolutive equilibrium GIFs with mode badges.",
-    "auth": "Authority matrix + profile trajectory + planner (ADR-004) — never invent metrology.",
+    "auth": "Authority matrix + profile trajectory + planner snapshot — never invent metrology.",
     "files": "Grouped, filterable artifact downloads + copy path.",
 }
 
@@ -2238,6 +2906,8 @@ def fill_one_tab(tab_id: Optional[str], shot: Optional[int], run_dir: Optional[P
         return level2_panel(shot_i, run_dir)
     if tid == "residuals":
         return residuals_panel(shot_i, run_dir)
+    if tid == "planner":
+        return planner_panel(shot_i, run_dir)
     if tid == "efit":
         return efit_panel(shot_i, run_dir)
     if tid == "gifs":

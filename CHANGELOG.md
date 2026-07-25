@@ -1,3 +1,8 @@
+## 11.11.0 — ADR-004 Phase 2b GSPulse-method planner (Path B)
+- Path B0–B4 + B6-full + B7: honesty labels, EFIT shape targets, vacuum isoflux / x-point B, Picard plasma freeze, ψ_bry (Ejima only when Rp+L_I cited), Planner tab + Compare A|B ΔI/ΔV.
+- Certify **YELLOW** when Picard/isoflux soft-skipped; passives (B5) still blocked on classic-MAST `passive_resistivity`.
+- ADR-004 Phase 2b + README honesty; products under `07_planner/` labeled `method=gspulse_python` (not MATLAB/MEQ GSPulse). Version **11.11.0**.
+
 ## 11.10.0 — Shape scorecard from arXiv:2407.12432 metric family
 - `04_efit_compare/shape_scorecard.{json,csv}`: magnetic axis, X-point, midplane Rin/Rout, LCFS mean NN distance.
 - Declared `psi_convention=Wb_per_2pi` and `compare_mode=reconstruction_vs_archive` (honest vs Pentland forward-replay).

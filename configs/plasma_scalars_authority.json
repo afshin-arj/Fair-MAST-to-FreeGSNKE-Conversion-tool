@@ -1,0 +1,36 @@
+{
+  "authority_name": "plasma_scalars",
+  "authority_version": "1.0.0",
+  "enabled": true,
+  "require": false,
+  "source": "fairmast_level2_equilibrium",
+  "equilibrium_group": "equilibrium",
+  "psi_convention": "Wb_per_radian_honest_label",
+  "mode_priority": [
+    "archive_psi_bry",
+    "archive_vloop_integrate",
+    "ejima_cited_Rp_LI"
+  ],
+  "psi_bry_vars": [
+    "psi_boundary",
+    "psi_bry",
+    "psibry",
+    "psi_bound"
+  ],
+  "vloop_vars": [
+    "vloop_dynamic",
+    "vloop",
+    "loop_voltage",
+    "Vloop"
+  ],
+  "ip_source": "inputs/ip.csv",
+  "profile_trajectory_relpath": "inputs/profile_trajectory_authority/profile_trajectory.json",
+  "ejima": {
+    "status": "awaiting_authority",
+    "citation": null,
+    "R_p_ohm": null,
+    "L_I_henry": null,
+    "notes": "Ejima mode requires cited plasma resistance R_p and unnormalized internal inductance L_I (H). Never invent Rp or convert EFIT li→L_I silently. Until cited, mode soft-skips."
+  },
+  "notes": "ADR-004 Path B4. Declares ψ_bry target mode for GSPulse-style absolute mean-flux cost. Prefer archive ψ_bry or integrate archive Vloop; Ejima only when ejima.status=cited with R_p and L_I. Never invents metrology."
+}

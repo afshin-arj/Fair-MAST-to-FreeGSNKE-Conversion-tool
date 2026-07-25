@@ -96,12 +96,16 @@ class AppConfig:
     # ADR-004 Phase 2: GSPulse-style planner (default off; hard-gated by coil_limits).
     execute_planner: bool = False
     planner_authority_path: Optional[str] = None
+    plasma_scalars_authority_path: Optional[str] = None
     coil_limits_authority_path: Optional[str] = None
     # Optional cited PF R/L table (Solenoid may be FreeGSNKE-filled).
     circuit_dynamics_authority_path: Optional[str] = None
     # ADR-004: EFIT++ → profile_trajectory (default.json enables when path set).
     profile_trajectory_authority_path: Optional[str] = None
     build_profile_trajectory: bool = False
+    # ADR-004 Path B1: EFIT++ shape targets for future isoflux/Picard.
+    shape_targets_authority_path: Optional[str] = None
+    build_shape_targets: bool = False
     # Hard wall-clock limit for each FreeGSNKE script (seconds). None disables.
     # Protects the pipeline from FreeGSNKE's uncapped residual-resize hang.
     freegsnke_script_timeout_s: Optional[float] = 1200.0
@@ -160,8 +164,21 @@ class AppConfig:
                 "build_profile_trajectory=true requires profile_trajectory_authority_path "
                 "(ADR-004 fail-closed)"
             )
-        # Ensure equilibrium group is downloaded when building profile trajectory
+        shape_targets_authority_path = (
+            str(obj["shape_targets_authority_path"])
+            if obj.get("shape_targets_authority_path")
+            else None
+        )
+        build_shape_targets = bool(obj.get("build_shape_targets", False))
+        if build_shape_targets and not shape_targets_authority_path:
+            raise ValueError(
+                "build_shape_targets=true requires shape_targets_authority_path "
+                "(ADR-004 Path B1 fail-closed)"
+            )
+        # Ensure equilibrium group is downloaded when building profile / shape targets
         if build_profile_trajectory and "equilibrium" not in optional_groups:
+            optional_groups = list(optional_groups) + ["equilibrium"]
+        if build_shape_targets and "equilibrium" not in optional_groups:
             optional_groups = list(optional_groups) + ["equilibrium"]
         passive_resistivity_path = (
             str(obj["passive_resistivity_path"]) if obj.get("passive_resistivity_path") else None
@@ -222,6 +239,11 @@ class AppConfig:
         execute_planner = bool(obj.get("execute_planner", False))
         planner_authority_path = (
             str(obj["planner_authority_path"]) if obj.get("planner_authority_path") else None
+        )
+        plasma_scalars_authority_path = (
+            str(obj["plasma_scalars_authority_path"])
+            if obj.get("plasma_scalars_authority_path")
+            else None
         )
         coil_limits_authority_path = (
             str(obj["coil_limits_authority_path"]) if obj.get("coil_limits_authority_path") else None
@@ -307,10 +329,13 @@ class AppConfig:
             efit_compare_authority_path=efit_compare_authority_path,
             execute_planner=execute_planner,
             planner_authority_path=planner_authority_path,
+            plasma_scalars_authority_path=plasma_scalars_authority_path,
             coil_limits_authority_path=coil_limits_authority_path,
             circuit_dynamics_authority_path=circuit_dynamics_authority_path,
             profile_trajectory_authority_path=profile_trajectory_authority_path,
             build_profile_trajectory=build_profile_trajectory,
+            shape_targets_authority_path=shape_targets_authority_path,
+            build_shape_targets=build_shape_targets,
             freegsnke_script_timeout_s=freegsnke_script_timeout_s,
         )
 

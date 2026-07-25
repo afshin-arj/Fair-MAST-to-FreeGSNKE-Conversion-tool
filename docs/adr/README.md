@@ -7,3 +7,4 @@ Short ADRs for Fair-MAST → FreeGSNKE. Status lifecycle: `proposed` → `accept
 | [ADR-001](001-optional-torax-downstream-coupling.md) | Optional FreeGSNKE → TORAX downstream coupling | accepted |
 | [ADR-002](002-fairmast-efit-compare.md) | FAIR-MAST EFIT++ archive compare (Windows-friendly) | accepted |
 | [ADR-003](003-reject-pyefit-windows-path.md) | Reject Py-EFIT / eqtools-as-solver / efit-ai on Windows MAST path | accepted |
+| [ADR-004](004-profile-trajectory-and-planner.md) | Profile trajectory + Python GSPulse-method planner (Phase 2b) | accepted |

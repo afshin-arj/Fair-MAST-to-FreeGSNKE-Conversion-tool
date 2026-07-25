@@ -10,7 +10,7 @@ This toolkit downloads [FAIR-MAST](https://github.com/ukaea/fair-mast) Level-2 d
 | **Machine** | Classic MAST (not MAST-U) |
 | **Solver** | [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke) only |
 | **EFIT insight** | Compare to archived FAIR-MAST EFIT++ (not a live EFIT++ / Py-EFIT / efit-ai run) |
-| **Version** | **11.10.0** |
+| **Version** | **11.11.0** |
 
 ```mermaid
 flowchart LR
@@ -116,6 +116,7 @@ flowchart TB
   subgraph score [Score & compare]
     MET["Contract residuals"]
     EFIT["EFIT++ archive compare"]
+    PLAN["Planner (GSPulse-method)"]
     PROV["manifest + provenance"]
   end
 
@@ -124,15 +125,17 @@ flowchart TB
   INV --> EVO
   INV --> MET
   FWD --> EFIT
+  EFIT --> PLAN
   MET --> PROV
   EVO --> PROV
   EFIT --> PROV
+  PLAN --> PROV
 ```
 
 | Path | Purpose |
 |------|---------|
 | **CLI** | `mast-freegsnke run --shot <N>` — shot-only automation |
-| **UI** | Live stages, Level-2 browser, residuals, EFIT, ZIP download |
+| **UI** | Live stages, Level-2, residuals, Planner, Compare, EFIT, ZIP |
 | **Cache** | `data_cache/shot_<N>/` — existing Zarr groups are **reused** (only missing groups sync) |
 
 ---
@@ -202,7 +205,8 @@ SHOT/30201/
 ├── 03_reconstruction/    scripts · metrics · presentation GIFs · evolutive
 ├── 04_efit_compare/      FreeGSNKE vs FAIR-MAST EFIT++ archive
 ├── 06_authorities/       snapshotted JSON + hashes
-├── inputs/               tooling CSVs + window + execution authority
+├── 07_planner/           GSPulse-method planned I/V + residuals (ADR-004)
+├── inputs/               tooling CSVs + window + execution / planner authorities
 ├── progress.json         live UI / CLI stage log
 └── manifest.json         full stage provenance
 ```
@@ -214,6 +218,7 @@ flowchart TB
   R --> M["02_measured_data/"]
   R --> C["03_reconstruction/"]
   R --> E["04_efit_compare/"]
+  R --> PL["07_planner/"]
   R --> A["06_authorities/"]
   R --> I["inputs/"]
   R --> P["manifest.json"]
@@ -234,6 +239,8 @@ Opens `http://127.0.0.1:8050` with:
 - **Overview** — KPIs + SUMMARY  
 - **Level-2** — diagnostic families (plots + CSV), collapsed by default  
 - **Residuals** — contract metrics + traces  
+- **Planner** — GSPulse-method feedforward (I/V, ΔV/shape RMS, Picard, authority hashes)  
+- **Compare** — browse-only A|B KPIs, Level-2, residuals, planner ΔI/ΔV, GIFs  
 - **EFIT** — archive compare scorecard  
 - **GIFs / Authorities / Files** — visuals, hashes, ZIP download  
 
@@ -254,6 +261,10 @@ Every binding choice is declared — not guessed.
 | `configs/diagnostic_contracts.json` | Residual scoring pairs |
 | `configs/diagnostic_calibration.json` | Optional V→T / V→Wb (empty until real factors exist) |
 | `execution_authority` | Grid, profiles, boundary, solver timebase |
+| `configs/planner_authority.json` | GSPulse-method QP weights, isoflux/Picard/ψ_bry toggles (ADR-004) |
+| `configs/coil_limits_authority.json` | Cited I/V boxes or `measured_peak_margin` (never invent ratings) |
+| `configs/circuit_dynamics_authority.json` | Cited PF/CS R/L (+ FreeGSNKE mutuals when available) |
+| `configs/shape_targets_authority.json` | EFIT++ archive LCFS / scalars for isoflux inventory |
 
 ```mermaid
 flowchart LR
@@ -274,9 +285,10 @@ flowchart LR
 - **Classic MAST only** (not MAST-U).
 - Measured voltages `p1/p2/p4/p5` drive Solenoid / P2 / P4 / P5. **P3/P6** have no usable public PF drive V → declared `from_current_ohmic` (`V=I×R`) only.
 - Limiter = FAIR-MAST `wall.zarr` EFIT limiter — **not** surveyed CAD vessel.
-- **No FreeGSNKE passives** until a cited resistivity authority exists (`pf_passive` geometry alone is not enough).
+- **No FreeGSNKE passives** until a cited classic-MAST resistivity authority exists (`pf_passive` geometry alone is not enough; do not copy MAST-U ρ).
 - EFIT tab = archive compare (ADR-002/003) — **not** a live EFIT++ / efit-ai / Py-EFIT solve on Windows.
 - Mirnov / saddle / omaha remain audit-only until calibration authority is populated.
+- **Planner** (`07_planner/`, ADR-004 Phase 2b) is a Python **GSPulse-method** feedforward stage — not upstream MATLAB/MEQ GSPulse, and **not** a replacement for FreeGSNKE inverse / forward / evolutive. Soft-skipped Picard / isoflux / ψ_bry → certify **YELLOW**. Ejima ψ_bry stays `awaiting_authority` until cited Rp + L_I exist. Never invents Imax/Vmax or vessel ρ.
 
 ---
 
@@ -285,7 +297,7 @@ flowchart LR
 | Doc | Topic |
 |-----|--------|
 | `AGENTS.md` | Project north star + agent roles |
-| `docs/` / ADRs | EFIT compare, TORAX export, Windows equilibrium stack |
+| `docs/adr/` | TORAX export, EFIT compare, Windows stack, profile trajectory + planner (ADR-004) |
 | [mastapp Level-2](https://mastapp.site/level2-data.html) | Upstream diagnostic groups |
 
 ---

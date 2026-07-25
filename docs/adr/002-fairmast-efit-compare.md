@@ -54,7 +54,7 @@ signals as reconstruction targets — confirming they are the open, citeable EFI
 | Soft-continue with synthetic EFIT fields | Invents metrology |
 | Leave experts to open MastApp manually | Fails “easy for fusion experts” goal |
 
-## Implementation status (v11.10.0)
+## Implementation status (v11.10.0+; planner Path B in ADR-004 / v11.11.0)
 
 | Piece | Status |
 |-------|--------|
@@ -67,7 +67,7 @@ signals as reconstruction targets — confirming they are the open, citeable EFI
 ## Related
 
 - [ADR-003](003-reject-pyefit-windows-path.md) — Py-EFIT / efit-ai / eqtools-as-solver are **not** the Windows path; FreeGSNKE + this archive compare remain.
-- [ADR-004](004-profile-trajectory-and-planner.md) — EFIT++ → `profile_trajectory_authority` → FreeGSNKE evolutive; Phase-2 Python planner.
+- [ADR-004](004-profile-trajectory-and-planner.md) — EFIT++ → `profile_trajectory_authority` → FreeGSNKE evolutive; Phase 2b Python GSPulse-method planner (isoflux / Picard / ψ_bry; UI B6-full).
 
 ## References
 

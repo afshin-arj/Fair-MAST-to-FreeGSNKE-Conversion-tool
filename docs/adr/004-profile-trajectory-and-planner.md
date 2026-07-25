@@ -1,6 +1,6 @@
 # ADR-004: Profile trajectory authority + Python GSPulse-style planner
 
-- **Status:** accepted (Phase 1 shipped; Phase 2 v1 planner shipped, default off)
+- **Status:** accepted (Phase 1 shipped; Phase 2b GSPulse-method planner shipped)
 - **Date:** 2026-07-25
 - **Deciders:** project maintainers
 - **Depends-on:** AGENTS.md design laws; ADR-002 (EFIT++ archive); ADR-003 (no Py-EFIT path)
@@ -17,7 +17,7 @@ built from FAIR-MAST (`machine_authority/`), without inventing metrology.
 
 ADR-002 deferred “forward replay (EFIT currents+profiles → FreeGSNKE)” pending a **cited
 profile-coeff authority**. This ADR supplies that authority for evolutive drive (Phase 1) and
-defines a later planner stage (Phase 2).
+the feedforward planner stage (Phase 2 / Path B).
 
 ## Decision
 
@@ -40,34 +40,43 @@ defines a later planner stage (Phase 2).
    `(paxis, fvac, alpha_m, alpha_n)` at each step. Trajectory **overrides**
    `scale_paxis_with_ip` when both would apply; provenance records both.
 
-### Phase 2 (v1 shipped): Idea B — Python GSPulse-style planner
+### Phase 2 / Path B (shipped through 2b): Idea B — Python GSPulse-method planner
 
-1. Optional stage `planner` (config `execute_planner`, default **on** when coil_limits +
-   circuit_dynamics authorities are cited) solves a trajectory
-   optimization over the formed-plasma window:
+Products are labeled `method=gspulse_python` (not upstream MATLAB/MEQ GSPulse). Authority version
+`configs/planner_authority.json` **1.3.x** / method_version **v1.3**.
+
+1. Stage `planner` (`execute_planner`, default **on** when coil_limits + circuit_dynamics
+   are cited) solves a trajectory QP over the formed-plasma window:
    - cost: track measured PF currents + actuator effort + 1st/2nd derivative smoothness
-     (GSPulse cost vocabulary; full GS Picard isoflux deferred);
+     + optional vacuum-coil Green’s **isoflux** / x-point **B** + optional **ψ_bry**;
    - constraint: circuit dynamics \(L\dot{I}+R I = V\) with R/L from FreeGSNKE
-     `build_tokamak_R_and_M` (active block);
+     `build_tokamak_R_and_M` (active block; mutuals preferred when FreeGSNKE provides them);
    - box constraints from cited `coil_limits_authority`.
 2. **Hard gate:** `configs/coil_limits_authority.json` must cite either fixed plant
    I/V limits **or** a declared `measured_peak_margin` policy (user: margin_factor=1.2
    over peak |measured I/V| in the planner window). Empty / `awaiting_authority` →
    planner blocked; **never invent Imax/Vmax silently**.
 3. Outputs under `SHOT/<N>/07_planner/` (not `04_*` — that folder is EFIT compare):
-   planned I/V CSVs + planning residual vs measured `pf_voltages.csv`, with honest labels
-   for ohmic-synthetic P3/P6 channels. Dynamics voltages that still violate **fixed** cited
-   plant V bounds after projection are **fail-closed**. Under `measured_peak_margin`,
-   I boxes stay hard; V overshoot vs the 1.2× engineering envelope is reported as
-   `voltage_exceeds_measured_peak_margin` (loud, not silent) without inventing plant ratings.
-4. Planner does **not** replace shot-only FreeGSNKE reconstruction or evolutive forward drive.
-5. Passives excluded while `passive_resistivity` is `awaiting_authority`.
-6. `execute_planner=true` with `planner_authority.enabled=false` is a **blocking** error
-   (not a silent success).
-7. Cited PF + Central Solenoid R/L live in `configs/circuit_dynamics_authority.json`
-   (user MAST tables). Edit margin_factor / R/L JSON before a run to retune
-   (snapshotted into `inputs/`; no new happy-path prompts). `execute_planner` defaults
-   **on** once those authorities are cited.
+   planned I/V CSVs, ΔI / ΔV residual plots, shape_targets / isoflux / Picard / plasma_scalars
+   JSON, with honest labels for ohmic-synthetic P3/P6 channels. Dynamics voltages that still
+   violate **fixed** cited plant V bounds after projection are **fail-closed**. Under
+   `measured_peak_margin`, I boxes stay hard; V overshoot vs the 1.2× engineering envelope is
+   reported as `voltage_exceeds_measured_peak_margin` (loud, not silent).
+4. **Picard** (Path B3): optional outer loop — FreeGSNKE forward GS → freeze plasma ψ/B
+   offsets → re-QP. Soft-skip when GS/profile inputs missing (`require_picard=false`).
+5. **ψ_bry** (Path B4): archive boundary flux / Vloop integrate / Ejima only when **cited**
+   Rp + L_I exist; otherwise `awaiting_authority` — never invent plasma circuit parameters.
+6. Planner does **not** replace shot-only FreeGSNKE reconstruction or evolutive forward drive.
+7. Passives excluded while `passive_resistivity` is `awaiting_authority` (Path B5 **blocked** —
+   classic MAST vessel ρ must be cited; do not copy MAST-U).
+8. `execute_planner=true` with `planner_authority.enabled=false` is a **blocking** error.
+9. Certify is **YELLOW** when planner runs without successful isoflux and/or Picard (honesty gate).
+10. UI Path **B6-full**: dedicated **Planner** tab (I/V, residuals, Picard, ψ_bry, authority
+    hashes) + Compare A|B planner section; stage strip labels the `planner` stage.
+
+Cited PF + Central Solenoid R/L live in `configs/circuit_dynamics_authority.json`.
+Edit margin_factor / R/L / planner weights in JSON before a run (snapshotted into `inputs/`;
+no new happy-path prompts).
 
 ## Implementation status
 
@@ -76,34 +85,44 @@ defines a later planner stage (Phase 2).
 | Phase 1 profile trajectory | done |
 | Phase 2 coil_limits gate | done |
 | Phase 2 circuit dynamics R/L snapshot | done (FreeGSNKE extract) |
-| Phase 2 trajectory QP (numpy) | done (current-tracking v1) |
-| Phase 2 residual timeseries + ΔV plot | done |
-| Phase 2 UI (Overview / Authorities / Compare) | done |
+| Phase 2 trajectory QP (numpy) | done |
+| Phase 2 residual timeseries + ΔI/ΔV plots | done |
 | Phase 2 V-limit fail-closed + no PF extrapolation | done |
 | Phase 2 measured_peak_margin + user PF/CS R/L table | done |
 | Phase 2 execute_planner default on | done |
-| Phase 2 GS Picard isoflux cost | **not yet** (EFIT shape inventory only) |
-| Phase 2 passives in dynamics | blocked on passive_resistivity |
+| Path B0 honesty labels + certify YELLOW | done |
+| Path B1 shape_targets from EFIT++ archive | done |
+| Path B1b FreeGSNKE mutuals preferred | done |
+| Path B2 vacuum-coil Green’s isoflux / x-point B | done |
+| Path B3 Picard (forward GS freeze plasma offsets) | done (soft-skip) |
+| Path B4 ψ_bry / Vloop / Ejima (cited Rp+L_I only) | done (soft-skip) |
+| Path B5 passives in dynamics | **blocked** on classic-MAST `passive_resistivity` |
+| Path B6-thin Planner tab | done |
+| Path B6-full Planner + Compare A\|B residuals | done |
+| Path B7 this ADR Phase 2b + README honesty | done |
 
 ## Consequences
 
 **Positive**
 
 - Closes ADR-002’s profile-coeff gap for time-dependent FreeGSNKE profiles.
-- Keeps shot-only happy path (no new prompts); soft-skip when archive lacks fit inputs.
-- Phase 2 path is explicit and authority-gated.
+- Keeps shot-only happy path (no new prompts); soft-skip when archive lacks fit / shape / GS inputs.
+- Phase 2b path is explicit, authority-gated, and visible in Planner / Compare UI.
 
 **Negative / costs**
 
 - `scalar_bridge` is underdetermined vs full p′/FF′; labeled honestly in provenance.
-- Planner (Phase 2) needs cited coil limits before it can run.
+- Planner needs cited coil limits before it can run.
+- Soft-skipped Picard / isoflux / ψ_bry remain YELLOW for certify — not a silent “full GSPulse”.
+- Passives still absent until a citable classic-MAST ρ table exists.
 
 ## Out of scope
 
-- Cloning GSPulse or requiring Octave/MATLAB.
-- Inventing V→T, Green’s tables, coil limits, or p′/FF′.
-- Replacing FreeGSNKE evolutive with a planner in the happy path.
+- Cloning GSPulse or requiring Octave/MATLAB / MEQ.
+- Inventing V→T, Green’s tables, coil limits, vessel ρ, Rp, L_I, or p′/FF′.
+- Replacing FreeGSNKE inverse / forward / evolutive with a planner in the happy path.
 - Live EFIT++ / Py-EFIT (ADR-002/003).
+- Copying MAST-U passive resistivity onto classic MAST.
 
 ## References
 
@@ -111,3 +130,4 @@ defines a later planner stage (Phase 2).
   *Nucl. Fusion* 66 016047 (2026); arXiv:2506.21760
 - GSPulse public (reference only, not a dependency): https://github.com/jwai-cfs/GSPulse_public
 - ADR-002: FAIR-MAST EFIT++ archive compare
+- TokaMark (FAIR-MAST voltages as actuators; EFIT shape/flux as targets): arXiv:2602.10132

@@ -153,6 +153,44 @@ def certify_run_dir(
     elif (run_dir / "synthetic" / "synthetic_times.json").exists():
         report["warnings"].append("science_audit_missing")
 
+    # Path B0/B2: GSPulse-method planner incomplete (no Picard; isoflux soft-skip) → YELLOW
+    planner_json = run_dir / "07_planner" / "PLANNER.json"
+    if planner_json.is_file():
+        try:
+            pl = json.loads(planner_json.read_text(encoding="utf-8"))
+        except Exception:
+            pl = None
+        if isinstance(pl, dict):
+            report["checks"]["planner"] = {
+                "method": pl.get("method"),
+                "method_version": pl.get("method_version"),
+                "picard": pl.get("picard"),
+                "isoflux_cost": pl.get("isoflux_cost"),
+                "isoflux_mode": pl.get("isoflux_mode"),
+                "status": pl.get("status"),
+                "shape_targets_present": (pl.get("shape_targets_available") or {}).get(
+                    "present"
+                ),
+                "circuit_dynamics_mutuals": pl.get("circuit_dynamics_mutuals"),
+            }
+            if pl.get("method") == "gspulse_python":
+                if pl.get("picard") is False:
+                    report["warnings"].append(
+                        "planner_gspulse_python_incomplete:picard_not_wired"
+                    )
+                if pl.get("isoflux_cost") is False:
+                    report["warnings"].append(
+                        "planner_gspulse_python_incomplete:isoflux_not_wired"
+                    )
+            report["checks"]["planner"]["picard_mode"] = pl.get("picard_mode")
+            report["checks"]["planner"]["picard_status"] = pl.get("picard_status")
+            if (pl.get("circuit_dynamics_mutuals") or "").startswith("neglected"):
+                report["warnings"].append(
+                    "planner_circuit_mutuals_neglected_diagonal_only"
+                )
+    elif (run_dir / "inputs" / "planner_authority" / "planner_authority.json").is_file():
+        report["warnings"].append("planner_authority_present_but_PLANNER_json_missing")
+
     if report["blocking"]:
         report["tier"] = "RED"
         report["ok"] = False

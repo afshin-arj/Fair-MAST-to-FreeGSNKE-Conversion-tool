@@ -444,7 +444,7 @@ def create_app(
                         f"config {config_path.as_posix()}  ·  library {runs_dir.as_posix()}"
                     ),
                     html.Div(
-                        "Open = browse  ·  Reconstruct = pipeline  ·  / shot  ·  1–8 tabs  ·  r refresh  ·  "
+                        "Open = browse  ·  Reconstruct = pipeline  ·  / shot  ·  1–9 tabs  ·  r refresh  ·  "
                         "EFIT = archive (ADR-002)  ·  copy buttons = clipboard",
                         className="fg-footer-keys",
                     ),
@@ -478,7 +478,7 @@ def create_app(
                 window.__fgConsoleBound = true;
                 window.__fgPendingTab = null;
                 window.__fgPendingRefresh = false;
-                const tabs = ['overview','level2','residuals','compare','efit','gifs','auth','files'];
+                const tabs = ['overview','level2','residuals','planner','compare','efit','gifs','auth','files'];
                 document.addEventListener('keydown', function(e) {
                     const tag = (e.target && e.target.tagName) || '';
                     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target && e.target.isContentEditable)) {
@@ -492,7 +492,7 @@ def create_app(
                     if (e.key === 'r' || e.key === 'R') {
                         window.__fgPendingRefresh = true;
                     }
-                    if (e.key >= '1' && e.key <= '8') {
+                    if (e.key >= '1' && e.key <= '9') {
                         window.__fgPendingTab = tabs[parseInt(e.key, 10) - 1] || null;
                     }
                 });

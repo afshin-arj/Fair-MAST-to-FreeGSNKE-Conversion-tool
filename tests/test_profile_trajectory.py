@@ -225,5 +225,20 @@ def test_adr004_exists() -> None:
     assert p.exists()
     text = p.read_text(encoding="utf-8")
     assert "Phase 2" in text
+    assert "Phase 2b" in text
     assert "coil_limits_authority" in text
     assert "MATLAB" in text or "GSPulse" in text
+    assert "isoflux" in text.lower()
+    assert "Picard" in text or "picard" in text
+    assert "B6-full" in text or "B6" in text
+    assert "passive_resistivity" in text or "passives" in text.lower()
+    idx = (REPO / "docs" / "adr" / "README.md").read_text(encoding="utf-8")
+    assert "004-profile-trajectory-and-planner.md" in idx
+
+
+def test_readme_planner_honesty() -> None:
+    text = (REPO / "README.md").read_text(encoding="utf-8")
+    assert "07_planner" in text
+    assert "GSPulse-method" in text or "gspulse_python" in text
+    assert "Planner" in text
+    assert "YELLOW" in text or "never invent" in text.lower()

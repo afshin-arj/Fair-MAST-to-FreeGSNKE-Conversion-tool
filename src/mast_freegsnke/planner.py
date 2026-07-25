@@ -38,7 +38,7 @@ def _strict_bool(value: Any, name: str, *, default: Optional[bool] = None) -> bo
 @dataclass(frozen=True)
 class PlannerAuthority:
     authority_name: str = "planner"
-    authority_version: str = "1.0.0"
+    authority_version: str = "1.3.0"
     enabled: bool = False
     require: bool = False
     output_relpath: str = "07_planner"
@@ -48,6 +48,21 @@ class PlannerAuthority:
     weight_V: float = 1.0e-6
     weight_dI: float = 1.0e-2
     weight_d2I: float = 1.0e-3
+    # Path B2: vacuum-coil Green's isoflux / x-point B (soft-skip if no geometry)
+    enable_isoflux: bool = True
+    require_isoflux: bool = False
+    weight_isoflux: float = 10.0
+    weight_xpoint_B: float = 1.0
+    isoflux_ref_policy: str = "max_R"
+    isoflux_max_control_points: int = 32
+    # Path B3: Picard outer loop (forward GS → freeze plasma offsets → re-QP)
+    enable_picard: bool = True
+    require_picard: bool = False
+    max_picard_iterations: int = 2
+    # Path B4: absolute mean ψ_bry cost
+    enable_psi_bry: bool = True
+    require_psi_bry: bool = False
+    weight_psi_bry: float = 1.0
     max_qp_iterations: int = 40
     notes: str = ""
 
@@ -58,14 +73,40 @@ class PlannerAuthority:
             raise PlannerError("knot_policy must be linspace_window_inclusive (v1)")
         if not (2 <= int(self.n_knots) <= 500):
             raise PlannerError("n_knots must be in [2, 500]")
-        for name in ("weight_track_I", "weight_V", "weight_dI", "weight_d2I"):
+        for name in (
+            "weight_track_I",
+            "weight_V",
+            "weight_dI",
+            "weight_d2I",
+            "weight_isoflux",
+            "weight_xpoint_B",
+            "weight_psi_bry",
+        ):
             v = getattr(self, name)
             if not isinstance(v, (int, float)) or float(v) < 0:
                 raise PlannerError(f"{name} must be >= 0")
+        if self.isoflux_ref_policy not in {"max_R", "first_point"}:
+            raise PlannerError("isoflux_ref_policy must be max_R or first_point")
+        if not (2 <= int(self.isoflux_max_control_points) <= 512):
+            raise PlannerError("isoflux_max_control_points must be in [2, 512]")
         if not (1 <= int(self.max_qp_iterations) <= 500):
             raise PlannerError("max_qp_iterations must be in [1, 500]")
+        if not (0 <= int(self.max_picard_iterations) <= 20):
+            raise PlannerError("max_picard_iterations must be in [0, 20]")
         if not isinstance(self.enabled, bool) or not isinstance(self.require, bool):
             raise PlannerError("enabled/require must be bool")
+        if not isinstance(self.enable_isoflux, bool) or not isinstance(
+            self.require_isoflux, bool
+        ):
+            raise PlannerError("enable_isoflux/require_isoflux must be bool")
+        if not isinstance(self.enable_picard, bool) or not isinstance(
+            self.require_picard, bool
+        ):
+            raise PlannerError("enable_picard/require_picard must be bool")
+        if not isinstance(self.enable_psi_bry, bool) or not isinstance(
+            self.require_psi_bry, bool
+        ):
+            raise PlannerError("enable_psi_bry/require_psi_bry must be bool")
         if not str(self.output_relpath).strip():
             raise PlannerError("output_relpath required")
 
@@ -82,7 +123,7 @@ def load_planner_authority(path: Path) -> PlannerAuthority:
         raise PlannerError("planner_authority must be a JSON object")
     auth = PlannerAuthority(
         authority_name=str(obj.get("authority_name", "planner")),
-        authority_version=str(obj.get("authority_version", "1.0.0")),
+        authority_version=str(obj.get("authority_version", "1.3.0")),
         enabled=_strict_bool(obj.get("enabled"), "enabled", default=False),
         require=_strict_bool(obj.get("require"), "require", default=False),
         output_relpath=str(obj.get("output_relpath", "07_planner")),
@@ -92,6 +133,24 @@ def load_planner_authority(path: Path) -> PlannerAuthority:
         weight_V=float(obj.get("weight_V", 1.0e-6)),
         weight_dI=float(obj.get("weight_dI", 1.0e-2)),
         weight_d2I=float(obj.get("weight_d2I", 1.0e-3)),
+        enable_isoflux=_strict_bool(obj.get("enable_isoflux"), "enable_isoflux", default=True),
+        require_isoflux=_strict_bool(
+            obj.get("require_isoflux"), "require_isoflux", default=False
+        ),
+        weight_isoflux=float(obj.get("weight_isoflux", 10.0)),
+        weight_xpoint_B=float(obj.get("weight_xpoint_B", 1.0)),
+        isoflux_ref_policy=str(obj.get("isoflux_ref_policy", "max_R")),
+        isoflux_max_control_points=int(obj.get("isoflux_max_control_points", 32)),
+        enable_picard=_strict_bool(obj.get("enable_picard"), "enable_picard", default=True),
+        require_picard=_strict_bool(
+            obj.get("require_picard"), "require_picard", default=False
+        ),
+        max_picard_iterations=int(obj.get("max_picard_iterations", 2)),
+        enable_psi_bry=_strict_bool(obj.get("enable_psi_bry"), "enable_psi_bry", default=True),
+        require_psi_bry=_strict_bool(
+            obj.get("require_psi_bry"), "require_psi_bry", default=False
+        ),
+        weight_psi_bry=float(obj.get("weight_psi_bry", 1.0)),
         max_qp_iterations=int(obj.get("max_qp_iterations", 40)),
         notes=str(obj.get("notes", "")),
     )
@@ -310,12 +369,16 @@ def solve_trajectory_qp(
     weight_dI: float,
     weight_d2I: float,
     max_iterations: int = 40,
+    isoflux_pack: Optional[Dict[str, Any]] = None,
+    weight_isoflux: float = 0.0,
+    weight_xpoint_B: float = 0.0,
+    weight_psi_bry: float = 0.0,
 ) -> Dict[str, Any]:
     """Projected trajectory optimizer (numpy-only GSPulse-inspired cost).
 
     Decision variable: I[t, circuit]. Voltages follow circuit dynamics.
-    Iterates: unconstrained Tikhonov step on I toward target + smoothness,
-    project I onto bounds, recompute V, shrink dI where V exceeds bounds.
+    Optional Path B2/B4 vacuum isoflux / x-point B / ψ_bry sensors: per-knot linear
+    ``y = G @ I`` with Tikhonov blend against current-tracking.
     """
     I_target = np.asarray(I_target, dtype=float)
     n_t, n = I_target.shape
@@ -326,6 +389,40 @@ def solve_trajectory_qp(
     wV = float(weight_V)
     w1 = float(weight_dI)
     w2 = float(weight_d2I)
+    w_iso = float(weight_isoflux)
+    w_xp = float(weight_xpoint_B)
+    w_psi = float(weight_psi_bry)
+    knots = (isoflux_pack or {}).get("knots") if isinstance(isoflux_pack, dict) else None
+
+    def _shape_pull(k: int, I_k: np.ndarray) -> np.ndarray:
+        """Tikhonov blend of tracking vector with vacuum sensor least-squares."""
+        if not knots or k >= len(knots):
+            return I_k
+        entry = knots[k]
+        if not isinstance(entry, dict):
+            return I_k
+        A = wI * np.eye(n)
+        b = wI * I_k
+        used = False
+        for key, w in (
+            ("isoflux", w_iso),
+            ("xpoint_B", w_xp),
+            ("psi_bry", w_psi),
+        ):
+            sens = entry.get(key)
+            if w > 0 and sens is not None and hasattr(sens, "G"):
+                G = np.asarray(sens.G, dtype=float)
+                y = np.asarray(sens.target, dtype=float).ravel()
+                if G.ndim == 2 and G.shape[1] == n and G.shape[0] == y.size:
+                    A = A + w * (G.T @ G)
+                    b = b + w * (G.T @ y)
+                    used = True
+        if not used:
+            return I_k
+        try:
+            return np.linalg.solve(A, b)
+        except np.linalg.LinAlgError:
+            return np.linalg.lstsq(A, b, rcond=None)[0]
 
     hist_cost: List[float] = []
     for _it in range(int(max_iterations)):
@@ -345,7 +442,8 @@ def solve_trajectory_qp(
             if k + 2 < n_t:
                 acc = acc + w2 * (2.0 * I[k + 1] - I[k + 2])
                 wsum += w2
-            I_new[k] = acc / max(wsum, 1e-30)
+            I_track = acc / max(wsum, 1e-30)
+            I_new[k] = _shape_pull(k, I_track)
         I_new = np.clip(I_new, I_lo, I_hi)
         V = voltages_from_dynamics(I_new, R=R, L=L, dt=dt)
         over = (V > V_hi) | (V < V_lo)
@@ -361,7 +459,6 @@ def solve_trajectory_qp(
             I_new = np.clip(I_new, I_lo, I_hi)
             V = voltages_from_dynamics(I_new, R=R, L=L, dt=dt)
         if wV > 0.0:
-            # Mild pull toward smaller |V| without inventing a new profile law
             I_new = np.clip((1.0 - 1e-3 * wV) * I_new + (1e-3 * wV) * I_target, I_lo, I_hi)
             V = voltages_from_dynamics(I_new, R=R, L=L, dt=dt)
 
@@ -402,6 +499,8 @@ def run_planner_stage(
     t_end: float,
     shot: Optional[int] = None,
     circuit_dynamics: Optional[CircuitDynamics] = None,
+    shape_targets: Optional[Dict[str, Any]] = None,
+    cache_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Execute planner → write 07_planner/ artifacts. Fail-closed on limits."""
     planner_auth.validate()
@@ -447,6 +546,157 @@ def run_planner_stage(
         I_lo[j], I_hi[j] = lim.i_bounds()
         V_lo[j], V_hi[j] = lim.v_bounds()
 
+    # Path B2: vacuum-coil Green's isoflux / x-point B (soft-skip unless require_isoflux)
+    isoflux_pack: Optional[Dict[str, Any]] = None
+    isoflux_used = False
+    isoflux_status = "disabled"
+    isoflux_note = "enable_isoflux=false"
+    if planner_auth.enable_isoflux:
+        st_payload = shape_targets
+        if st_payload is None:
+            st_path = Path(inputs_dir) / "shape_targets_authority" / "shape_targets.json"
+            if st_path.is_file():
+                try:
+                    st_payload = json.loads(st_path.read_text(encoding="utf-8"))
+                except Exception:
+                    st_payload = None
+        try:
+            from .planner_isoflux import build_isoflux_sensors_for_knots
+
+            isoflux_pack = build_isoflux_sensors_for_knots(
+                machine_dir=Path(machine_dir),
+                circuit_order=order,
+                shape_targets=st_payload if isinstance(st_payload, dict) else {},
+                ref_policy=planner_auth.isoflux_ref_policy,
+                max_control_points=int(planner_auth.isoflux_max_control_points),
+            )
+            isoflux_status = str(isoflux_pack.get("status") or "unknown")
+            isoflux_note = str(isoflux_pack.get("note") or "")
+            isoflux_used = bool(isoflux_pack.get("ok"))
+        except Exception as e:
+            isoflux_pack = None
+            isoflux_status = "failed"
+            isoflux_note = f"{type(e).__name__}: {e}"
+            isoflux_used = False
+            if planner_auth.require_isoflux:
+                raise PlannerError(
+                    f"require_isoflux=true but isoflux build failed: {isoflux_note}"
+                ) from e
+        if planner_auth.require_isoflux and not isoflux_used:
+            raise PlannerError(
+                f"require_isoflux=true but status={isoflux_status!r}: {isoflux_note}"
+            )
+
+    # Path B4: ψ_bry absolute mean-flux targets (soft-skip unless require_psi_bry)
+    psi_bry_used = False
+    psi_bry_status = "disabled"
+    psi_bry_note = "enable_psi_bry=false"
+    psi_bry_mode = None
+    plasma_inventory: Dict[str, Any] = {}
+    psi_bry_payload: Dict[str, Any] = {}
+    if planner_auth.enable_psi_bry:
+        try:
+            from .planner_plasma_scalars import (
+                attach_psi_bry_sensors,
+                build_psi_bry_targets,
+                inventory_plasma_drive,
+                load_plasma_scalars_authority,
+                write_plasma_scalars_authority,
+            )
+
+            ps_path = Path(inputs_dir) / "plasma_scalars_authority" / "plasma_scalars_authority.json"
+            if not ps_path.is_file():
+                # Prefer shipped config next to repo if snapshotted path missing
+                repo_ps = Path(__file__).resolve().parents[2] / "configs" / "plasma_scalars_authority.json"
+                if repo_ps.is_file():
+                    ps_auth = load_plasma_scalars_authority(repo_ps)
+                    write_plasma_scalars_authority(Path(inputs_dir), ps_auth)
+                else:
+                    raise PlannerError(
+                        "plasma_scalars_authority missing — ship configs/plasma_scalars_authority.json"
+                    )
+            else:
+                ps_auth = load_plasma_scalars_authority(ps_path)
+            write_plasma_scalars_authority(Path(inputs_dir), ps_auth)
+            plasma_inventory = inventory_plasma_drive(
+                inputs_dir=Path(inputs_dir), times=times, auth=ps_auth
+            )
+            st_for_psi = shape_targets
+            if st_for_psi is None:
+                st_path2 = Path(inputs_dir) / "shape_targets_authority" / "shape_targets.json"
+                if st_path2.is_file():
+                    try:
+                        st_for_psi = json.loads(st_path2.read_text(encoding="utf-8"))
+                    except Exception:
+                        st_for_psi = None
+            cache_guess = Path(cache_dir) if cache_dir is not None else None
+            if cache_guess is None or not cache_guess.is_dir():
+                for cand in (
+                    Path(run_dir) / "cache",
+                    Path(inputs_dir).parent / "cache",
+                ):
+                    if cand.is_dir():
+                        cache_guess = cand
+                        break
+            psi_bry_payload = build_psi_bry_targets(
+                times=times,
+                auth=ps_auth,
+                shape_targets=st_for_psi if isinstance(st_for_psi, dict) else None,
+                cache_dir=cache_guess if cache_guess is not None and cache_guess.is_dir() else None,
+                inputs_dir=Path(inputs_dir),
+            )
+            psi_bry_status = str(psi_bry_payload.get("status") or "unknown")
+            psi_bry_note = str(psi_bry_payload.get("note") or "")
+            psi_bry_mode = psi_bry_payload.get("mode")
+            if psi_bry_payload.get("ok") and psi_bry_payload.get("psi_bry_Wb"):
+                if isoflux_pack is None or not isoflux_used:
+                    psi_bry_status = "skipped_no_isoflux_geometry"
+                    psi_bry_note = "ψ_bry sensors need LCFS Green's geometry from Path B2"
+                else:
+                    isoflux_pack = attach_psi_bry_sensors(
+                        isoflux_pack,
+                        psi_bry_Wb=psi_bry_payload["psi_bry_Wb"],
+                    )
+                    psi_bry_used = int(isoflux_pack.get("psi_bry_sensors") or 0) > 0
+                    if not psi_bry_used:
+                        psi_bry_status = "skipped_no_geometry"
+                        psi_bry_note = "no LCFS control points to attach mean-flux sensors"
+                    else:
+                        psi_bry_status = "ok"
+            (Path(run_dir) / planner_auth.output_relpath).mkdir(parents=True, exist_ok=True)
+            (Path(run_dir) / planner_auth.output_relpath / "plasma_scalars.json").write_text(
+                json.dumps(
+                    {
+                        "inventory": plasma_inventory,
+                        "psi_bry": {
+                            "used": psi_bry_used,
+                            "status": psi_bry_status,
+                            "mode": psi_bry_mode,
+                            "note": psi_bry_note,
+                            "psi_convention": psi_bry_payload.get("psi_convention"),
+                            "var_used": psi_bry_payload.get("var_used"),
+                            "attempts": psi_bry_payload.get("attempts"),
+                            "psi_bry_Wb": psi_bry_payload.get("psi_bry_Wb"),
+                        },
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        except Exception as e:
+            psi_bry_status = "failed"
+            psi_bry_note = f"{type(e).__name__}: {e}"
+            psi_bry_used = False
+            if planner_auth.require_psi_bry:
+                raise PlannerError(
+                    f"require_psi_bry=true but failed: {psi_bry_note}"
+                ) from e
+        if planner_auth.require_psi_bry and not psi_bry_used:
+            raise PlannerError(
+                f"require_psi_bry=true but status={psi_bry_status!r}: {psi_bry_note}"
+            )
+
     sol = solve_trajectory_qp(
         I_target=I_tgt,
         R=circuit_dynamics.R_ohm,
@@ -461,8 +711,84 @@ def run_planner_stage(
         weight_dI=planner_auth.weight_dI,
         weight_d2I=planner_auth.weight_d2I,
         max_iterations=planner_auth.max_qp_iterations,
+        isoflux_pack=isoflux_pack if isoflux_used or psi_bry_used else None,
+        weight_isoflux=planner_auth.weight_isoflux if isoflux_used else 0.0,
+        weight_xpoint_B=planner_auth.weight_xpoint_B if isoflux_used else 0.0,
+        weight_psi_bry=planner_auth.weight_psi_bry if psi_bry_used else 0.0,
     )
     I_plan = sol["I"]
+
+    # Path B3: Picard outer loop (soft-skip unless require_picard)
+    picard_used = False
+    picard_status = "disabled"
+    picard_note = "enable_picard=false"
+    picard_mode = None
+    picard_history: List[Any] = []
+    if planner_auth.enable_picard:
+        if not isoflux_used or isoflux_pack is None:
+            picard_status = "skipped_no_isoflux"
+            picard_note = "Picard requires isoflux sensors (Path B2); soft-skip"
+            if planner_auth.require_picard:
+                raise PlannerError(
+                    f"require_picard=true but {picard_status}: {picard_note}"
+                )
+        else:
+            try:
+                from .planner_picard import run_picard_outer_loop
+
+                qp_kwargs = {
+                    "I_target": I_tgt,
+                    "R": circuit_dynamics.R_ohm,
+                    "L": circuit_dynamics.L_henry,
+                    "dt": dt,
+                    "I_lo": I_lo,
+                    "I_hi": I_hi,
+                    "V_lo": V_lo,
+                    "V_hi": V_hi,
+                    "weight_track_I": planner_auth.weight_track_I,
+                    "weight_V": planner_auth.weight_V,
+                    "weight_dI": planner_auth.weight_dI,
+                    "weight_d2I": planner_auth.weight_d2I,
+                    "max_iterations": planner_auth.max_qp_iterations,
+                    "weight_isoflux": planner_auth.weight_isoflux,
+                    "weight_xpoint_B": planner_auth.weight_xpoint_B,
+                    "weight_psi_bry": planner_auth.weight_psi_bry if psi_bry_used else 0.0,
+                }
+                pic = run_picard_outer_loop(
+                    machine_dir=Path(machine_dir),
+                    inputs_dir=Path(inputs_dir),
+                    circuit_order=order,
+                    times=times,
+                    I_plan=I_plan,
+                    isoflux_pack=isoflux_pack,
+                    qp_kwargs=qp_kwargs,
+                    max_picard_iterations=int(planner_auth.max_picard_iterations),
+                )
+                picard_status = str(pic.get("status") or "unknown")
+                picard_note = str(pic.get("note") or "")
+                picard_history = list(pic.get("history") or [])
+                picard_used = bool(pic.get("picard"))
+                if picard_used and pic.get("sol") is not None:
+                    sol = pic["sol"]
+                    I_plan = np.asarray(pic["I"], dtype=float)
+                    isoflux_pack = pic.get("isoflux_pack") or isoflux_pack
+                    picard_mode = pic.get("picard_mode")
+                    if isoflux_pack is not None:
+                        isoflux_pack["mode"] = isoflux_pack.get("mode") or (
+                            "vacuum_coil_greens_plus_plasma_picard"
+                        )
+            except Exception as e:
+                picard_status = "failed"
+                picard_note = f"{type(e).__name__}: {e}"
+                picard_used = False
+                if planner_auth.require_picard:
+                    raise PlannerError(
+                        f"require_picard=true but Picard failed: {picard_note}"
+                    ) from e
+            if planner_auth.require_picard and not picard_used:
+                raise PlannerError(
+                    f"require_picard=true but status={picard_status!r}: {picard_note}"
+                )
     V_plan = sol["V"]
     n_v_viol = int(sol["n_voltage_violations_raw"])
     # Cited fixed plant Vmax/Vmin remain hard fail-closed.
@@ -568,12 +894,35 @@ def run_planner_stage(
         fig.savefig(plot_path, bbox_inches="tight")
         plt.close(fig)
         plots_written.append(str(plot_path.name))
+
+        # Path B6-full: planned vs measured currents
+        fig2, axs2 = plt.subplots(2, 1, figsize=(9, 7), dpi=120, sharex=True)
+        for i, c in enumerate(order):
+            axs2[0].plot(times, I_plan[:, i], label=f"{c} plan")
+            axs2[0].plot(times, I_tgt[:, i], "--", alpha=0.7, label=f"{c} meas")
+        axs2[0].set_ylabel("I [A]")
+        axs2[0].set_title("Planned vs measured PF/CS currents")
+        axs2[0].grid(True, alpha=0.3)
+        axs2[0].legend(fontsize=7, ncol=2, loc="best")
+        for i, c in enumerate(order):
+            axs2[1].plot(times, I_plan[:, i] - I_tgt[:, i], label=c)
+        axs2[1].set_xlabel("t [s]")
+        axs2[1].set_ylabel("ΔI plan−meas [A]")
+        axs2[1].grid(True, alpha=0.3)
+        axs2[1].legend(fontsize=7, ncol=4, loc="best")
+        fig2.tight_layout()
+        plot_i = out_dir / "planning_current_residual.png"
+        fig2.savefig(plot_i, bbox_inches="tight")
+        plt.close(fig2)
+        plots_written.append(str(plot_i.name))
     except Exception as e:
         plots_written.append(f"plot_skipped:{type(e).__name__}")
 
-    # Inventory EFIT shape targets if present (Picard isoflux deferred — provenance only)
+    # Inventory EFIT shape targets (Path B1 authority + legacy efit_compare artifacts)
     shape_targets_available: Dict[str, Any] = {"present": False, "paths": []}
     for rel in (
+        "inputs/shape_targets_authority/shape_targets.json",
+        "07_planner/shape_targets.json",
         "04_efit_compare/efit_shape_timeseries.csv",
         "04_efit_compare/shape_scorecard.json",
         "04_efit_compare/efit_lcfs.csv",
@@ -581,10 +930,82 @@ def run_planner_stage(
         if (Path(run_dir) / rel).is_file():
             shape_targets_available["paths"].append(rel)
             shape_targets_available["present"] = True
+    st_path = Path(inputs_dir) / "shape_targets_authority" / "shape_targets.json"
+    if st_path.is_file() and "inputs/shape_targets_authority/shape_targets.json" not in shape_targets_available["paths"]:
+        shape_targets_available["paths"].append("inputs/shape_targets_authority/shape_targets.json")
+        shape_targets_available["present"] = True
+    st_payload = shape_targets
+    if st_payload is None and st_path.is_file():
+        try:
+            st_payload = json.loads(st_path.read_text(encoding="utf-8"))
+        except Exception:
+            st_payload = None
+    if isinstance(st_payload, dict) and st_payload.get("present"):
+        shape_targets_available["present"] = True
+        shape_targets_available["status"] = st_payload.get("status")
+        shape_targets_available["n_knots"] = st_payload.get("n_knots")
+        shape_targets_available["found_scalars"] = st_payload.get("found_scalars")
+        shape_targets_available["n_knots_with_lcfs_control_points"] = st_payload.get(
+            "n_knots_with_lcfs_control_points"
+        )
     shape_targets_available["note"] = (
-        "EFIT/FreeGSNKE shape artifacts inventoried for future GS Picard isoflux cost; "
-        "v1 QP does not yet consume them."
+        "Path B1–B3: EFIT++ archive shape targets feed vacuum-coil Green's isoflux; "
+        "Picard freezes plasma offsets from FreeGSNKE forward GS when enabled."
     )
+
+    isoflux_mode = None
+    if isoflux_used:
+        isoflux_mode = (
+            "vacuum_coil_greens_plus_plasma_picard"
+            if picard_used
+            else "vacuum_coil_greens"
+        )
+        if isinstance(isoflux_pack, dict) and isoflux_pack.get("mode"):
+            isoflux_mode = str(isoflux_pack["mode"])
+
+    isoflux_residuals: Dict[str, Any] = {
+        "used": isoflux_used,
+        "status": isoflux_status,
+        "mode": isoflux_mode,
+        "note": isoflux_note,
+    }
+    if isoflux_used and isoflux_pack is not None:
+        from .planner_isoflux import (
+            evaluate_sensor_residuals,
+            sensors_to_jsonable,
+        )
+
+        isoflux_residuals["sensors"] = sensors_to_jsonable(isoflux_pack)
+        isoflux_residuals["planned"] = evaluate_sensor_residuals(I_plan, isoflux_pack)
+        isoflux_residuals["measured_I_baseline"] = evaluate_sensor_residuals(
+            I_tgt, isoflux_pack
+        )
+        (out_dir / "isoflux_residual.json").write_text(
+            json.dumps(isoflux_residuals, indent=2) + "\n", encoding="utf-8"
+        )
+
+    picard_report: Dict[str, Any] = {
+        "used": picard_used,
+        "status": picard_status,
+        "mode": picard_mode,
+        "note": picard_note,
+        "n_outers": int(planner_auth.max_picard_iterations) if picard_used else 0,
+        "history": picard_history,
+    }
+    (out_dir / "picard.json").write_text(
+        json.dumps(picard_report, indent=2) + "\n", encoding="utf-8"
+    )
+
+    # Mutual inductance honesty from dynamics notes/source
+    mutuals_note = "unknown"
+    src_l = str(circuit_dynamics.source or "")
+    notes_l = str(circuit_dynamics.notes or "")
+    if "mutuals_neglected" in src_l or "mutuals=neglected" in notes_l:
+        mutuals_note = "neglected_diagonal_self_only_declared"
+    elif "prefer_freegsnke_mutuals" in src_l or "freegsnke_offdiag" in notes_l:
+        mutuals_note = "freegsnke_offdiag_retained_cited_Lii_overlay"
+    elif "freegsnke" in src_l.lower():
+        mutuals_note = "freegsnke_active_block"
 
     mean_rms = float(np.mean([r["rms_V"] for r in resid_rows])) if resid_rows else None
     measured_rms = [
@@ -595,6 +1016,19 @@ def run_planner_stage(
     meta = {
         "shot": shot,
         "status": status,
+        # Path B0–B3 honesty labels
+        "method": "gspulse_python",
+        "method_version": "v1.3",
+        "picard": bool(picard_used),
+        "picard_mode": picard_mode if picard_used else None,
+        "picard_status": picard_status,
+        "isoflux_cost": bool(isoflux_used),
+        "isoflux_mode": isoflux_mode,
+        "isoflux_status": isoflux_status,
+        "psi_bry_cost": bool(psi_bry_used),
+        "psi_bry_mode": psi_bry_mode if psi_bry_used else None,
+        "psi_bry_status": psi_bry_status,
+        "gspulse_reference": "https://arxiv.org/abs/2506.21760",
         "authority_version": planner_auth.authority_version,
         "t_start": float(t_start),
         "t_end": float(t_end),
@@ -603,6 +1037,7 @@ def run_planner_stage(
         "circuit_order": order,
         "drive_labels": drive_labels,
         "circuit_dynamics_source": circuit_dynamics.source,
+        "circuit_dynamics_mutuals": mutuals_note,
         "coil_limits_citation": coil_limits.citation,
         "cost_history": sol["cost_history"],
         "n_voltage_violations_raw": n_v_viol,
@@ -611,13 +1046,58 @@ def run_planner_stage(
         "residual_rms_mean_measured_V": mean_rms_measured,
         "plots_written": plots_written,
         "shape_targets_available": shape_targets_available,
+        "isoflux_residuals": {
+            "used": isoflux_used,
+            "status": isoflux_status,
+            "mode": isoflux_mode,
+            "planned": isoflux_residuals.get("planned"),
+            "measured_I_baseline": isoflux_residuals.get("measured_I_baseline"),
+            "note": isoflux_note,
+        },
+        "picard_report": {
+            "used": picard_used,
+            "status": picard_status,
+            "mode": picard_mode,
+            "note": picard_note,
+            "n_outers": picard_report["n_outers"],
+        },
+        "plasma_scalars": {
+            "inventory": plasma_inventory,
+            "psi_bry": {
+                "used": psi_bry_used,
+                "status": psi_bry_status,
+                "mode": psi_bry_mode,
+                "note": psi_bry_note,
+                "psi_convention": (psi_bry_payload or {}).get("psi_convention"),
+                "var_used": (psi_bry_payload or {}).get("var_used"),
+            },
+        },
         "limitations": [
-            "v1 planner: current-tracking + circuit dynamics QP (GSPulse cost vocabulary); "
-            "full GS Picard isoflux terms not yet wired",
+            "method=gspulse_python v1.3: current-tracking + circuit dynamics QP "
+            "+ optional vacuum-coil Green's isoflux + optional Picard plasma freeze "
+            "+ optional ψ_bry absolute mean-flux (not upstream GSPulse MATLAB/MEQ)",
+            (
+                "picard=true mode=forward_gs_freeze_plasma_offsets — plasma offsets frozen "
+                "from FreeGSNKE forward GS; linearized vacuum G still used in QP"
+                if picard_used
+                else f"picard=false status={picard_status} — {picard_note}"
+            ),
+            (
+                f"isoflux_cost=true mode={isoflux_mode}"
+                if isoflux_used
+                else f"isoflux_cost=false status={isoflux_status} — {isoflux_note}"
+            ),
+            (
+                f"psi_bry_cost=true mode={psi_bry_mode}"
+                if psi_bry_used
+                else f"psi_bry_cost=false status={psi_bry_status} — {psi_bry_note}"
+            ),
             "Passives excluded while passive_resistivity awaiting_authority",
             "P3/P6 measured voltages may be ohmic_synthetic_IxR — residuals labeled honestly",
             "Never invents coil I/V limits — citation required",
             "Voltage box limits are fail-closed: over-limit plans raise PlannerError",
+            "Ejima ψ_bry requires cited R_p + L_I (never invent / never silent li→L_I)",
+            f"circuit_dynamics_mutuals={mutuals_note}",
         ],
         "notes": planner_auth.notes,
     }
@@ -628,12 +1108,19 @@ def run_planner_stage(
         "ADR-004 Phase 2 — Python GSPulse-style feedforward planner (no MATLAB).",
         "",
         f"- status: **{status}**",
+        f"- method: `gspulse_python` v1.3 (picard={bool(picard_used)}, "
+        f"isoflux_cost={bool(isoflux_used)}, psi_bry={bool(psi_bry_used)}, "
+        f"mode={meta.get('isoflux_mode')})",
+        f"- picard: used={picard_used} status={picard_status} mode={picard_mode}",
+        f"- psi_bry: used={psi_bry_used} status={psi_bry_status} mode={psi_bry_mode}",
         f"- knots: {n_k}  dt={dt:.6g}s  window=[{t_start:.6g},{t_end:.6g}]",
         f"- dynamics: `{circuit_dynamics.source}`",
+        f"- mutuals: `{mutuals_note}`",
         f"- limits citation: {coil_limits.citation}",
         f"- voltage-limit violations (raw dynamics V): {n_v_viol}",
         f"- mean residual RMS (all circuits): {mean_rms}",
         f"- mean residual RMS (measured V only): {mean_rms_measured}",
+        f"- isoflux status: {isoflux_status} — {isoflux_note}",
         "",
         "## Planning residual vs voltages (RMS)",
         "",
@@ -647,12 +1134,37 @@ def run_planner_stage(
     md.append("- `planned_currents.csv` / `planned_voltages.csv`")
     md.append("- `planning_residual_vs_measured_V.csv` (per-circuit summary)")
     md.append("- `planning_residual_timeseries.csv` (per-time ΔV)")
+    if isoflux_used:
+        md.append("- `isoflux_residual.json` (vacuum-coil Green's sensor residuals)")
+    md.append("- `picard.json` (Path B3 outer-loop status)")
+    md.append("- `plasma_scalars.json` (Path B4 Ip/profile/ψ_bry inventory)")
     if plots_written:
         md.append(f"- plots: {', '.join(plots_written)}")
     md.append("")
-    md.append("## Shape targets (inventory only)")
-    md.append(f"- present={shape_targets_available['present']}: {shape_targets_available['paths']}")
+    md.append("## Shape targets (Path B1)")
+    md.append(f"- present={shape_targets_available['present']}: {shape_targets_available.get('paths')}")
+    if shape_targets_available.get("found_scalars") is not None:
+        md.append(f"- found_scalars: {shape_targets_available.get('found_scalars')}")
     md.append(f"- {shape_targets_available['note']}")
+    md.append("")
+    md.append("## Isoflux (Path B2)")
+    md.append(f"- used={isoflux_used} status={isoflux_status} mode={meta.get('isoflux_mode')}")
+    planned_iso = (isoflux_residuals.get("planned") or {}) if isoflux_used else {}
+    if planned_iso:
+        md.append(
+            f"- planned isoflux_rms_mean={planned_iso.get('isoflux_rms_mean')} "
+            f"xpoint_B_rms_mean={planned_iso.get('xpoint_B_rms_mean')}"
+        )
+    md.append(f"- {isoflux_note}")
+    md.append("")
+    md.append("## Picard (Path B3)")
+    md.append(f"- used={picard_used} status={picard_status} mode={picard_mode}")
+    md.append(f"- {picard_note}")
+    md.append("")
+    md.append("## Plasma scalars / ψ_bry (Path B4)")
+    md.append(f"- inventory: {plasma_inventory}")
+    md.append(f"- used={psi_bry_used} status={psi_bry_status} mode={psi_bry_mode}")
+    md.append(f"- {psi_bry_note}")
     md.append("")
     md.append("## Limitations")
     for lim in meta["limitations"]:

@@ -857,6 +857,30 @@ class ShotPipeline:
             else:
                 _stage("planner_authority", True, note="no_path")
 
+            ps_path = _resolve_config_path(
+                getattr(self.cfg, "plasma_scalars_authority_path", None), repo_root
+            )
+            if ps_path is not None and ps_path.exists():
+                try:
+                    from .planner_plasma_scalars import (
+                        load_plasma_scalars_authority,
+                        write_plasma_scalars_authority,
+                    )
+
+                    ps_auth = load_plasma_scalars_authority(ps_path)
+                    ps_out = write_plasma_scalars_authority(inputs_dir, ps_auth)
+                    _stage(
+                        "plasma_scalars_authority",
+                        True,
+                        path=str(ps_out),
+                        enabled=bool(ps_auth.enabled),
+                        ejima_status=ps_auth.ejima.status,
+                    )
+                except Exception as e:
+                    _stage("plasma_scalars_authority", True, note=f"snapshot_failed:{e}")
+            else:
+                _stage("plasma_scalars_authority", True, note="no_path")
+
             if cl_path is not None and cl_path.exists():
                 try:
                     cl_auth = load_coil_limits(cl_path)
@@ -1458,6 +1482,82 @@ class ShotPipeline:
                     note="compare_efit_archive=false_or_no_cache",
                 )
 
+            # ADR-004 Path B1: EFIT++ → declared shape_targets (isoflux inventory for B2)
+            if self.cfg.build_shape_targets and final_tw is not None:
+                try:
+                    from .shape_targets import (
+                        load_shape_targets_authority,
+                        run_shape_targets_stage,
+                    )
+
+                    st_path = _resolve_config_path(
+                        self.cfg.shape_targets_authority_path, repo_root
+                    )
+                    if st_path is None or not st_path.exists():
+                        msg = (
+                            "shape_targets_authority_required: set "
+                            "shape_targets_authority_path when build_shape_targets=true"
+                        )
+                        blocking_errors.append(msg)
+                        _stage("shape_targets", False, note="missing_path")
+                    elif shot_cache is None:
+                        _st0 = load_shape_targets_authority(st_path)
+                        if _st0.require:
+                            blocking_errors.append(
+                                "shape_targets_required: no shot cache for equilibrium.zarr"
+                            )
+                            _stage("shape_targets", False, note="no_cache")
+                        else:
+                            _stage("shape_targets", True, note="no_cache_soft_skip")
+                    else:
+                        st_auth = load_shape_targets_authority(st_path)
+                        n_override = None
+                        pl_snap = (
+                            inputs_dir / "planner_authority" / "planner_authority.json"
+                        )
+                        if pl_snap.exists():
+                            try:
+                                from .planner import load_planner_authority as _lpa
+
+                                n_override = int(_lpa(pl_snap).n_knots)
+                            except Exception:
+                                n_override = None
+                        st_rep = run_shape_targets_stage(
+                            run_dir=run_dir,
+                            inputs_dir=inputs_dir,
+                            cache_dir=shot_cache,
+                            auth=st_auth,
+                            t_start=float(final_tw.t_start),
+                            t_end=float(final_tw.t_end),
+                            n_knots_override=n_override,
+                        )
+                        _stage(
+                            "shape_targets",
+                            bool(st_rep.get("ok")),
+                            status=st_rep.get("status"),
+                            present=st_rep.get("present"),
+                            path=st_rep.get("path"),
+                        )
+                        if st_auth.require and not st_rep.get("ok"):
+                            blocking_errors.append(
+                                f"shape_targets_required: {st_rep.get('status')}"
+                            )
+                except Exception as e:
+                    from .shape_targets import ShapeTargetsError as _STE
+
+                    if isinstance(e, _STE):
+                        blocking_errors.append(f"shape_targets_failed: {e}")
+                        _stage("shape_targets", False, error=str(e))
+                    else:
+                        blocking_errors.append(
+                            f"shape_targets_failed: {type(e).__name__}: {e}"
+                        )
+                        _stage("shape_targets", False, error=str(e))
+            elif self.cfg.build_shape_targets:
+                _stage("shape_targets", True, note="no_window_soft_skip")
+            else:
+                _stage("shape_targets", True, note="build_shape_targets=false")
+
             # ADR-004 Phase 2: optional GSPulse-style planner (default off)
             if self.cfg.execute_planner and final_tw is not None:
                 try:
@@ -1618,6 +1718,22 @@ class ShotPipeline:
                             t_end=float(final_tw.t_end),
                             shot=int(shot),
                             circuit_dynamics=dyn,
+                            shape_targets=(
+                                json.loads(
+                                    (
+                                        inputs_dir
+                                        / "shape_targets_authority"
+                                        / "shape_targets.json"
+                                    ).read_text(encoding="utf-8")
+                                )
+                                if (
+                                    inputs_dir
+                                    / "shape_targets_authority"
+                                    / "shape_targets.json"
+                                ).is_file()
+                                else None
+                            ),
+                            cache_dir=shot_cache,
                         )
                         _stage(
                             "planner",
