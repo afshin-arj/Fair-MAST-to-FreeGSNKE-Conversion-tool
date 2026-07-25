@@ -2,7 +2,7 @@
   "authority_name": "circuit_dynamics",
   "authority_version": "1.0.0",
   "status": "cited",
-  "citation": "User MAST coil tables: PF R/L (approx from design eqs 29–31; one-coil) + Central Solenoid table (R=34.04 mΩ, L=2.94 mH; 328 turns / 4 layers). Units converted mΩ→Ω, mH→H. Cited L_ii overlaid on FreeGSNKE active-block mutuals when prefer_freegsnke_mutuals=true (Path B1b).",
+  "citation": "User MAST coil tables: PF R/L (approx from design eqs 29\u201331; one-coil) + Central Solenoid table (R=34.04 m\u03a9, L=2.94 mH; 328 turns / 4 layers). Units converted m\u03a9\u2192\u03a9, mH\u2192H. Cited L_ii overlaid on FreeGSNKE active-block mutuals when prefer_freegsnke_mutuals=true (Path B1b).",
   "L_model": "diagonal_self_only",
   "prefer_freegsnke_mutuals": true,
   "missing_circuits_policy": "fail",
@@ -10,7 +10,7 @@
     "Solenoid": {
       "R_ohm": 0.03404,
       "L_henry": 0.00294,
-      "notes": "Central Solenoid (CS) from user MAST CS table: R=34.04 mΩ, L=2.94 mH; ~2.8 m height, 114–166 mm radius, 4 layers, 328 turns."
+      "notes": "Central Solenoid (CS) from user MAST CS table: R=34.04 m\u03a9, L=2.94 mH; ~2.8 m height, 114\u2013166 mm radius, 4 layers, 328 turns."
     },
     "P2_inner": {
       "R_ohm": 0.001055,
@@ -28,7 +28,7 @@
       "notes": "PF3 (one coil) from user table."
     },
     "P4": {
-      "R_ohm": 0.003740,
+      "R_ohm": 0.00374,
       "L_henry": 0.004095,
       "notes": "PF4 (one coil) from user table."
     },
@@ -43,5 +43,5 @@
       "notes": "PF6 (one coil) from user table."
     }
   },
-  "notes": "Full classic active set (Solenoid + P2_inner/outer + P3–P6) cited from user tables. prefer_freegsnke_mutuals=true: FreeGSNKE off-diagonal M retained; cited R and L_ii overlay. Pure diagonal only if FreeGSNKE extract unavailable (loud mutuals=neglected_*)."
+  "notes": "Full classic active set (Solenoid + P2_inner/outer + P3\u2013P6) cited from user tables. prefer_freegsnke_mutuals=true: FreeGSNKE off-diagonal M retained; cited R and L_ii overlay. Pure diagonal only if FreeGSNKE extract unavailable (loud mutuals=neglected_*)."
 }
