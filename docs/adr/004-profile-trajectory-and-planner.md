@@ -1,6 +1,6 @@
 # ADR-004: Profile trajectory authority + Python GSPulse-style planner
 
-- **Status:** accepted (Phase 1 implemented; Phase 2 designed, not coded)
+- **Status:** accepted (Phase 1 shipped; Phase 2 v1 planner shipped, default off)
 - **Date:** 2026-07-25
 - **Deciders:** project maintainers
 - **Depends-on:** AGENTS.md design laws; ADR-002 (EFIT++ archive); ADR-003 (no Py-EFIT path)
@@ -40,20 +40,33 @@ defines a later planner stage (Phase 2).
    `(paxis, fvac, alpha_m, alpha_n)` at each step. Trajectory **overrides**
    `scale_paxis_with_ip` when both would apply; provenance records both.
 
-### Phase 2 (designed only): Idea B — Python GSPulse-style planner
+### Phase 2 (v1 shipped): Idea B — Python GSPulse-style planner
 
-1. Optional stage `planner` (default **off**) solves a global QP over the formed-plasma window:
-   - cost: isoflux/shape errors + actuator effort + 1st/2nd derivative smoothness
-     (GSPulse cost structure);
-   - constraint: circuit dynamics \(L\dot{I}+R I = V\);
-   - GS Picard updates via FreeGSNKE (not MEQ);
-   - mutuals/R from classic MAST FreeGSNKE machine; passives only when
-     `passive_resistivity` is no longer `awaiting_authority`.
+1. Optional stage `planner` (config `execute_planner`, default **off**) solves a trajectory
+   optimization over the formed-plasma window:
+   - cost: track measured PF currents + actuator effort + 1st/2nd derivative smoothness
+     (GSPulse cost vocabulary; full GS Picard isoflux deferred);
+   - constraint: circuit dynamics \(L\dot{I}+R I = V\) with R/L from FreeGSNKE
+     `build_tokamak_R_and_M` (active block);
+   - box constraints from cited `coil_limits_authority`.
 2. **Hard gate:** `configs/coil_limits_authority.json` must cite plant docs with non-empty
    I/V limits. Empty / `awaiting_authority` → planner blocked; **never invent Imax/Vmax**.
-3. Outputs under `SHOT/<N>/04_planner/`: planned I/V CSVs + planning residual vs measured
-   `pf_voltages.csv`, with honest labels for ohmic-synthetic P3/P6 channels.
+3. Outputs under `SHOT/<N>/07_planner/` (not `04_*` — that folder is EFIT compare):
+   planned I/V CSVs + planning residual vs measured `pf_voltages.csv`, with honest labels
+   for ohmic-synthetic P3/P6 channels.
 4. Planner does **not** replace shot-only FreeGSNKE reconstruction or evolutive forward drive.
+5. Passives excluded while `passive_resistivity` is `awaiting_authority`.
+
+## Implementation status
+
+| Piece | Status |
+|-------|--------|
+| Phase 1 profile trajectory | done |
+| Phase 2 coil_limits gate | done |
+| Phase 2 circuit dynamics R/L snapshot | done (FreeGSNKE extract) |
+| Phase 2 trajectory QP (numpy) | done (current-tracking v1) |
+| Phase 2 GS Picard isoflux cost | **not yet** |
+| Phase 2 passives in dynamics | blocked on passive_resistivity |
 
 ## Consequences
 

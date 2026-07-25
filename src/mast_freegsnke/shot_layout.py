@@ -135,6 +135,7 @@ def finalize_shot_layout(run_dir: Path, *, shot: int) -> Dict[str, Any]:
             "04_efit_compare": "FreeGSNKE vs FAIR-MAST EFIT++ archive (ADR-002)",
             "05_downstream": "Optional TORAX GEQDSK export (ADR-001)",
             "06_authorities": "Contracts, provenance hashes, machine authority snapshot",
+            "07_planner": "Optional GSPulse-style feedforward planner (ADR-004 Phase 2)",
             "inputs": "Tooling CSVs + authority snapshots (keep at root for FreeGSNKE scripts)",
             "logs": "FreeGSNKE stdout/stderr",
         },

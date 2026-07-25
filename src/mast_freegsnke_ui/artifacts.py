@@ -360,6 +360,8 @@ def authority_snapshot(run_dir: Path) -> Dict[str, Any]:
         ("execution_authority", "inputs/execution_authority/execution_authority_bundle.json"),
         ("profile_trajectory", "inputs/profile_trajectory_authority/profile_trajectory.json"),
         ("profile_trajectory_policy", "inputs/profile_trajectory_authority/profile_trajectory_authority.json"),
+        ("planner_authority", "inputs/planner_authority/planner_authority.json"),
+        ("coil_limits_authority", "inputs/coil_limits_authority/coil_limits_authority.json"),
         ("diagnostic_calibration", "06_authorities/diagnostic_calibration/diagnostic_calibration.json"),
         ("diagnostic_calibration (legacy)", "inputs/diagnostic_calibration/diagnostic_calibration.json"),
         ("machine_authority_snapshot", "06_authorities/machine_authority_snapshot/authority_manifest.json"),
@@ -417,6 +419,8 @@ def authority_snapshot(run_dir: Path) -> Dict[str, Any]:
         "evolutive_authority",
         "execution_authority",
         "profile_trajectory",
+        "planner_authority",
+        "coil_limits_authority",
         "diagnostic_calibration",
         "provenance hashes",
     )
@@ -439,6 +443,14 @@ def authority_snapshot(run_dir: Path) -> Dict[str, Any]:
                 "ADR-004: built from FAIR-MAST equilibrium when wmhd/pprime exist; "
                 "soft-skip → evolutive holds inverse IC (never invents coefficients)."
             )
+        elif role == "coil_limits_authority":
+            status = "awaiting"
+            hint = (
+                "ADR-004 Phase 2 hard gate: populate cited Imax_A/Vmax_V before execute_planner."
+            )
+        elif role == "planner_authority":
+            status = "awaiting"
+            hint = "Optional; execute_planner defaults false until coil limits are cited."
         matrix.append(
             {
                 "label": role,
@@ -467,6 +479,8 @@ def authority_snapshot(run_dir: Path) -> Dict[str, Any]:
                 "diagnostic_calibration",
                 "contract",
                 "profile_trajectory",
+                "coil_limits",
+                "planner",
             )
         )
     ]
@@ -870,6 +884,9 @@ _PREFERRED_DOWNLOADS = (
     "inputs/profile_trajectory_authority/profile_trajectory.json",
     "inputs/profile_trajectory_authority/profile_trajectory_authority.json",
     "03_reconstruction/evolutive/evolutive_meta.json",
+    "07_planner/PLANNER.json",
+    "07_planner/PLANNER.md",
+    "07_planner/planning_residual_vs_measured_V.csv",
 )
 
 

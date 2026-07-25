@@ -819,6 +819,67 @@ class ShotPipeline:
             else:
                 _stage("efit_compare_authority", True, note="compare_efit_archive=false")
 
+            # ADR-004 Phase 2: planner + coil_limits authority snapshots
+            if self.cfg.execute_planner:
+                from .coil_limits import CoilLimitsError, load_coil_limits, write_coil_limits
+                from .planner import PlannerError, load_planner_authority, write_planner_authority
+
+                pl_path = _resolve_config_path(self.cfg.planner_authority_path, repo_root)
+                cl_path = _resolve_config_path(self.cfg.coil_limits_authority_path, repo_root)
+                if pl_path is None or not pl_path.exists():
+                    blocking_errors.append(
+                        "planner_authority_required: set planner_authority_path when execute_planner=true"
+                    )
+                    _stage("planner_authority", False, note="missing_path")
+                else:
+                    try:
+                        pl_auth = load_planner_authority(pl_path)
+                        pl_out = write_planner_authority(inputs_dir, pl_auth)
+                        _stage(
+                            "planner_authority",
+                            True,
+                            path=str(pl_out),
+                            enabled=bool(pl_auth.enabled),
+                        )
+                    except Exception as e:
+                        blocking_errors.append(f"planner_authority_failed: {type(e).__name__}: {e}")
+                        _stage("planner_authority", False, error=str(e))
+                if cl_path is None or not cl_path.exists():
+                    blocking_errors.append(
+                        "coil_limits_authority_required: set coil_limits_authority_path "
+                        "when execute_planner=true (ADR-004 hard gate)"
+                    )
+                    _stage("coil_limits_authority", False, note="missing_path")
+                else:
+                    try:
+                        cl_auth = load_coil_limits(cl_path)
+                        cl_out = write_coil_limits(inputs_dir, cl_auth)
+                        if cl_auth.awaiting:
+                            blocking_errors.append(
+                                "coil_limits_awaiting_authority: populate cited Imax_A/Vmax_V "
+                                "before execute_planner (never invent limits)"
+                            )
+                            _stage(
+                                "coil_limits_authority",
+                                False,
+                                path=str(cl_out),
+                                status=cl_auth.status,
+                            )
+                        else:
+                            _stage(
+                                "coil_limits_authority",
+                                True,
+                                path=str(cl_out),
+                                n_circuits=len(cl_auth.circuits),
+                                citation=cl_auth.citation,
+                            )
+                    except (CoilLimitsError, PlannerError, Exception) as e:
+                        blocking_errors.append(f"coil_limits_authority_failed: {type(e).__name__}: {e}")
+                        _stage("coil_limits_authority", False, error=str(e))
+            else:
+                _stage("planner_authority", True, note="execute_planner=false")
+                _stage("coil_limits_authority", True, note="execute_planner=false")
+
             # Time window: override > consensus > single-signal inference
             window_override: Optional[Dict[str, Any]] = None
             if tstart is not None and tend is not None:
@@ -1337,6 +1398,113 @@ class ShotPipeline:
                     True,
                     note="compare_efit_archive=false_or_no_cache",
                 )
+
+            # ADR-004 Phase 2: optional GSPulse-style planner (default off)
+            if self.cfg.execute_planner and final_tw is not None:
+                try:
+                    from .coil_limits import load_coil_limits
+                    from .planner import load_planner_authority, run_planner_stage
+                    from .voltage_map import load_voltage_map
+
+                    pl_snap = inputs_dir / "planner_authority" / "planner_authority.json"
+                    cl_snap = inputs_dir / "coil_limits_authority" / "coil_limits_authority.json"
+                    if not pl_snap.exists() or not cl_snap.exists():
+                        raise FileNotFoundError("planner/coil_limits authority snapshots missing")
+                    pl_auth = load_planner_authority(pl_snap)
+                    cl_auth = load_coil_limits(cl_snap)
+                    if not pl_auth.enabled:
+                        _stage("planner", True, note="planner_authority.enabled=false")
+                    else:
+                        vm_path = _resolve_config_path(self.cfg.voltage_map_path, repo_root)
+                        if vm_path is None or not vm_path.exists():
+                            raise FileNotFoundError("voltage_map_path required for planner circuit order")
+                        vmap = load_voltage_map(vm_path)
+                        order = list(vmap.machine_active_circuit_order)
+                        ma_for_plan = ma_root if ma_root is not None else machine_dir
+                        # Prefer freegsnke env for R/L extract when main interpreter lacks freegsnke
+                        dyn = None
+                        snap_dyn = inputs_dir / "circuit_dynamics_snapshot.json"
+                        if snap_dyn.exists():
+                            from .planner import load_circuit_dynamics
+
+                            dyn = load_circuit_dynamics(snap_dyn)
+                        else:
+                            # Try extract in-process; if fails, attempt freegsnke_python subprocess later via error
+                            try:
+                                from .planner import extract_circuit_dynamics_from_freegsnke_machine
+
+                                dyn = extract_circuit_dynamics_from_freegsnke_machine(
+                                    machine_dir=ma_for_plan,
+                                    circuit_order=order,
+                                )
+                            except Exception:
+                                # Subprocess extract using freegsnke_python
+                                import subprocess
+                                import sys
+
+                                py = self.cfg.freegsnke_python or sys.executable
+                                script = (
+                                    "import json,sys\n"
+                                    "from pathlib import Path\n"
+                                    "from mast_freegsnke.planner import extract_circuit_dynamics_from_freegsnke_machine, write_circuit_dynamics\n"
+                                    f"order={order!r}\n"
+                                    f"md=Path(r'{ma_for_plan}')\n"
+                                    f"out=Path(r'{snap_dyn}')\n"
+                                    "dyn=extract_circuit_dynamics_from_freegsnke_machine(machine_dir=md, circuit_order=order)\n"
+                                    "write_circuit_dynamics(out, dyn)\n"
+                                    "print('ok')\n"
+                                )
+                                # Ensure repo src on path
+                                import os as _os
+
+                                env = dict(**{k: v for k, v in _os.environ.items()})
+                                src_path = str((repo_root / "src").resolve())
+                                env["PYTHONPATH"] = src_path + (
+                                    (";" + env["PYTHONPATH"]) if env.get("PYTHONPATH") else ""
+                                )
+                                r = subprocess.run(
+                                    [str(py), "-c", script],
+                                    capture_output=True,
+                                    text=True,
+                                    env=env,
+                                    timeout=300,
+                                )
+                                if r.returncode != 0:
+                                    raise RuntimeError(
+                                        "circuit_dynamics extract failed: "
+                                        + (r.stderr or r.stdout or "unknown")
+                                    )
+                                from .planner import load_circuit_dynamics
+
+                                dyn = load_circuit_dynamics(snap_dyn)
+
+                        prep = run_planner_stage(
+                            run_dir=run_dir,
+                            inputs_dir=inputs_dir,
+                            machine_dir=ma_for_plan,
+                            planner_auth=pl_auth,
+                            coil_limits=cl_auth,
+                            circuit_order=order,
+                            t_start=float(final_tw.t_start),
+                            t_end=float(final_tw.t_end),
+                            shot=int(shot),
+                            circuit_dynamics=dyn,
+                        )
+                        _stage(
+                            "planner",
+                            True,
+                            path=prep.get("path"),
+                            n_knots=prep.get("n_knots"),
+                            residual_rms=prep.get("residual_rms_by_circuit"),
+                        )
+                except Exception as e:
+                    _stage("planner", False, error=str(e))
+                    blocking_errors.append(f"planner_failed: {type(e).__name__}: {e}")
+            elif self.cfg.execute_planner:
+                _stage("planner", False, note="no_window")
+                blocking_errors.append("planner_failed: window not finalized")
+            else:
+                _stage("planner", True, note="execute_planner=false")
 
             status = "success" if not blocking_errors else "failed"
             _write_manifest(

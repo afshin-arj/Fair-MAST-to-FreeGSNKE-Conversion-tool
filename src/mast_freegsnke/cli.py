@@ -496,6 +496,47 @@ def main(argv=None) -> int:
         else:
             print("[INFO] build_profile_trajectory=false (ADR-004 stage off)")
 
+        # ADR-004 Phase 2 planner (optional; hard-gated by coil_limits)
+        if cfg.execute_planner:
+            from .coil_limits import load_coil_limits, coil_limits_status_line
+            from .planner import load_planner_authority
+
+            for label, path_s, loader in (
+                ("planner_authority", cfg.planner_authority_path, load_planner_authority),
+                ("coil_limits_authority", cfg.coil_limits_authority_path, load_coil_limits),
+            ):
+                if not path_s:
+                    print(f"[FAIL] {label} path required when execute_planner=true")
+                    ok = False
+                    continue
+                pp = Path(path_s)
+                if not pp.is_absolute():
+                    pp = (Path.cwd() / pp).resolve()
+                if not pp.exists():
+                    print(f"[FAIL] {label} not found: {pp}")
+                    ok = False
+                    continue
+                try:
+                    auth = loader(pp)
+                    if label == "coil_limits_authority":
+                        print(coil_limits_status_line(auth))
+                        if auth.awaiting:
+                            print(
+                                "[FAIL] coil_limits awaiting_authority — "
+                                "populate cited Imax/Vmax before execute_planner"
+                            )
+                            ok = False
+                    else:
+                        print(
+                            f"[OK] planner_authority: enabled={auth.enabled} "
+                            f"require={auth.require} out={auth.output_relpath}"
+                        )
+                except Exception as e:
+                    print(f"[FAIL] {label} invalid: {e}")
+                    ok = False
+        else:
+            print("[INFO] execute_planner=false (ADR-004 Phase 2 off)")
+
         # Diagnostic calibration (optional; empty channels = awaiting)
         if cfg.diagnostic_calibration_path:
             from .diagnostic_calibration import (

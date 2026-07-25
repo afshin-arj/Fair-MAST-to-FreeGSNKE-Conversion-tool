@@ -93,6 +93,10 @@ class AppConfig:
     # ADR-002: compare FreeGSNKE to FAIR-MAST EFIT++ archive (default.json sets true).
     compare_efit_archive: bool = False
     efit_compare_authority_path: Optional[str] = None
+    # ADR-004 Phase 2: GSPulse-style planner (default off; hard-gated by coil_limits).
+    execute_planner: bool = False
+    planner_authority_path: Optional[str] = None
+    coil_limits_authority_path: Optional[str] = None
     # ADR-004: EFIT++ → profile_trajectory (default.json enables when path set).
     profile_trajectory_authority_path: Optional[str] = None
     build_profile_trajectory: bool = False
@@ -213,6 +217,22 @@ class AppConfig:
                 "compare_efit_archive=true requires efit_compare_authority_path "
                 "(ADR-002 fail-closed)"
             )
+        execute_planner = bool(obj.get("execute_planner", False))
+        planner_authority_path = (
+            str(obj["planner_authority_path"]) if obj.get("planner_authority_path") else None
+        )
+        coil_limits_authority_path = (
+            str(obj["coil_limits_authority_path"]) if obj.get("coil_limits_authority_path") else None
+        )
+        if execute_planner and not planner_authority_path:
+            raise ValueError(
+                "execute_planner=true requires planner_authority_path (ADR-004 fail-closed)"
+            )
+        if execute_planner and not coil_limits_authority_path:
+            raise ValueError(
+                "execute_planner=true requires coil_limits_authority_path "
+                "(ADR-004 hard gate — never invent Imax/Vmax)"
+            )
         # Ensure equilibrium group is downloaded when EFIT compare is enabled
         if compare_efit_archive and "equilibrium" not in optional_groups:
             optional_groups = list(optional_groups) + ["equilibrium"]
@@ -278,6 +298,9 @@ class AppConfig:
             torax_geometry_export_authority_path=torax_geometry_export_authority_path,
             compare_efit_archive=compare_efit_archive,
             efit_compare_authority_path=efit_compare_authority_path,
+            execute_planner=execute_planner,
+            planner_authority_path=planner_authority_path,
+            coil_limits_authority_path=coil_limits_authority_path,
             profile_trajectory_authority_path=profile_trajectory_authority_path,
             build_profile_trajectory=build_profile_trajectory,
             freegsnke_script_timeout_s=freegsnke_script_timeout_s,
