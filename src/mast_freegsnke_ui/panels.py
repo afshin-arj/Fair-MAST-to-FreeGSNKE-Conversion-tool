@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from mast_freegsnke_ui import artifacts as art
+from mast_freegsnke_ui import ui_kit
 
 _MAX_GALLERY = 4
 _MAX_CSV_PREVIEW = 1
@@ -13,59 +14,23 @@ _MAX_FILE_LINKS = 20
 
 
 def _require() -> tuple[Any, Any, Any]:
-    from dash import dcc, html
-    import dash_bootstrap_components as dbc
-
-    return html, dcc, dbc
+    return ui_kit.require()
 
 
 def _fmt_kpi(value: Any) -> str:
-    if value is None:
-        return "—"
-    if isinstance(value, bool):
-        return "yes" if value else "no"
-    if isinstance(value, float):
-        if abs(value) >= 1e4 or (abs(value) > 0 and abs(value) < 1e-2):
-            return f"{value:.3g}"
-        return f"{value:.4g}"
-    return str(value)
+    return ui_kit.fmt_kpi(value)
 
 
-def empty_state(title: str, body: str, *, steps: Optional[List[str]] = None) -> Any:
-    html, _, dbc = _require()
-    kids: List[Any] = [
-        html.Div("No shot context", className="empty-kicker"),
-        html.H5(title, className="empty-title"),
-        html.P(body, className="empty-body mb-0"),
-    ]
-    if steps:
-        kids.append(
-            html.Ol(
-                [html.Li(s) for s in steps],
-                className="empty-steps",
-            )
-        )
-    return html.Div(kids, className="empty-state")
+def empty_state(title: str, body: str, *, steps: Optional[List[str]] = None, kind: str = "empty") -> Any:
+    return ui_kit.empty_state(title, body, steps=steps, kind=kind)
 
 
 def tab_banner(title: str, note: str) -> Any:
-    html, _, _ = _require()
-    return html.Div(
-        [
-            html.H6(title, className="tab-banner-title"),
-            html.P(note, className="tab-banner-note"),
-        ],
-        className="tab-banner",
-    )
+    return ui_kit.tab_banner(title, note)
 
 
 def chip(label: str, value: Any, *, tone: str = "") -> Any:
-    html, _, _ = _require()
-    cls = "fg-chip" + (f" fg-chip-{tone}" if tone else "")
-    return html.Span(
-        [html.Span(str(label), className="fg-chip-k"), html.Span(_fmt_kpi(value), className="fg-chip-v")],
-        className=cls,
-    )
+    return ui_kit.chip(label, value, tone=tone)
 
 
 def shot_dossier(
@@ -75,19 +40,22 @@ def shot_dossier(
     cache_ready: Optional[bool] = None,
     cache_note: str = "",
 ) -> Any:
-    """Compact science context strip for fusion experts."""
+    """Compact science context strip for fusion experts (sticky in layout)."""
     html, _, _ = _require()
     if shot is None or run_dir is None or not Path(run_dir).is_dir():
         return html.Div(
             [
                 html.Span("No active shot", className="dossier-empty"),
                 html.Span("Open a library entry or Start a reconstruction", className="dossier-hint"),
+                html.Span(
+                    ["Keys: ", html.Kbd("/"), " shot · ", html.Kbd("1–8"), " tabs · ", html.Kbd("r"), " refresh"],
+                    className="dossier-keys",
+                ),
             ],
             className="shot-dossier shot-dossier-empty",
         )
     k = art.overview_kpis(run_dir)
-    st = str(k.get("status") or "?").lower()
-    tone = "ok" if st in {"success", "ok", "completed"} else ("fail" if st in {"failed", "error"} else "warn")
+    tone = ui_kit.status_tone(k.get("status"))
     window = "—"
     if k.get("t_start") is not None or k.get("t_end") is not None:
         window = f"{_fmt_kpi(k.get('t_start'))} → {_fmt_kpi(k.get('t_end'))} s"
@@ -105,16 +73,37 @@ def shot_dossier(
         chip("Window", window),
         chip("Modes", mode_txt),
         chip("Contracts", k.get("n_scored")),
-        chip("EFIT", k.get("efit_ok")),
-        chip("Evol. Ip", k.get("evolutive_ok")),
+        chip("EFIT", k.get("efit_ok"), tone=ui_kit.status_tone(k.get("efit_ok"))),
+        chip("Evol. Ip", k.get("evolutive_ok"), tone=ui_kit.status_tone(k.get("evolutive_ok"))),
+        chip("RMS [A]", k.get("evolutive_rms_A")),
         chip("L2 cache", cache_val, tone=cache_tone),
     ]
     if k.get("blocking_n"):
         chips.append(chip("Blocking", k.get("blocking_n"), tone="fail"))
+    block_banner = ui_kit.blocking_banner(k.get("blocking") or [], title="Shot blocking errors")
+    path_txt = str(Path(run_dir).as_posix())
     return html.Div(
         [
-            html.Div(chips, className="dossier-chips"),
+            html.Div(
+                [
+                    html.Div(chips, className="dossier-chips"),
+                    html.Div(
+                        [
+                            ui_kit.copy_btn(str(int(shot)), label="Copy shot"),
+                            ui_kit.copy_btn(window if window != "—" else "", label="Copy window"),
+                            ui_kit.copy_btn(path_txt, label="Copy path"),
+                        ],
+                        className="dossier-actions",
+                    ),
+                ],
+                className="dossier-top",
+            ),
+            block_banner,
             html.Div(cache_note, className="dossier-note") if cache_note else None,
+            html.Span(
+                ["Keys: ", html.Kbd("/"), " shot · ", html.Kbd("1–8"), " tabs · ", html.Kbd("r"), " refresh"],
+                className="dossier-keys",
+            ),
         ],
         className="shot-dossier",
     )
@@ -261,7 +250,7 @@ def stage_timeline(progress: Optional[Dict[str, Any]], running: bool) -> Any:
             continue
         name = st.get("stage") or "?"
         ok = bool(st.get("ok"))
-        err = st.get("error")
+        err = st.get("error") or st.get("error_hint")
         is_current = name == current and running
         cls = "stage-item"
         if is_current:
@@ -274,22 +263,28 @@ def stage_timeline(progress: Optional[Dict[str, Any]], running: bool) -> Any:
         note = st.get("note")
         hits = st.get("cache_hits")
         synced = st.get("synced")
+        dur = st.get("duration_s")
         detail_bits: List[str] = []
         if note:
             detail_bits.append(str(note))
+        if dur is not None:
+            try:
+                detail_bits.append(f"{float(dur):.1f}s")
+            except (TypeError, ValueError):
+                pass
         if isinstance(hits, list) and hits:
             detail_bits.append(f"cache {len(hits)}")
         if isinstance(synced, list) and synced:
             detail_bits.append(f"sync {len(synced)}")
         elif isinstance(synced, list) and note and "local_cache" in str(note):
             detail_bits.append("no S3 sync")
-        detail = " · ".join(detail_bits)[:140] if detail_bits else None
+        detail = " · ".join(detail_bits)[:160] if detail_bits else None
         body: List[Any] = [
             html.Span(badge, className="stage-badge"),
             html.Span(
                 [
                     html.Span(str(name), className="stage-name"),
-                    html.Span(detail, className="stage-note") if detail and ok else None,
+                    html.Span(detail, className="stage-note") if detail else None,
                     html.Span(str(err)[:120], className="stage-err") if err and not ok else None,
                 ]
             ),
@@ -300,12 +295,27 @@ def stage_timeline(progress: Optional[Dict[str, Any]], running: bool) -> Any:
     return html.Ul(items, className="stage-list mb-0")
 
 
+def _media_mode_label(path: Path) -> Optional[str]:
+    name = path.name.lower()
+    rel = str(path).replace("\\", "/").lower()
+    if "evolutive" in name or "/evolutive/" in rel:
+        return "evolutive"
+    if "inverse" in name or "inverse" in rel:
+        return "inverse"
+    if "forward" in name or "forward" in rel:
+        return "forward"
+    if name.endswith(".gif"):
+        return "equilibrium"
+    return None
+
+
 def media_card(shot: int, path: Path, run_dir: Path) -> Any:
     html, _, dbc = _require()
     rel = art.rel_posix(path, run_dir)
     view = art.file_url_for_path(shot, path, run_dir, download=False)
     dl = art.file_url_for_path(shot, path, run_dir, download=True)
     is_gif = path.suffix.lower() == ".gif"
+    mode = _media_mode_label(path)
     # Always use the file server URL — never inline data-URIs (slow + huge payloads).
     return html.Div(
         [
@@ -319,12 +329,19 @@ def media_card(shot: int, path: Path, run_dir: Path) -> Any:
             ),
             html.Div(
                 [
-                    html.Div(Path(rel).name, className="media-basename", title=rel),
+                    html.Div(
+                        [
+                            html.Span(Path(rel).name, className="media-basename", title=rel),
+                            html.Span(mode, className="media-mode-badge") if mode else None,
+                        ],
+                        className="media-title-row",
+                    ),
                     html.Div(rel, className="media-caption text-truncate", title=rel),
                     html.Div(
                         [
                             html.A("Open", href=view, target="_blank", className="btn btn-sm btn-outline-secondary me-1"),
-                            html.A("Download", href=dl, className="btn btn-sm btn-primary"),
+                            html.A("Download", href=dl, className="btn btn-sm btn-primary me-1"),
+                            ui_kit.copy_btn(rel, label="Path"),
                         ],
                         className="media-actions",
                     ),
@@ -418,8 +435,8 @@ def export_bar(shot: int, run_dir: Path) -> Any:
     )
 
 
-def downloads_table(shot: int, run_dir: Path) -> Any:
-    html, _, dbc = _require()
+def downloads_table(shot: int, run_dir: Path, *, query: str = "") -> Any:
+    html, dcc, dbc = _require()
     # Prefer quick catalog + capped image/csv lists — avoid full tree walks.
     items = list(art.catalog_quick(run_dir))
     seen = {it["rel"] for it in items}
@@ -447,15 +464,32 @@ def downloads_table(shot: int, run_dir: Path) -> Any:
                     "group": group,
                 }
             )
+    q = (query or "").strip().lower()
+    if q:
+        items = [
+            it
+            for it in items
+            if q in str(it.get("rel") or "").lower()
+            or q in str(it.get("group") or "").lower()
+            or q in str(it.get("kind") or "").lower()
+        ]
+    # Stable group order for expert scanning
+    group_order = {"summary": 0, "plots": 1, "csv": 2, "residuals": 3, "efit": 4, "gifs": 5}
+    items.sort(key=lambda it: (group_order.get(str(it.get("group")), 9), str(it.get("rel") or "")))
     rows = []
     for item in items[:120]:
         rel = item["rel"]
         rows.append(
             html.Tr(
                 [
-                    html.Td(item["group"]),
+                    html.Td(item["group"], className="files-group"),
                     html.Td(item["kind"]),
-                    html.Td(html.Code(rel, className="small")),
+                    html.Td(
+                        [
+                            html.Code(rel, className="small me-1"),
+                            ui_kit.copy_btn(rel, label="⎘"),
+                        ]
+                    ),
                     html.Td(f"{int(item['bytes']):,}"),
                     html.Td(
                         [
@@ -467,11 +501,36 @@ def downloads_table(shot: int, run_dir: Path) -> Any:
             )
         )
     if not rows:
-        return html.P("No downloadable artifacts yet.", className="text-muted")
+        return html.Div(
+            [
+                dcc.Input(
+                    id="files-filter",
+                    type="search",
+                    placeholder="Filter by path / group / type…",
+                    value=query or "",
+                    debounce=True,
+                    className="form-control form-control-sm files-filter mb-2",
+                ),
+                html.P(
+                    "No matching artifacts." if q else "No downloadable artifacts yet.",
+                    className="text-muted",
+                ),
+            ]
+        )
     return html.Div(
         [
+            dcc.Input(
+                id="files-filter",
+                type="search",
+                placeholder="Filter by path / group / type…",
+                value=query or "",
+                debounce=True,
+                className="form-control form-control-sm files-filter mb-2",
+            ),
             html.P(
-                "Capped listing for speed — Download ZIP for the full pack.",
+                f"Showing {len(rows)} capped rows"
+                + (f" matching “{query}”" if q else "")
+                + " — Download ZIP for the full pack.",
                 className="small text-muted mb-2",
             ),
             dbc.Table(
@@ -493,11 +552,11 @@ def overview_panel(shot: int, run_dir: Path) -> Any:
     html, dcc, dbc = _require()
     kpis = art.overview_kpis(run_dir)
     blocking = kpis.get("blocking") or []
-    # Keep Overview instant: no Markdown parse/render — link out to SUMMARY.md.
+    snap = art.authority_snapshot(run_dir)
     summary_body = html.Div(
         [
             html.P(
-                "SUMMARY is opened as a file for speed. Use the links below (or KPIs above) instead of in-page Markdown.",
+                "SUMMARY opens as a file for speed — use the scorecard above for the flight-deck view.",
                 className="small text-muted mb-2",
             ),
             html.Div(
@@ -531,23 +590,27 @@ def overview_panel(shot: int, run_dir: Path) -> Any:
         ],
         className="summary-wrap",
     )
-    blocking_body = None
-    if blocking:
-        blocking_body = dbc.Alert(
-            [html.Strong("Fail-fast — do not invent metrology."), html.Ul([html.Li(str(b)) for b in blocking], className="mb-0 mt-2")] ,
-            color="danger",
-        )
     return html.Div(
         [
             tab_banner(
                 "Science overview",
-                "Status, formed-plasma window, and KPIs. Expand only what you need — SUMMARY opens as a file for speed.",
+                "Scorecard first. Blocking errors and authority provenance are fail-fast — never invent metrology.",
             ),
+            ui_kit.blocking_banner(blocking),
             quick_links(shot, run_dir),
+            ui_kit.section(
+                "Scorecard",
+                "Declared KPIs from SUMMARY / metrics / science_audit / EFIT archive compare.",
+                ui_kit.kpi_scorecard_table(kpis),
+            ),
+            ui_kit.section(
+                "Provenance",
+                "Snapshotted authorities cited by this run (short hashes only).",
+                ui_kit.provenance_strip(snap.get("items") or [])
+                or html.P("No authority snapshots on disk.", className="small text-muted mb-0"),
+            ),
             accordion(
                 [
-                    ("Key performance indicators", kpi_strip(kpis), False),
-                    ("Blocking errors", blocking_body, False),
                     ("Downloads", export_bar(shot, run_dir), False),
                     ("SUMMARY (file links + text digest)", summary_body, False),
                 ]
@@ -560,31 +623,55 @@ def residuals_panel(shot: int, run_dir: Path) -> Any:
     html, dcc, dbc = _require()
     metrics = art.load_metrics(run_dir)
     rows = art.metrics_table_rows(metrics)
-    table_body: Any = None
+    # Sort worst-first by rms for expert triage
+    def _rms_key(r: Dict[str, Any]) -> float:
+        try:
+            v = r.get("rms")
+            return float(v) if v is not None else -1.0
+        except (TypeError, ValueError):
+            return -1.0
+
+    rows_sorted = sorted(rows, key=_rms_key, reverse=True)
+    table_body: List[Any] = []
+    ok = metrics.get("ok") if metrics else None
+    tone = ui_kit.status_tone(ok)
     if metrics:
-        table_body = [
-            html.P(
-                f"ok={metrics.get('ok')} · n_scored={metrics.get('n_scored')} · "
-                f"n_skipped_all_nan={metrics.get('n_skipped_all_nan')}",
-                className="small text-muted",
-            )
-        ]
-    else:
-        table_body = []
-    if rows:
-        header = html.Tr([html.Th(c) for c in ("contract", "rms", "mae", "max_abs", "n")])
-        body = [
-            html.Tr(
+        table_body.append(
+            html.Div(
                 [
-                    html.Td(r["contract"]),
-                    html.Td(_fmt(r["rms"])),
-                    html.Td(_fmt(r["mae"])),
-                    html.Td(_fmt(r["max_abs"])),
-                    html.Td(r["n"]),
-                ]
+                    chip("ok", ok, tone=tone),
+                    chip("n_scored", metrics.get("n_scored")),
+                    chip("skipped_nan", metrics.get("n_skipped_all_nan")),
+                ],
+                className="compare-chip-row mb-2",
             )
-            for r in rows
-        ]
+        )
+    if rows_sorted:
+        header = html.Tr(
+            [
+                html.Th("#"),
+                html.Th("contract"),
+                html.Th("rms"),
+                html.Th("mae"),
+                html.Th("max_abs"),
+                html.Th("n"),
+            ]
+        )
+        body = []
+        for i, r in enumerate(rows_sorted, start=1):
+            body.append(
+                html.Tr(
+                    [
+                        html.Td(i, className="text-muted"),
+                        html.Td(html.Code(str(r["contract"]), className="small")),
+                        html.Td(_fmt(r["rms"]), className="fg-kpi-val"),
+                        html.Td(_fmt(r["mae"])),
+                        html.Td(_fmt(r["max_abs"])),
+                        html.Td(r["n"]),
+                    ],
+                    className="resid-top" if i <= 3 else "",
+                )
+            )
         table_body.append(
             dbc.Table(
                 [html.Thead(header), html.Tbody(body)],
@@ -592,8 +679,19 @@ def residuals_panel(shot: int, run_dir: Path) -> Any:
                 hover=True,
                 size="sm",
                 responsive=True,
+                className="fg-scorecard residuals-table",
             )
         )
+        if rows_sorted:
+            top = rows_sorted[0]
+            table_body.insert(
+                1,
+                html.P(
+                    f"Worst RMS: {top.get('contract')} = {_fmt(top.get('rms'))} "
+                    f"(sorted descending — triage top offenders first).",
+                    className="small text-muted",
+                ),
+            )
         csv_links = []
         for csv_path in art.residual_csv_paths(run_dir)[:24]:
             rel = art.rel_posix(csv_path, run_dir)
@@ -601,11 +699,11 @@ def residuals_panel(shot: int, run_dir: Path) -> Any:
                 html.A(
                     csv_path.name,
                     href=art.file_url(shot, rel, download=True),
-                    className="btn btn-sm btn-outline-secondary me-1 mb-1",
+                    className="compare-file-chip",
                 )
             )
         if csv_links:
-            table_body.append(html.Div([html.Span("CSV: ", className="small text-muted")] + csv_links))
+            table_body.append(html.Div(csv_links, className="compare-file-chip-row mt-2"))
 
     pngs = file_link_list(
         shot,
@@ -614,21 +712,29 @@ def residuals_panel(shot: int, run_dir: Path) -> Any:
         empty="No residual PNGs under report/key_plots/.",
         limit=_MAX_FILE_LINKS,
     )
-    # One small gallery only (optional visual) — avoids Plotly parse cost on every tab open.
     preview_paths = art.residual_plot_paths(run_dir)[:_MAX_GALLERY]
     charts_body = media_gallery(shot, preview_paths, run_dir, "No residual preview plots.") if preview_paths else None
 
     if not table_body and not charts_body:
-        return empty_state("No residuals yet", "Run the pipeline with contract metrics enabled.")
+        return empty_state(
+            "No residuals yet",
+            "Run the pipeline with contract metrics enabled.",
+            kind="empty",
+        )
     return html.Div(
         [
             tab_banner(
                 "Contract residuals",
-                "Metrics table first. Plotly charts are skipped for speed — open PNGs/CSVs, or use the light preview below.",
+                "Metrics sorted by RMS (worst first). Plots are secondary — open PNGs/CSVs for deep dive.",
+            ),
+            ui_kit.section(
+                "Metrics",
+                "Per-contract residuals from reconstruction_metrics.json (declared contracts only).",
+                html.Div(table_body) if table_body else html.P("No per-contract rows.", className="text-muted"),
+                meta=f"{len(rows_sorted)} contract(s)",
             ),
             accordion(
                 [
-                    ("Metrics table & CSV", html.Div(table_body) if table_body else None, False),
                     ("Residual PNG links", pngs, False),
                     ("Light PNG preview", charts_body, False),
                 ]
@@ -650,6 +756,16 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
     score = art.load_shape_scorecard(run_dir)
     compare_body: Any = None
     score_body: Any = None
+    efit_ok = efit.get("ok") if isinstance(efit, dict) else None
+    lead = html.Div(
+        [
+            chip("archive compare", "ADR-002"),
+            chip("live EFIT++", "no", tone="warn"),
+            chip("ok", efit_ok, tone=ui_kit.status_tone(efit_ok)),
+            chip("n_times", efit.get("n_times") if isinstance(efit, dict) else None),
+        ],
+        className="compare-chip-row mb-2",
+    )
     if efit:
         keys = [k for k in ("ok", "n_times", "errors", "fix_hint", "label", "status") if k in efit]
         extra = [k for k in efit.keys() if k not in keys][:8]
@@ -666,7 +782,7 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
                     html.A(
                         f"Download {Path(rel).name}",
                         href=art.file_url(shot, rel, download=True),
-                        className="btn btn-sm btn-outline-secondary me-1 mb-2",
+                        className="compare-file-chip",
                     )
                 )
         compare_body = html.Div(
@@ -676,8 +792,9 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
                     bordered=False,
                     size="sm",
                     responsive=True,
+                    className="fg-scorecard",
                 ),
-                html.Div(links),
+                html.Div(links, className="compare-file-chip-row mt-2"),
             ]
         )
     if score and isinstance(score, dict):
@@ -687,6 +804,7 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
             bordered=False,
             size="sm",
             responsive=True,
+            className="fg-scorecard",
         )
     return html.Div(
         [
@@ -694,10 +812,15 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
                 "EFIT archive compare",
                 "FreeGSNKE vs FAIR-MAST Level-2 EFIT++ archive (ADR-002) — not a live EFIT++ / efit-ai / Py-EFIT solve.",
             ),
+            lead,
+            ui_kit.section(
+                "Shape scorecard",
+                "Primary expert view — archive shape metrics when present.",
+                score_body or html.P("No shape_scorecard.json yet.", className="small text-muted mb-0"),
+            ),
             accordion(
                 [
                     ("COMPARE.json fields", compare_body, False),
-                    ("Shape scorecard", score_body, False),
                     (
                         "EFIT plots",
                         file_link_list(
@@ -927,6 +1050,55 @@ def level2_panel(shot: int, run_dir: Path) -> Any:
         if key not in present_keys:
             options.append({"label": f"{lab} (empty)", "value": key})
 
+    toc_chips: List[Any] = []
+    for key, lab in _L2_FAMILY_DEFS:
+        n_plots = len(grouped.get(key) or [])
+        n_csv = sum(1 for i in csv_light if i.get("section") == key)
+        if n_plots or n_csv or key in present_keys:
+            toc_chips.append(
+                html.Span(
+                    f"{lab} · {n_plots}p/{n_csv}c",
+                    className="l2-toc-chip" + ("" if (n_plots or n_csv) else " l2-toc-chip-empty"),
+                )
+            )
+
+    cal_rows = art.calibration_await_rows(run_dir)
+    cal_section: Any = None
+    if cal_rows:
+        cal_body = dbc.Table(
+            [
+                html.Thead(html.Tr([html.Th(h) for h in ("Family", "Status", "Source", "Fix hint")])),
+                html.Tbody(
+                    [
+                        html.Tr(
+                            [
+                                html.Td(r.get("family")),
+                                html.Td(
+                                    html.Span(
+                                        str(r.get("status")),
+                                        className="auth-status auth-status-warn",
+                                    )
+                                ),
+                                html.Td(html.Code(str(r.get("source")), className="small")),
+                                html.Td(str(r.get("hint") or ""), className="small"),
+                            ]
+                        )
+                        for r in cal_rows
+                    ]
+                ),
+            ],
+            bordered=False,
+            size="sm",
+            responsive=True,
+            className="fg-scorecard mb-0",
+        )
+        cal_section = ui_kit.section(
+            "Awaiting diagnostic_calibration",
+            "Channels/families without cited V→T (or equivalent) — populate configs/diagnostic_calibration.json; never invent factors.",
+            cal_body,
+            meta=f"{len(cal_rows)} row(s)",
+        )
+
     meta_links = html.Div(
         [
             html.A(
@@ -961,10 +1133,18 @@ def level2_panel(shot: int, run_dir: Path) -> Any:
         [
             tab_banner(
                 "FAIR-MAST Level-2 measured data",
-                "Pick a family below — plots and CSV load on demand so tab switches stay smooth. Everything remains available.",
+                "Family TOC + on-demand detail. Calibration-awaiting channels are listed explicitly — never invent V→T.",
             ),
             html.Div(index_bits, className="mb-2"),
             meta_links,
+            cal_section,
+            html.Div(
+                [
+                    html.Div("Family TOC", className="fg-quick-label mb-1"),
+                    html.Div(toc_chips, className="l2-toc"),
+                ],
+                className="mb-2",
+            ),
             html.Div(
                 [
                     html.Span("Family", className="fg-quick-label"),
@@ -997,49 +1177,66 @@ def auth_panel(shot: int, run_dir: Path) -> Any:
     children: List[Any] = [
         tab_banner(
             "Authority snapshots",
-            "Machine, coil map, contracts, and provenance hashes cited by this run. Missing authority is blocking.",
+            "Traffic-light matrix of declared authorities. Missing / awaiting is fail-fast — do not invent metrology.",
         )
     ]
     if snap.get("blocking_hint"):
-        children.append(dbc.Alert(snap["blocking_hint"], color="danger"))
-    items = snap.get("items") or []
-    if not items:
-        children.append(
-            empty_state(
-                "No authority snapshots",
-                "Missing authority is a blocking error. Populate machine_authority/ and contracts — do not invent metrology.",
-            )
-        )
-    else:
-        rows = []
-        for it in items:
-            rel = it.get("rel") or it.get("path")
+        children.append(dbc.Alert(snap["blocking_hint"], color="danger", className="py-2 small"))
+    matrix = snap.get("matrix") or []
+    if matrix:
+        mrows = []
+        for it in matrix:
+            st = str(it.get("status") or ("present" if it.get("present") else "missing"))
+            tone = ui_kit.status_tone(st if st != "awaiting" else "awaiting_authority")
+            rel = it.get("rel")
             actions = []
             if rel:
                 actions = [
                     html.A("View", href=art.file_url(shot, rel), target="_blank", className="me-2"),
                     html.A("Download", href=art.file_url(shot, rel, download=True)),
+                    ui_kit.copy_btn(str(rel), label="⎘"),
                 ]
-            rows.append(
+            mrows.append(
                 html.Tr(
                     [
                         html.Td(it.get("label")),
-                        html.Td(html.Code(str(rel), className="small")),
-                        html.Td(it.get("detail") or "present"),
+                        html.Td(
+                            html.Span(st, className=f"auth-status auth-status-{tone or 'na'}"),
+                        ),
+                        html.Td(html.Code(str(rel), className="small") if rel else "—"),
+                        html.Td(it.get("detail") or "—", className="small text-muted"),
                         html.Td(actions),
                     ]
                 )
             )
         children.append(
-            dbc.Table(
-                [
-                    html.Thead(html.Tr([html.Th(h) for h in ("Authority", "Path", "Detail", "Actions")])),
-                    html.Tbody(rows),
-                ],
-                bordered=False,
-                hover=True,
-                size="sm",
-                responsive=True,
+            ui_kit.section(
+                "Authority matrix",
+                "Present vs missing vs awaiting (calibration may be awaiting until cited factors exist).",
+                dbc.Table(
+                    [
+                        html.Thead(
+                            html.Tr(
+                                [html.Th(h) for h in ("Authority", "Status", "Path", "Detail", "Actions")]
+                            )
+                        ),
+                        html.Tbody(mrows),
+                    ],
+                    bordered=False,
+                    hover=True,
+                    size="sm",
+                    responsive=True,
+                    className="fg-scorecard auth-matrix",
+                ),
+            )
+        )
+    items = snap.get("items") or []
+    if not items and not matrix:
+        children.append(
+            empty_state(
+                "No authority snapshots",
+                "Missing authority is a blocking error. Populate machine_authority/ and contracts — do not invent metrology.",
+                kind="failed",
             )
         )
     return html.Div(children)
@@ -1100,25 +1297,12 @@ def _enrich_compare_library_options(
     library_options: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     """Add run status to dropdown labels for expert scanning."""
-    out: List[Dict[str, Any]] = []
-    for opt in library_options:
-        try:
-            shot = int(opt.get("value"))
-        except (TypeError, ValueError):
-            out.append(dict(opt))
-            continue
-        run = art.run_dir_for(Path(runs_dir), shot)
-        if run.is_dir():
-            k = art.overview_kpis(run)
-            status = k.get("status") or "unknown"
-            n_block = k.get("blocking_n")
-            label = f"{shot}  ·  {status}"
-            if isinstance(n_block, int) and n_block > 0:
-                label = f"{label}  ·  {n_block} block"
-        else:
-            label = f"{shot}  ·  missing"
-        out.append({"label": label, "value": shot})
-    return out
+    return ui_kit.enrich_library_options(
+        runs_dir,
+        library_options,
+        overview_kpis_fn=art.overview_kpis,
+        run_dir_for_fn=art.run_dir_for,
+    )
 
 
 def _compare_side_empty(shot: Optional[int], *, label: str) -> Any:
@@ -1554,6 +1738,22 @@ def compare_detail(
         shot_b=shot_b,
     )
 
+    # Expert export: TSV scorecard for clipboard (no invented numbers).
+    tsv_lines = ["key\tlabel\ta\tb\tdelta"]
+    for row in card.get("rows") or []:
+        tsv_lines.append(
+            "\t".join(
+                [
+                    str(row.get("key") or ""),
+                    str(row.get("label") or ""),
+                    str(row.get("a") if row.get("a") is not None else ""),
+                    str(row.get("b") if row.get("b") is not None else ""),
+                    str(row.get("delta") if row.get("delta") is not None else ""),
+                ]
+            )
+        )
+    scorecard_tsv = "\n".join(tsv_lines)
+
     plots_a = (l2.measured_plots_grouped(run_a).get(fam) or []) if a_ok else []
     plots_b = (l2.measured_plots_grouped(run_b).get(fam) or []) if b_ok else []
     csv_a = (
@@ -1790,7 +1990,15 @@ def compare_detail(
             _compare_section(
                 "Scorecard",
                 "Declared KPIs only — Δ is B−A when both sides are numeric. No invented metrology.",
-                _compare_scorecard_table(card),
+                html.Div(
+                    [
+                        html.Div(
+                            ui_kit.copy_btn(scorecard_tsv, label="Copy scorecard TSV"),
+                            className="mb-2",
+                        ),
+                        _compare_scorecard_table(card),
+                    ]
+                ),
             ),
             _compare_section(
                 f"Measured · {fam_title}",
@@ -1906,7 +2114,7 @@ def compare_panel(
                         className="g-2 align-items-end",
                     ),
                 ],
-                className="compare-controls",
+                className="compare-controls compare-controls-sticky",
             ),
             html.Div(
                 id="compare-detail",
@@ -1953,15 +2161,15 @@ TAB_DEFS = (
 )
 
 TAB_META = {
-    "overview": "Run status, formed-plasma window, KPIs, and SUMMARY.",
-    "level2": "FAIR-MAST measured pack — plasma, PF, magnetics, SXR, Thomson, CXRS, … (plots + CSV).",
-    "measured": "FAIR-MAST measured pack — plasma, PF, magnetics, SXR, Thomson, CXRS, … (plots + CSV).",
-    "residuals": "Contract residuals: synthetic vs experimental traces.",
+    "overview": "Scorecard, blocking errors, provenance — SUMMARY on demand.",
+    "level2": "Family TOC, calibration-await table, on-demand plots/CSV.",
+    "measured": "Family TOC, calibration-await table, on-demand plots/CSV.",
+    "residuals": "Contract residuals sorted by RMS (worst first).",
     "compare": "Browse-only A|B console — basename-aligned KPIs, Level-2, residuals, and GIFs.",
-    "efit": "FreeGSNKE vs FAIR-MAST EFIT++ archive (ADR-002) — not a live EFIT solve.",
-    "gifs": "Inverse / forward / evolutive equilibrium GIFs.",
-    "auth": "Snapshotted authorities and provenance hashes (fail-fast if missing).",
-    "files": "Browse and download plots, CSV, JSON, and markdown.",
+    "efit": "Archive shape scorecard first (ADR-002) — not a live EFIT solve.",
+    "gifs": "Inverse / forward / evolutive equilibrium GIFs with mode badges.",
+    "auth": "Authority traffic-light matrix — fail-fast if missing.",
+    "files": "Grouped, filterable artifact downloads + copy path.",
 }
 
 _TAB_LABELS = {k: v for k, v in TAB_DEFS}
@@ -2009,8 +2217,7 @@ def fill_one_tab(tab_id: Optional[str], shot: Optional[int], run_dir: Optional[P
             [
                 tab_banner(
                     "Equilibrium GIFs",
-                    "Presentation annexes — not a substitute for residual metrics or Ip match. "
-                    f"Showing up to {_MAX_GIFS} GIFs for UI speed.",
+                    "Presentation annexes labeled by mode (inverse / forward / evolutive) — not a substitute for residual metrics.",
                 ),
                 media_gallery(
                     shot_i, gifs, run_dir, "No presentation/evolutive GIFs yet."
@@ -2022,8 +2229,11 @@ def fill_one_tab(tab_id: Optional[str], shot: Optional[int], run_dir: Optional[P
     if tid == "files":
         return html.Div(
             [
-                tab_banner("Artifact files", "Direct download links for reviewer-facing products."),
-                downloads_table(shot_i, run_dir),
+                tab_banner(
+                    "Artifact files",
+                    "Grouped, filterable download links. Use ZIP for the full reviewer pack.",
+                ),
+                html.Div(id="files-table", children=downloads_table(shot_i, run_dir)),
             ]
         )
     return overview_panel(shot_i, run_dir)

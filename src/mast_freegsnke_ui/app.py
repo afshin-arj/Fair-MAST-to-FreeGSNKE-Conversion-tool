@@ -99,20 +99,27 @@ def _library_fingerprint(runs_dir: Path, *, cache_dir: Optional[Path] = None) ->
 
 
 def _shot_library_options(runs_dir: Path, *, cache_dir: Optional[Path] = None, required_groups: Optional[List[str]] = None) -> List[dict]:
-    # Labels stay light — status is visible after Open / in the badge.
+    # Expert labels: shot · status · cache · blocking
     from mast_freegsnke_ui.level2 import shot_cache_status
 
     opts = []
     req = list(required_groups or ("pf_active", "magnetics", "wall"))
     for s in art.list_shot_dirs(runs_dir):
-        label = str(s)
+        rd = art.run_dir_for(runs_dir, int(s))
+        bits = [str(s)]
+        if rd.is_dir():
+            k = art.overview_kpis(rd)
+            bits.append(str(k.get("status") or "?"))
+            n_block = k.get("blocking_n")
+            if isinstance(n_block, int) and n_block > 0:
+                bits.append(f"{n_block} block")
         if cache_dir is not None:
             st = shot_cache_status(cache_dir, s, required=req)
             if st.get("ready"):
-                label = f"{s}  ·  cache ready"
+                bits.append("cache ready")
             elif st.get("partial"):
-                label = f"{s}  ·  cache partial"
-        opts.append({"label": label, "value": int(s)})
+                bits.append("cache partial")
+        opts.append({"label": "  ·  ".join(bits), "value": int(s)})
     return opts
 
 
@@ -226,8 +233,10 @@ def create_app(
             html.Div(
                 id="shot-dossier",
                 children=panels.shot_dossier(None, None),
-                className="mb-3",
+                className="shot-dossier-sticky mb-3",
             ),
+            dcc.Store(id="kbd-bound", data=False),
+            html.Div(id="kbd-sink", style={"display": "none"}),
             dbc.Row(
                 [
                     dbc.Col(
@@ -412,7 +421,8 @@ def create_app(
                         f"config {config_path.as_posix()}  ·  library {runs_dir.as_posix()}"
                     ),
                     html.Div(
-                        "Open = browse  ·  Reconstruct = pipeline  ·  EFIT = FAIR-MAST archive (ADR-002)  ·  optional L2 = warn-only",
+                        "Open = browse  ·  Reconstruct = pipeline  ·  / shot  ·  1–8 tabs  ·  r refresh  ·  "
+                        "EFIT = archive (ADR-002)  ·  copy buttons = clipboard",
                         className="fg-footer-keys",
                     ),
                 ],
@@ -435,6 +445,64 @@ def create_app(
         """,
         Output("poll", "interval"),
         Input("ui-status", "data"),
+    )
+
+    # Keyboard shortcuts + clipboard for [data-clipboard-text] (bound once).
+    app.clientside_callback(
+        """
+        function(n, bound, refresh) {
+            if (!window.__fgConsoleBound) {
+                window.__fgConsoleBound = true;
+                window.__fgPendingTab = null;
+                window.__fgPendingRefresh = false;
+                const tabs = ['overview','level2','residuals','compare','efit','gifs','auth','files'];
+                document.addEventListener('keydown', function(e) {
+                    const tag = (e.target && e.target.tagName) || '';
+                    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target && e.target.isContentEditable)) {
+                        return;
+                    }
+                    if (e.key === '/') {
+                        e.preventDefault();
+                        const el = document.getElementById('shot-input');
+                        if (el) { el.focus(); if (el.select) el.select(); }
+                    }
+                    if (e.key === 'r' || e.key === 'R') {
+                        window.__fgPendingRefresh = true;
+                    }
+                    if (e.key >= '1' && e.key <= '8') {
+                        window.__fgPendingTab = tabs[parseInt(e.key, 10) - 1] || null;
+                    }
+                });
+                document.addEventListener('click', function(e) {
+                    const btn = e.target && e.target.closest ? e.target.closest('[data-clipboard-text]') : null;
+                    if (!btn) return;
+                    const text = btn.getAttribute('data-clipboard-text') || '';
+                    if (!text) return;
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(text).catch(function(){});
+                    }
+                    btn.classList.add('fg-copy-flash');
+                    setTimeout(function(){ btn.classList.remove('fg-copy-flash'); }, 600);
+                });
+            }
+            const outTab = window.__fgPendingTab;
+            window.__fgPendingTab = null;
+            const doRefresh = window.__fgPendingRefresh;
+            window.__fgPendingRefresh = false;
+            return [
+                outTab ? outTab : window.dash_clientside.no_update,
+                doRefresh ? ((refresh || 0) + 1) : window.dash_clientside.no_update,
+                true
+            ];
+        }
+        """,
+        Output("results-tabs", "value", allow_duplicate=True),
+        Output("refresh-token", "data", allow_duplicate=True),
+        Output("kbd-bound", "data"),
+        Input("poll", "n_intervals"),
+        State("kbd-bound", "data"),
+        State("refresh-token", "data"),
+        prevent_initial_call=True,
     )
 
     @app.callback(
@@ -1002,6 +1070,24 @@ def create_app(
         if not n_clicks:
             return no_update, no_update
         return shot_b, shot_a
+
+    @app.callback(
+        Output("files-table", "children"),
+        Input("files-filter", "value"),
+        State("active-shot", "data"),
+        prevent_initial_call=True,
+    )
+    def on_files_filter(query, active_shot):
+        if active_shot is None:
+            return no_update
+        try:
+            shot_i = int(active_shot)
+        except (TypeError, ValueError):
+            return no_update
+        rd = art.run_dir_for(runs_dir, shot_i)
+        if not rd.is_dir():
+            return no_update
+        return panels.downloads_table(shot_i, rd, query=str(query or ""))
 
     @app.callback(
         Output("compare-shot-a", "data", allow_duplicate=True),

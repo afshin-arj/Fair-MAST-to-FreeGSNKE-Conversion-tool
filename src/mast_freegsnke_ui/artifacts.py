@@ -342,7 +342,11 @@ def file_url_for_path(shot: int, path: Path, run_dir: Path, *, download: bool = 
 
 
 def authority_snapshot(run_dir: Path) -> Dict[str, Any]:
-    """Presence + short hashes for authorities (read-only; never invents metrology)."""
+    """Presence + short hashes for authorities (read-only; never invents metrology).
+
+    Returns ``{items, matrix, blocking_hint}`` where ``matrix`` lists expected
+    authority roles with status present|missing|awaiting for the Authorities tab.
+    """
     run_dir = Path(run_dir)
     items: List[Dict[str, Any]] = []
     checks = [
@@ -350,12 +354,19 @@ def authority_snapshot(run_dir: Path) -> Dict[str, Any]:
         ("coil_map.resolved (legacy)", "contracts/coil_map.resolved.json"),
         ("voltage_map.sha256", "06_authorities/contracts/voltage_map.sha256.json"),
         ("voltage_map.sha256 (legacy)", "contracts/voltage_map.sha256.json"),
+        ("diagnostic_contracts", "06_authorities/contracts/diagnostic_contracts.resolved.json"),
+        ("diagnostic_contracts (legacy)", "contracts/diagnostic_contracts.resolved.json"),
+        ("evolutive_authority", "inputs/evolutive_authority/evolutive_authority.json"),
+        ("execution_authority", "inputs/execution_authority/execution_authority_bundle.json"),
+        ("diagnostic_calibration", "06_authorities/diagnostic_calibration/diagnostic_calibration.json"),
+        ("diagnostic_calibration (legacy)", "inputs/diagnostic_calibration/diagnostic_calibration.json"),
         ("machine_authority_snapshot", "06_authorities/machine_authority_snapshot/authority_manifest.json"),
         ("machine_authority_snapshot (legacy)", "machine_authority_snapshot/authority_manifest.json"),
         ("provenance hashes", "06_authorities/provenance/file_hashes.json"),
         ("provenance hashes (legacy)", "provenance/file_hashes.json"),
     ]
     seen_roles: set[str] = set()
+    present_by_role: Dict[str, Dict[str, Any]] = {}
     for label, rel in checks:
         role = label.split(" (")[0]
         if role in seen_roles:
@@ -369,30 +380,140 @@ def authority_snapshot(run_dir: Path) -> Dict[str, Any]:
             "path": rel.replace("\\", "/"),
             "present": True,
             "rel": rel.replace("\\", "/"),
+            "status": "present",
         }
         obj = _safe_json(p)
         if obj:
-            for key in ("sha256", "authority_name", "authority_version", "version"):
+            for key in ("sha256", "authority_name", "authority_version", "version", "n_channels", "status"):
                 if key in obj and obj[key] is not None:
                     val = obj[key]
                     if key == "sha256" and isinstance(val, str) and len(val) > 16:
                         entry["detail"] = f"sha256={val[:16]}…"
+                    elif key == "status":
+                        entry.setdefault("detail", f"status={val}")
                     else:
                         entry.setdefault("detail", f"{key}={val}")
         items.append(entry)
+        present_by_role[role] = entry
+
+    # Expected matrix roles (expert traffic light) — missing ≠ invent.
+    expected = (
+        "machine_authority_snapshot",
+        "coil_map.resolved",
+        "voltage_map.sha256",
+        "diagnostic_contracts",
+        "evolutive_authority",
+        "execution_authority",
+        "diagnostic_calibration",
+        "provenance hashes",
+    )
+    matrix: List[Dict[str, Any]] = []
+    for role in expected:
+        if role in present_by_role:
+            matrix.append(dict(present_by_role[role]))
+            continue
+        status = "missing"
+        hint = "Populate declared JSON authority — do not invent metrology."
+        if role == "diagnostic_calibration":
+            status = "awaiting"
+            hint = (
+                "Optional until mirnov/saddle/omaha synthesis is required; "
+                "populate configs/diagnostic_calibration.json with cited scale/sign/source."
+            )
+        matrix.append(
+            {
+                "label": role,
+                "path": None,
+                "rel": None,
+                "present": False,
+                "status": status,
+                "detail": hint,
+            }
+        )
 
     missing_hint = None
     man = load_manifest(run_dir) or {}
     blocking = list(man.get("blocking_errors") or [])
     prog = load_progress(run_dir) or {}
     blocking.extend(list(prog.get("blocking_errors") or []))
-    auth_block = [b for b in blocking if "authority" in str(b).lower() or "coil_map" in str(b).lower()]
+    auth_block = [
+        b
+        for b in blocking
+        if any(
+            tok in str(b).lower()
+            for tok in ("authority", "coil_map", "voltage_map", "diagnostic_calibration", "contract")
+        )
+    ]
     if auth_block:
         missing_hint = (
             "Blocking authority error — fix machine_authority/ or contracts; "
             "do not invent metrology. " + "; ".join(str(x) for x in auth_block[:3])
         )
-    return {"items": items, "blocking_hint": missing_hint}
+    return {"items": items, "matrix": matrix, "blocking_hint": missing_hint}
+
+
+def calibration_await_rows(run_dir: Path) -> List[Dict[str, Any]]:
+    """Channels / families awaiting diagnostic_calibration (from run reports — never invent)."""
+    run_dir = Path(run_dir)
+    rows: List[Dict[str, Any]] = []
+    for rel in (
+        "experimental_data_report.json",
+        "02_measured_data/00_index/optional_diagnostics.json",
+        "01_summary/science_audit.json",
+    ):
+        obj = _safe_json(run_dir / rel)
+        if not obj:
+            continue
+        # experimental_data_report style
+        for fam in ("mirnov", "saddle", "omaha", "magnetics"):
+            node = obj.get(fam) if isinstance(obj, dict) else None
+            if isinstance(node, dict):
+                st = str(node.get("status") or node.get("calibration_status") or "")
+                if "await" in st.lower() or "uncalibrat" in st.lower() or st == "awaiting_authority":
+                    rows.append(
+                        {
+                            "family": fam,
+                            "status": st or "awaiting_authority",
+                            "source": rel,
+                            "hint": "Populate configs/diagnostic_calibration.json (cited scale/sign/source).",
+                        }
+                    )
+        audit_cal = obj.get("diagnostic_calibration") if isinstance(obj, dict) else None
+        if isinstance(audit_cal, dict):
+            st = str(audit_cal.get("status") or "")
+            if st and st not in {"populated", "ok", "applied"}:
+                rows.append(
+                    {
+                        "family": "diagnostic_calibration",
+                        "status": st,
+                        "source": rel,
+                        "hint": audit_cal.get("note")
+                        or "Awaiting cited calibration factors — do not invent V→T.",
+                    }
+                )
+        warnings = obj.get("warnings") if isinstance(obj, dict) else None
+        if isinstance(warnings, list):
+            for w in warnings:
+                ws = str(w)
+                if "calibrat" in ws.lower() or "uncalibrat" in ws.lower() or "await" in ws.lower():
+                    rows.append(
+                        {
+                            "family": "catalog",
+                            "status": "warning",
+                            "source": rel,
+                            "hint": ws[:200],
+                        }
+                    )
+    # De-dupe by family+status
+    seen: set[str] = set()
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        key = f"{r.get('family')}|{r.get('status')}|{r.get('hint')}"
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
+    return out[:24]
 
 
 def file_to_data_uri(path: Path) -> Optional[str]:
