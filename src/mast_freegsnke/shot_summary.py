@@ -252,7 +252,7 @@ def write_shot_expert_overlay(
             f"- **from_current_ohmic (I×R):** {ohmic_list}",
             f"- **Note:** {ohmic.get('uncertainty_note', '')}",
             "",
-            f"### Passiveives: `{passives.get('status', 'unknown')}` "
+            f"### Passives: `{passives.get('status', 'unknown')}` "
             f"(n_components={passives.get('n_components', 0)})",
             "",
             f"{passives.get('note', '')}",

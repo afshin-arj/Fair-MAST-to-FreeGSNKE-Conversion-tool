@@ -1,3 +1,9 @@
+## 11.12.2 — Replan mutuals + Planner/EFIT UI wiring
+- Replan: FreeGSNKE mutual extract via in-process → venv subprocess → prior `circuit_dynamics_snapshot` (never silently wipe mutuals); `machine_dir` on build; fail-closed for `L_model=full_matrix`.
+- CLI `plan` / `ui`: package repo root (`Path(__file__).parents[2]`), not fragile cwd.
+- Planner empty / no-shot states always mount Save / Re-calculate Dash IDs; R/L from authority when no snapshot.
+- EFIT: discover nested `side_by_side_frames/sbs_*.png`; SBS gallery no longer falls back to unrelated plots; legacy `efit_compare/plots` in GIFs. Version **11.12.2**.
+
 ## 11.12.1 — Planner replan / UI wiring fixes
 - Fix `mast-freegsnke plan` / UI re-calc: `AppConfig.load`, `machine_authority_dir`, measured-peak Vmax with R/L + n_knots.
 - Do not wipe cited passive ρ when Planner textarea is empty; pass `repo_root` into Planner panel.

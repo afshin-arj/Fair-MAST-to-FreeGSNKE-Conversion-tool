@@ -289,7 +289,7 @@ def main(argv=None) -> int:
             )
             return 1
         run_server(
-            repo_root=Path.cwd(),
+            repo_root=Path(__file__).resolve().parents[2],
             runs_dir=Path(runs),
             config_path=Path(args.config),
             host=str(args.host),
@@ -1084,11 +1084,16 @@ def main(argv=None) -> int:
     if args.cmd == "plan":
         from .planner_replan import PlannerReplanError, replan_shot
 
+        cfg_path = Path(args.config)
+        if not cfg_path.is_absolute():
+            cfg_path = (Path.cwd() / cfg_path).resolve()
+        # Prefer package/repo root (…/templates parent), not fragile cwd
+        repo_root = Path(__file__).resolve().parents[2]
         try:
             rep = replan_shot(
                 shot=int(args.shot),
-                repo_root=Path.cwd(),
-                config_path=Path(args.config),
+                repo_root=repo_root,
+                config_path=cfg_path,
             )
         except PlannerReplanError as e:
             print(f"[FAIL] plan: {e}")

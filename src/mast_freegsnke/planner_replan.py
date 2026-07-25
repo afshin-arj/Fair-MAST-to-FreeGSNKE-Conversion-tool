@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 
 class PlannerReplanError(ValueError):
@@ -117,6 +117,78 @@ def apply_passive_resistivity_edits(
     return path
 
 
+def _extract_freegsnke_fill(
+    *,
+    machine_dir: Path,
+    circuit_order: Sequence[str],
+    snap_dyn: Path,
+    freegsnke_python: Optional[str],
+    repo_root: Path,
+) -> Optional[Any]:
+    """Match pipeline: in-process extract, then FreeGSNKE venv subprocess, then prior snapshot."""
+    import os
+    import subprocess
+    import sys
+
+    from .freegsnke_runner import resolve_freegsnke_python
+    from .planner import (
+        extract_circuit_dynamics_from_freegsnke_machine,
+        load_circuit_dynamics,
+        write_circuit_dynamics,
+    )
+
+    order = [str(c) for c in circuit_order]
+    try:
+        return extract_circuit_dynamics_from_freegsnke_machine(
+            machine_dir=machine_dir, circuit_order=order
+        )
+    except Exception:
+        pass
+
+    py = resolve_freegsnke_python(freegsnke_python, repo_root) if freegsnke_python else sys.executable
+    md_lit = json.dumps(str(Path(machine_dir).resolve()))
+    out_lit = json.dumps(str(Path(snap_dyn).resolve()))
+    order_lit = json.dumps(list(order))
+    script = (
+        "import json\n"
+        "from pathlib import Path\n"
+        "from mast_freegsnke.planner import ("
+        "extract_circuit_dynamics_from_freegsnke_machine, "
+        "write_circuit_dynamics)\n"
+        f"order=json.loads({order_lit!r})\n"
+        f"md=Path(json.loads({md_lit!r}))\n"
+        f"out=Path(json.loads({out_lit!r}))\n"
+        "dyn=extract_circuit_dynamics_from_freegsnke_machine("
+        "machine_dir=md, circuit_order=order)\n"
+        "write_circuit_dynamics(out, dyn)\n"
+        "print('ok')\n"
+    )
+    env = dict(os.environ)
+    src_path = str((Path(repo_root) / "src").resolve())
+    prev = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = src_path + ((os.pathsep + prev) if prev else "")
+    try:
+        r = subprocess.run(
+            [str(py), "-c", script],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=300,
+        )
+        if r.returncode == 0 and snap_dyn.is_file():
+            return load_circuit_dynamics(snap_dyn)
+    except Exception:
+        pass
+
+    # Prefer prior full-pipeline snapshot over inventing diagonal mutuals
+    if snap_dyn.is_file():
+        try:
+            return load_circuit_dynamics(snap_dyn)
+        except Exception:
+            return None
+    return None
+
+
 def replan_shot(
     *,
     shot: int,
@@ -133,7 +205,6 @@ def replan_shot(
     )
     from .config import AppConfig
     from .planner import (
-        extract_circuit_dynamics_from_freegsnke_machine,
         load_planner_authority,
         run_planner_stage,
         write_circuit_dynamics,
@@ -189,16 +260,28 @@ def replan_shot(
     # Build dynamics first so measured-peak Vmax can use ohmic / RI+L dI/dt peaks
     dyn_auth = load_circuit_dynamics_authority(dyn_path)
     write_circuit_dynamics_authority(inputs, dyn_auth)
-    try:
-        fill = extract_circuit_dynamics_from_freegsnke_machine(
-            machine_dir=ma, circuit_order=order
-        )
-    except Exception:
-        fill = None
-    dyn, dyn_meta = build_circuit_dynamics_from_authority(
-        dyn_auth, circuit_order=order, freegsnke_fill=fill
+    snap_dyn = inputs / "circuit_dynamics_snapshot.json"
+    fill = _extract_freegsnke_fill(
+        machine_dir=ma,
+        circuit_order=order,
+        snap_dyn=snap_dyn,
+        freegsnke_python=cfg.freegsnke_python,
+        repo_root=repo_root,
     )
-    write_circuit_dynamics(inputs / "circuit_dynamics_snapshot.json", dyn)
+    if fill is None and str(getattr(dyn_auth, "L_model", "") or "") == "full_matrix":
+        # Loud fail-closed: never silently degrade full_matrix → diagonal
+        raise PlannerReplanError(
+            "L_model=full_matrix but FreeGSNKE mutual extract unavailable and no prior "
+            "inputs/circuit_dynamics_snapshot.json — run a full reconstruct first, "
+            "or declare a diagonal L_model with cited R/L"
+        )
+    dyn, dyn_meta = build_circuit_dynamics_from_authority(
+        dyn_auth,
+        circuit_order=order,
+        machine_dir=ma,
+        freegsnke_fill=fill,
+    )
+    write_circuit_dynamics(snap_dyn, dyn)
 
     import numpy as np
 

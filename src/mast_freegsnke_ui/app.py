@@ -1170,7 +1170,7 @@ def create_app(
                     citation_note=str(citation).strip() if citation else None,
                 )
                 msgs.append(f"Saved R/L for {len(edits)} circuit(s).")
-            # Passiveives: empty object clears to awaiting
+            # Passives: empty object clears to awaiting
             import json as _json
 
             raw = (passive_json or "").strip()

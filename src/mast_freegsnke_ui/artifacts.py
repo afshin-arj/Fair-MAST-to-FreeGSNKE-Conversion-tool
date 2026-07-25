@@ -244,15 +244,24 @@ def residual_plot_paths(run_dir: Path) -> List[Path]:
 
 
 def efit_plot_paths(run_dir: Path) -> List[Path]:
+    """EFIT compare plots including nested side_by_side_frames/ (not flat-only)."""
     run_dir = Path(run_dir)
-    return _first_images(
-        [
-            run_dir / "04_efit_compare" / "plots",
-            run_dir / "efit_compare" / "plots",
-        ],
-        exts={".png", ".gif"},
-        limit=48,
-    )
+    out: List[Path] = []
+    for rel in ("04_efit_compare/plots", "efit_compare/plots"):
+        root = run_dir / rel
+        # Depth 2 so freegsnke_efit_side_by_side.gif and side_by_side_frames/sbs_*.png both appear
+        found = _collect_images(root, ("*.png", "*.gif"), max_depth=2, limit=48)
+        if found:
+            out.extend(found)
+            break
+    seen: set[str] = set()
+    uniq: List[Path] = []
+    for p in out:
+        key = str(p)
+        if key not in seen:
+            seen.add(key)
+            uniq.append(p)
+    return uniq
 
 
 def planner_plot_paths(run_dir: Path) -> List[Path]:
@@ -286,6 +295,7 @@ def gif_paths(run_dir: Path) -> List[Path]:
         "03_reconstruction/presentation",
         "03_reconstruction/evolutive",
         "04_efit_compare/plots",
+        "efit_compare/plots",
         "07_planner",
         "presentation",
         "evolutive",

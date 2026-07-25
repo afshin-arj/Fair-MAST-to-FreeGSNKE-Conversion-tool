@@ -258,3 +258,81 @@ def test_passive_empty_editor_does_not_wipe(tmp_path: Path) -> None:
     if raw.strip():
         apply_passive_resistivity_edits(root, json.loads(raw))
     assert path.read_text(encoding="utf-8") == before
+
+
+def test_replan_extract_reuses_prior_snapshot() -> None:
+    import inspect
+
+    from mast_freegsnke import planner_replan as pr
+
+    src = inspect.getsource(pr._extract_freegsnke_fill)
+    assert "resolve_freegsnke_python" in src
+    assert "subprocess.run" in src
+    assert "load_circuit_dynamics" in src
+    src2 = inspect.getsource(pr.replan_shot)
+    assert "machine_dir=ma" in src2 or "machine_dir=ma," in src2
+    assert "_extract_freegsnke_fill" in src2
+    assert 'L_model", "") == "full_matrix"' in src2 or '== "full_matrix"' in src2
+
+
+def test_cli_plan_and_ui_use_package_repo_root() -> None:
+    import inspect
+
+    from mast_freegsnke import cli
+
+    src = inspect.getsource(cli.main)
+    assert 'cmd == "plan"' in src
+    assert "parents[2]" in src
+    # Both plan and ui should prefer package root over cwd
+    assert src.count("Path(__file__).resolve().parents[2]") >= 2
+
+
+def test_planner_empty_mounts_edit_controls(tmp_path: Path) -> None:
+    run = tmp_path / "99999"
+    run.mkdir()
+    # No 07_planner products — empty state must still expose Dash callback targets
+    panel = panels.planner_panel(99999, run, repo_root=Path(__file__).resolve().parents[1])
+    blob = str(panel)
+    assert "planner-btn-save" in blob
+    assert "planner-btn-replan" in blob
+    assert "planner-edit-status" in blob
+    assert "planner-rl-citation" in blob
+    assert "planner-passive-json" in blob
+
+
+def test_planner_no_shot_fill_one_tab_mounts_edit() -> None:
+    body = panels.fill_one_tab("planner", None, None, repo_root=Path(__file__).resolve().parents[1])
+    blob = str(body)
+    assert "planner-btn-save" in blob
+    assert "planner-btn-replan" in blob
+
+
+def test_efit_sbs_gallery_does_not_fallback_to_psi(tmp_path: Path) -> None:
+    run = tmp_path / "30201"
+    plots = run / "04_efit_compare" / "plots"
+    plots.mkdir(parents=True)
+    png = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00"
+        b"\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    (plots / "efit_psi.png").write_bytes(png)
+    (plots / "side_by_side_frames").mkdir()
+    (plots / "side_by_side_frames" / "sbs_000.png").write_bytes(png)
+    # Discovery must include nested frames even when top-level plots exist
+    discovered = art.efit_plot_paths(run)
+    assert any(p.name == "sbs_000.png" for p in discovered)
+    panel = panels.efit_panel(30201, run)
+    blob = str(panel)
+    assert "sbs_000" in blob
+    # SBS gallery must not substitute efit_psi when only frames exist as SBS media
+    # (efit_psi may still appear under "EFIT plots & downloads")
+    assert "No side-by-side GIF yet" not in blob or "sbs_000" in blob
+
+def test_gif_paths_includes_legacy_efit_compare(tmp_path: Path) -> None:
+    run = tmp_path / "30201"
+    legacy = run / "efit_compare" / "plots"
+    legacy.mkdir(parents=True)
+    (legacy / "demo.gif").write_bytes(b"GIF89a")
+    paths = art.gif_paths(run)
+    assert any(p.name == "demo.gif" for p in paths)

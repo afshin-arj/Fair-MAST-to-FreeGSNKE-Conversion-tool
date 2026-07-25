@@ -578,6 +578,129 @@ def _planner_passive_textarea_default(repo_root: Optional[Path] = None) -> str:
         return "{}"
 
 
+def _planner_rl_from_authority(repo_root: Optional[Path] = None) -> Dict[str, Dict[str, Any]]:
+    """Load cited R/L for edit inputs when the shot has no planner snapshot yet."""
+    try:
+        from mast_freegsnke.planner_replan import load_editable_circuit_table
+
+        root = Path(repo_root) if repo_root is not None else Path(__file__).resolve().parents[2]
+        obj = load_editable_circuit_table(root)
+        circuits = obj.get("circuits") if isinstance(obj, dict) else {}
+        out: Dict[str, Dict[str, Any]] = {}
+        if isinstance(circuits, dict):
+            for name, vals in circuits.items():
+                if not isinstance(vals, dict):
+                    continue
+                out[str(name)] = {
+                    "R_ohm": vals.get("R_ohm"),
+                    "L_henry": vals.get("L_henry"),
+                }
+        return out
+    except Exception:
+        return {}
+
+
+def _planner_edit_body(rl: Dict[str, Any], *, repo_root: Optional[Path] = None) -> Any:
+    """Stable edit/replan shell — IDs must exist for Dash callbacks even with no products."""
+    html, _, dbc = _require()
+    edit_rows: List[Any] = []
+    for name, vals in (rl or {}).items():
+        if not isinstance(vals, dict):
+            vals = {}
+        edit_rows.append(
+            html.Tr(
+                [
+                    html.Td(html.Code(str(name)), className="small"),
+                    html.Td(
+                        dbc.Input(
+                            id={"type": "planner-r", "circuit": str(name)},
+                            type="number",
+                            value=vals.get("R_ohm"),
+                            step="any",
+                            size="sm",
+                            className="fg-planner-edit",
+                        )
+                    ),
+                    html.Td(
+                        dbc.Input(
+                            id={"type": "planner-l", "circuit": str(name)},
+                            type="number",
+                            value=vals.get("L_henry"),
+                            step="any",
+                            size="sm",
+                            className="fg-planner-edit",
+                        )
+                    ),
+                ]
+            )
+        )
+    if not edit_rows:
+        edit_rows.append(
+            html.Tr(
+                [
+                    html.Td(
+                        "No circuits in authority — check configs/circuit_dynamics_authority.json.",
+                        colSpan=3,
+                        className="small text-muted",
+                    )
+                ]
+            )
+        )
+    return html.Div(
+        [
+            html.P(
+                "Edits write to configs/circuit_dynamics_authority.json and "
+                "configs/passive_resistivity.json (citation required for ρ). "
+                "Re-calculate runs the planner stage only against this SHOT folder. "
+                "Passives do not enter the QP until machine rebuild wires them (Path B5).",
+                className="small text-muted",
+            ),
+            dbc.Label("Citation note for R/L edit (optional but recommended)", className="fg-label"),
+            dbc.Input(id="planner-rl-citation", type="text", placeholder="e.g. MAST CS table DOI…", size="sm"),
+            html.Div("Active coil R / L", className="compare-subhead mt-2"),
+            dbc.Table(
+                [
+                    html.Thead(html.Tr([html.Th("circuit"), html.Th("R_ohm"), html.Th("L_henry")])),
+                    html.Tbody(edit_rows),
+                ],
+                bordered=False,
+                size="sm",
+                responsive=True,
+                className="fg-scorecard",
+            ),
+            html.Div("Passive resistivity (cited only)", className="compare-subhead mt-2"),
+            dbc.Textarea(
+                id="planner-passive-json",
+                className="fg-planner-passive",
+                style={"minHeight": "110px", "fontFamily": "var(--fg-mono)", "fontSize": "0.8rem"},
+                value=_planner_passive_textarea_default(repo_root),
+                placeholder=(
+                    '{\n  "vessel": {"resistivity_ohm_m": 1.0e-6, "source": "citation DOI"}\n}'
+                ),
+            ),
+            html.Div(
+                [
+                    dbc.Button(
+                        "Save R/L + passives",
+                        id="planner-btn-save",
+                        color="secondary",
+                        size="sm",
+                        className="me-2",
+                    ),
+                    dbc.Button(
+                        "Re-calculate planner",
+                        id="planner-btn-replan",
+                        color="primary",
+                        size="sm",
+                    ),
+                ],
+                className="mt-2 mb-2",
+            ),
+            html.Div(id="planner-edit-status", className="small"),
+        ]
+    )
+
+
 def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None) -> Any:
     """Path B6-full+: GSPulse-method planner — collapsible decks, media gallery, R/L edit."""
     html, dcc, dbc = _require()
@@ -588,6 +711,16 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
         "Planned vs measured I/V, isoflux/ψ_bry RMS, Picard, authority hashes. "
         "Edit cited R/L or passive ρ below and re-run planner only. Never invents Imax/Vmax/ρ.",
     )
+    rl = pinfo.get("rl_circuits") or {}
+    if not rl:
+        rl = _planner_rl_from_authority(repo_root)
+    edit_body = _planner_edit_body(rl, repo_root=repo_root)
+    edit_section = ui_kit.section(
+        "Edit R/L · passives · re-calculate",
+        "Save cited R/L or ρ; re-calculate runs planner only when SHOT/<N>/inputs exist.",
+        edit_body,
+    )
+
     if not pinfo.get("present") and not pinfo.get("auth_rel") and not pinfo.get("limits_rel"):
         return html.Div(
             [
@@ -600,9 +733,11 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
                         "Ensure configs/default.json has execute_planner=true",
                         "Cite coil_limits_authority + circuit_dynamics_authority",
                         "Reconstruct — products land under SHOT/<N>/07_planner/",
+                        "Or edit R/L below and Re-calculate if inputs/ already exist",
                     ],
                     kind="empty",
                 ),
+                edit_section,
             ]
         )
 
@@ -683,7 +818,6 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
         "No planner residual plots yet — re-run with execute_planner=true.",
     )
 
-    rl = pinfo.get("rl_circuits") or {}
     rl_table: Any = html.P("No cited R/L snapshot.", className="text-muted small")
     if rl:
         rl_rows = [
@@ -695,6 +829,7 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
                 ]
             )
             for name, vals in rl.items()
+            if isinstance(vals, dict)
         ]
         rl_table = dbc.Table(
             [
@@ -707,84 +842,6 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
             responsive=True,
             className="fg-scorecard",
         )
-
-    # Editable R/L + passive ρ form (saves to configs/, then optional replan)
-    edit_rows: List[Any] = []
-    for name, vals in (rl or {}).items():
-        edit_rows.append(
-            html.Tr(
-                [
-                    html.Td(html.Code(str(name)), className="small"),
-                    html.Td(
-                        dbc.Input(
-                            id={"type": "planner-r", "circuit": str(name)},
-                            type="number",
-                            value=vals.get("R_ohm"),
-                            step="any",
-                            size="sm",
-                            className="fg-planner-edit",
-                        )
-                    ),
-                    html.Td(
-                        dbc.Input(
-                            id={"type": "planner-l", "circuit": str(name)},
-                            type="number",
-                            value=vals.get("L_henry"),
-                            step="any",
-                            size="sm",
-                            className="fg-planner-edit",
-                        )
-                    ),
-                ]
-            )
-        )
-    if not edit_rows:
-        edit_rows.append(
-            html.Tr([html.Td("No circuits in snapshot — open a completed planner run.", colSpan=3)])
-        )
-
-    edit_body = html.Div(
-        [
-            html.P(
-                "Edits write to configs/circuit_dynamics_authority.json and "
-                "configs/passive_resistivity.json (citation required for ρ). "
-                "Re-calculate runs the planner stage only against this SHOT folder. "
-                "Passives do not enter the QP until machine rebuild wires them (Path B5).",
-                className="small text-muted",
-            ),
-            dbc.Label("Citation note for R/L edit (optional but recommended)", className="fg-label"),
-            dbc.Input(id="planner-rl-citation", type="text", placeholder="e.g. MAST CS table DOI…", size="sm"),
-            html.Div("Active coil R / L", className="compare-subhead mt-2"),
-            dbc.Table(
-                [
-                    html.Thead(html.Tr([html.Th("circuit"), html.Th("R_ohm"), html.Th("L_henry")])),
-                    html.Tbody(edit_rows),
-                ],
-                bordered=False,
-                size="sm",
-                responsive=True,
-                className="fg-scorecard",
-            ),
-            html.Div("Passive resistivity (cited only)", className="compare-subhead mt-2"),
-            dbc.Textarea(
-                id="planner-passive-json",
-                className="fg-planner-passive",
-                style={"minHeight": "110px", "fontFamily": "var(--fg-mono)", "fontSize": "0.8rem"},
-                value=_planner_passive_textarea_default(repo_root),
-                placeholder=(
-                    '{\n  "vessel": {"resistivity_ohm_m": 1.0e-6, "source": "citation DOI"}\n}'
-                ),
-            ),
-            html.Div(
-                [
-                    dbc.Button("Save R/L + passives", id="planner-btn-save", color="secondary", size="sm", className="me-2"),
-                    dbc.Button("Re-calculate planner", id="planner-btn-replan", color="primary", size="sm"),
-                ],
-                className="mt-2 mb-2",
-            ),
-            html.Div(id="planner-edit-status", className="small"),
-        ]
-    )
 
     # Downloads — same Open/Download pattern as other decks
     dl_paths = list(plot_paths) + list(art.planner_csv_paths(run_dir))
@@ -1122,7 +1179,13 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
             className="fg-scorecard",
         )
     plots = art.efit_plot_paths(run_dir)
-    sbs = [p for p in plots if "side_by_side" in p.name.lower()]
+    sbs = [
+        p
+        for p in plots
+        if "side_by_side" in p.name.lower()
+        or p.name.lower().startswith("sbs_")
+        or "side_by_side" in str(p).replace("\\", "/").lower()
+    ]
     other = [p for p in plots if p not in sbs]
     ordered_plots = sbs + other
     return html.Div(
@@ -1152,7 +1215,7 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
                                 ),
                                 media_gallery(
                                     shot,
-                                    sbs or ordered_plots[:1],
+                                    sbs,
                                     run_dir,
                                     "No side-by-side GIF yet — re-run with compare_efit_archive=true.",
                                 ),
@@ -2846,7 +2909,7 @@ def fill_one_tab(
         )
     if shot is None or run_dir is None or not run_dir.is_dir():
         label = _TAB_LABELS.get(tid, "Overview")
-        return empty_state(
+        empty = empty_state(
             f"{label} — no shot loaded",
             "Open an existing SHOT folder to inspect products, or Reconstruct to run the full Fair-MAST → FreeGSNKE pipeline.",
             steps=[
@@ -2855,6 +2918,26 @@ def fill_one_tab(
                 f"Use {label} once artifacts exist under SHOT/<N>/",
             ],
         )
+        # Planner callbacks require stable edit/replan IDs even before a shot is open
+        if tid == "planner":
+            html, _, _ = _require()
+            rl = _planner_rl_from_authority(repo_root)
+            return html.Div(
+                [
+                    tab_banner(
+                        "Feedforward planner",
+                        "Python GSPulse-method trajectory (Path B). "
+                        "Open a shot to re-calculate; R/L edits still save to configs/.",
+                    ),
+                    empty,
+                    ui_kit.section(
+                        "Edit R/L · passives · re-calculate",
+                        "Save cited R/L or ρ anytime; Re-calculate needs an open SHOT folder.",
+                        _planner_edit_body(rl, repo_root=repo_root),
+                    ),
+                ]
+            )
+        return empty
     shot_i = int(shot)
     if tid == "level2":
         return level2_panel(shot_i, run_dir)
