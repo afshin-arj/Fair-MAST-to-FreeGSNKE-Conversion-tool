@@ -878,6 +878,29 @@ def main():
         lcfs_R=_lcfs_R,
         lcfs_Z=_lcfs_Z,
     )
+    # Total ψ (plasma + coils) for honest EFIT side-by-side coloring (not plasma_psi alone)
+    try:
+        _psi_total = eq.psi() if callable(getattr(eq, "psi", None)) else getattr(eq, "psi", None)
+        if _psi_total is not None:
+            dump["total_psi"] = np.asarray(_psi_total, dtype=float)
+    except Exception as _psi_e:
+        print(f"[WARN] total_psi extract failed: {_psi_e}")
+    try:
+        from mast_freegsnke.shape_scorecard import extract_freegsnke_shape_targets
+
+        _shp = extract_freegsnke_shape_targets(eq)
+        for _k in (
+            "magnetic_axis_r",
+            "magnetic_axis_z",
+            "x_point_r",
+            "x_point_z",
+            "R_in_m",
+            "R_out_m",
+        ):
+            if _shp.get(_k) is not None:
+                dump[_k] = _shp.get(_k)
+    except Exception as _shp_e:
+        print(f"[WARN] shape targets extract failed: {_shp_e}")
     with open(HERE/"inverse_dump.pkl", "wb") as f:
         pickle.dump(dump, f)
     print("Saved inverse_dump.pkl")

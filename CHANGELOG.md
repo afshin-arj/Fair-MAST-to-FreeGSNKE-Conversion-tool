@@ -1,3 +1,9 @@
+## 11.12.4 — EFIT compare time-align + honest ψ / scorecard UI
+- Scorecard: align EFIT archive to FreeGSNKE inverse `t0` when only a single-time LCFS exists (was window-mid vs t0 — major false divergence); prefer FG LCFS timeseries nearest to compare time.
+- Fill FreeGSNKE midplane Rin/Rout from LCFS polyline when no live `eq` object; dump `total_psi` + axis scalars from inverse.
+- Side-by-side: omit plasma-only ψ fills (not comparable to EFIT total ψ); LCFS is the primary geometry compare; independent relative scales labeled.
+- EFIT UI: render scorecard `rows` as a real table; prefer presentation LCFS path; gallery ranks GIF ahead of frame dumps. Version **11.12.4**.
+
 ## 11.12.3 — EFIT side-by-side FreeGSNKE LCFS + color panels + denser solves
 - Persist FreeGSNKE LCFS (`separatrix`) into `inverse_dump` + `presentation/freegsnke_lcfs.csv` (+ timeseries); recover from dump via FreeGSNKE venv when older runs lack CSV.
 - EFIT side-by-side: both panels use colored ψ fills; FreeGSNKE LCFS no longer shows “unavailable” after a successful solve.

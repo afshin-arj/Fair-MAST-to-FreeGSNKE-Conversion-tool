@@ -207,7 +207,7 @@ def test_lcfs_from_inverse_dump_arrays(tmp_path: Path) -> None:
         "grid": {"R": np.ones((8, 8)), "Z": np.ones((8, 8)), "nx": 8, "ny": 8},
     }
     (run / "inverse_dump.pkl").write_bytes(pickle.dumps(dump))
-    fg, _ = _try_freegsnke_products(run)
+    fg, _shape, _t, _notes = _try_freegsnke_products(run)
     assert fg is not None
     assert len(fg[0]) >= 3
 
@@ -377,3 +377,93 @@ def test_gif_paths_includes_legacy_efit_compare(tmp_path: Path) -> None:
     (legacy / "demo.gif").write_bytes(b"GIF89a")
     paths = art.gif_paths(run)
     assert any(p.name == "demo.gif" for p in paths)
+
+def test_efit_panel_renders_scorecard_rows(tmp_path: Path) -> None:
+    run = tmp_path / "30201"
+    efit = run / "04_efit_compare"
+    efit.mkdir(parents=True)
+    (efit / "COMPARE.json").write_text(
+        json.dumps({"ok": True, "n_times": 5, "label": "FAIR-MAST EFIT++ archive"}),
+        encoding="utf-8",
+    )
+    (efit / "shape_scorecard.json").write_text(
+        json.dumps(
+            {
+                "t_efit_s": 0.25,
+                "t_freegsnke_s": 0.25,
+                "time_align_note": "scorecard_efit_nearest_to_freegsnke_t0_not_window_mid",
+                "rows": [
+                    {
+                        "quantity": "R_in_midplane",
+                        "unit": "m",
+                        "efit_archive": 0.55,
+                        "freegsnke": 0.57,
+                        "delta_freegsnke_minus_efit": 0.02,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    panel = panels.efit_panel(30201, run)
+    blob = str(panel)
+    assert "R_in_midplane" in blob
+    assert "EFIT++ archive" in blob
+    assert "LCFS overlay" in blob or "independent relative scales" in blob
+
+
+def test_side_by_side_omits_plasma_only_psi(tmp_path: Path) -> None:
+    from mast_freegsnke.efit_side_by_side import write_freegsnke_efit_side_by_side_gif
+    import pickle
+    import pandas as pd
+    import mast_freegsnke.efit_compare as ec
+
+    run = tmp_path / "30201"
+    (run / "inputs").mkdir(parents=True)
+    (run / "inputs" / "window.json").write_text(
+        json.dumps({"t_start": 0.2, "t_end": 0.4}) + "\n", encoding="utf-8"
+    )
+    (run / "presentation").mkdir(parents=True)
+    pd.DataFrame(
+        {"R": [0.8, 1.2, 1.0, 0.8], "Z": [0.0, 0.0, 0.5, 0.0], "time": [0.3] * 4}
+    ).to_csv(run / "presentation" / "freegsnke_lcfs.csv", index=False)
+    R = np.linspace(0.5, 1.5, 8)
+    Z = np.linspace(-1.0, 1.0, 10)
+    with open(run / "inverse_dump.pkl", "wb") as f:
+        pickle.dump(
+            {"t0": 0.3, "plasma_psi": np.ones((10, 8)), "grid": {"R": R, "Z": Z}},
+            f,
+        )
+    times = np.linspace(0.2, 0.4, 5)
+
+    def fake_lcfs(ds, idx, r_name, z_name):
+        return (np.array([0.85, 1.15, 1.0, 0.85]), np.array([0.0, 0.0, 0.4, 0.0]))
+
+    def fake_psi(ds, idx, psi_var):
+        rr, zz = np.meshgrid(R, Z)
+        return {"psi": np.exp(-((rr - 1.0) ** 2 + zz**2)), "r": R, "z": Z}
+
+    orig_lcfs, orig_psi = ec._extract_lcfs_at, ec._extract_psi_at
+    ec._extract_lcfs_at = fake_lcfs  # type: ignore
+    ec._extract_psi_at = fake_psi  # type: ignore
+    try:
+        out = run / "04_efit_compare" / "plots"
+        rep = write_freegsnke_efit_side_by_side_gif(
+            run_dir=run,
+            shot=30201,
+            ds=object(),
+            times=times,
+            lcfs_r_name="lcfs_r",
+            lcfs_z_name="lcfs_z",
+            psi_var="psi",
+            out_dir=out,
+            n_frames=3,
+            fps=2.0,
+        )
+    finally:
+        ec._extract_lcfs_at = orig_lcfs  # type: ignore
+        ec._extract_psi_at = orig_psi  # type: ignore
+    assert "freegsnke_plasma_psi_omitted_not_comparable_to_efit_total_psi" in (
+        rep.get("notes") or []
+    )
+    assert rep.get("freegsnke_psi_kind") == "plasma_psi"

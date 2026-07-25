@@ -113,20 +113,50 @@ def lcfs_from_dump_dict(dump: Dict[str, Any]) -> Optional[Tuple[np.ndarray, np.n
     return rr[m], zz[m]
 
 
-def plasma_psi_pack_from_dump(dump: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Return plasma_psi + R/Z meshes from inverse_dump for colored left panel."""
+def psi_pack_from_dump(dump: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Return ψ + R/Z meshes from inverse_dump for EFIT side-by-side.
+
+    Prefers ``total_psi`` (``eq.psi()`` = plasma + coils) so the left panel matches
+    FAIR-MAST EFIT++ archive total ψ. Falls back to ``plasma_psi`` only with
+    ``kind="plasma_psi"`` — callers should not treat that as amplitude-comparable
+    to EFIT total ψ.
+    """
     if not isinstance(dump, dict):
         return None
-    psi = dump.get("plasma_psi")
     grid = dump.get("grid")
-    if psi is None or not isinstance(grid, dict):
+    if not isinstance(grid, dict):
         return None
-    field = np.asarray(psi, dtype=float)
     R = np.asarray(grid.get("R"), dtype=float)
     Z = np.asarray(grid.get("Z"), dtype=float)
-    if field.size < 4 or R.size < 4 or Z.size < 4:
+    if R.size < 4 or Z.size < 4:
         return None
-    return {"psi": field, "R": R, "Z": Z, "t0": dump.get("t0")}
+    psi = dump.get("total_psi")
+    kind = "total_psi"
+    if psi is None and dump.get("psi") is not None:
+        # Some dumps may store total flux as "psi"
+        psi = dump.get("psi")
+        kind = "total_psi"
+    if psi is None:
+        psi = dump.get("plasma_psi")
+        kind = "plasma_psi"
+    if psi is None:
+        return None
+    field = np.asarray(psi, dtype=float)
+    if field.size < 4:
+        return None
+    return {
+        "psi": field,
+        "R": R,
+        "Z": Z,
+        "t0": dump.get("t0"),
+        "kind": kind,
+        "comparable_to_efit_total_psi": kind == "total_psi",
+    }
+
+
+def plasma_psi_pack_from_dump(dump: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Backward-compatible alias; prefer :func:`psi_pack_from_dump`."""
+    return psi_pack_from_dump(dump)
 
 
 def load_inverse_dump(run_dir: Path) -> Optional[Dict[str, Any]]:
@@ -146,11 +176,12 @@ def load_inverse_dump(run_dir: Path) -> Optional[Dict[str, Any]]:
 
 
 def freegsnke_lcfs_csv_candidates(run_dir: Path) -> List[Path]:
+    """Prefer paths written by :func:`persist_lcfs_from_eq` (presentation/)."""
     run_dir = Path(run_dir)
     return [
-        run_dir / "03_reconstruction" / "freegsnke_lcfs.csv",
-        run_dir / "03_reconstruction" / "presentation" / "freegsnke_lcfs.csv",
         run_dir / "presentation" / "freegsnke_lcfs.csv",
+        run_dir / "03_reconstruction" / "presentation" / "freegsnke_lcfs.csv",
+        run_dir / "03_reconstruction" / "freegsnke_lcfs.csv",
         run_dir / "synthetic" / "freegsnke_lcfs.csv",
         run_dir / "03_reconstruction" / "synthetic" / "freegsnke_lcfs.csv",
         run_dir / "freegsnke_lcfs.csv",
@@ -160,11 +191,69 @@ def freegsnke_lcfs_csv_candidates(run_dir: Path) -> List[Path]:
 def freegsnke_lcfs_timeseries_candidates(run_dir: Path) -> List[Path]:
     run_dir = Path(run_dir)
     return [
-        run_dir / "03_reconstruction" / "freegsnke_lcfs_timeseries.csv",
-        run_dir / "03_reconstruction" / "presentation" / "freegsnke_lcfs_timeseries.csv",
         run_dir / "presentation" / "freegsnke_lcfs_timeseries.csv",
+        run_dir / "03_reconstruction" / "presentation" / "freegsnke_lcfs_timeseries.csv",
+        run_dir / "03_reconstruction" / "freegsnke_lcfs_timeseries.csv",
         run_dir / "freegsnke_lcfs_timeseries.csv",
     ]
+
+
+def freegsnke_t0_from_run(run_dir: Path) -> Optional[float]:
+    """Inverse solve time from dump or LCFS CSV ``time`` column — never invent."""
+    dump = load_inverse_dump(Path(run_dir))
+    if dump is not None:
+        t0 = dump.get("t0")
+        try:
+            if t0 is not None and np.isfinite(float(t0)):
+                return float(t0)
+        except (TypeError, ValueError):
+            pass
+    for p in freegsnke_lcfs_csv_candidates(Path(run_dir)):
+        if not p.is_file():
+            continue
+        try:
+            df = pd.read_csv(p)
+        except Exception:
+            continue
+        cols = {c.lower(): c for c in df.columns}
+        if "time" not in cols:
+            continue
+        tt = df[cols["time"]].to_numpy(dtype=float)
+        finite = tt[np.isfinite(tt)]
+        if finite.size:
+            return float(finite[0])
+    return None
+
+
+def lcfs_at_time_from_timeseries(
+    run_dir: Path, t: float
+) -> Optional[Tuple[Tuple[np.ndarray, np.ndarray], float, str]]:
+    """Nearest FreeGSNKE LCFS from timeseries CSV to ``t``.
+
+    Returns ``((R,Z), t_used, source_path)`` or None.
+    """
+    for p in freegsnke_lcfs_timeseries_candidates(Path(run_dir)):
+        if not p.is_file():
+            continue
+        try:
+            df = pd.read_csv(p)
+        except Exception:
+            continue
+        cols = {c.lower(): c for c in df.columns}
+        if "time" not in cols or "r" not in cols or "z" not in cols:
+            continue
+        times = sorted({float(x) for x in df[cols["time"]].to_numpy(dtype=float) if np.isfinite(x)})
+        if not times:
+            continue
+        t_used = min(times, key=lambda x: abs(x - float(t)))
+        g = df[np.isclose(df[cols["time"]].to_numpy(dtype=float), t_used)]
+        rr = g[cols["r"]].to_numpy(dtype=float)
+        zz = g[cols["z"]].to_numpy(dtype=float)
+        m = np.isfinite(rr) & np.isfinite(zz)
+        if int(m.sum()) < 3:
+            continue
+        return (rr[m], zz[m]), float(t_used), str(p.as_posix())
+    return None
 
 
 def read_lcfs_csv(path: Path) -> Optional[Tuple[np.ndarray, np.ndarray]]:
@@ -201,6 +290,7 @@ def persist_lcfs_from_eq(
     targets = [
         run_dir / "presentation" / "freegsnke_lcfs.csv",
         run_dir / "03_reconstruction" / "presentation" / "freegsnke_lcfs.csv",
+        run_dir / "03_reconstruction" / "freegsnke_lcfs.csv",
     ]
     # Prefer presentation/ (shot layout junctions); also write expert path if distinct
     written: List[str] = []
@@ -315,6 +405,12 @@ t0 = dump.get("t0")
 pers = persist_lcfs_from_eq(HERE, eq, time_s=float(t0) if t0 is not None else None)
 dump["lcfs_R"] = np.asarray(lc[0], dtype=float)
 dump["lcfs_Z"] = np.asarray(lc[1], dtype=float)
+try:
+    _psi_total = eq.psi() if callable(getattr(eq, "psi", None)) else None
+    if _psi_total is not None:
+        dump["total_psi"] = np.asarray(_psi_total, dtype=float)
+except Exception:
+    pass
 with open(HERE / "inverse_dump.pkl", "wb") as f:
     pickle.dump(dump, f)
 print("ok", pers.get("n_points"), pers.get("paths"))

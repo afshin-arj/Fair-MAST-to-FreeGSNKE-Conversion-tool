@@ -132,11 +132,11 @@ def _freegsnke_lcfs_timeseries(run_dir: Path) -> List[Dict[str, Any]]:
     # Legacy: eq object inside dump (rare) / CSV-less scorecard path
     from .efit_compare import _try_freegsnke_products
 
-    fg2, _ = _try_freegsnke_products(Path(run_dir))
+    fg2, _, t_legacy, _ = _try_freegsnke_products(Path(run_dir))
     if fg2 is not None:
         out.append(
             {
-                "t": None,
+                "t": t_legacy,
                 "R": fg2[0],
                 "Z": fg2[1],
                 "source": "static_freegsnke_lcfs",
@@ -198,6 +198,7 @@ def _draw_colored_psi(
     *,
     cmap: str,
     n_levels: int = 24,
+    levels: Any = None,
 ) -> bool:
     """Filled + line contours in color. Returns True if drawn."""
     if psi is None or r_c is None or z_c is None:
@@ -219,13 +220,16 @@ def _draw_colored_psi(
         finite = np.isfinite(field)
         if not finite.any():
             return False
-        levels = np.linspace(
-            float(np.nanmin(field[finite])),
-            float(np.nanmax(field[finite])),
-            int(max(8, n_levels)),
-        )
+        if levels is None:
+            levels = np.linspace(
+                float(np.nanmin(field[finite])),
+                float(np.nanmax(field[finite])),
+                int(max(8, n_levels)),
+            )
         ax.contourf(RR, ZZ, field, levels=levels, cmap=cmap, alpha=0.92)
-        ax.contour(RR, ZZ, field, levels=levels[::2], colors="0.25", linewidths=0.35, alpha=0.55)
+        ax.contour(
+            RR, ZZ, field, levels=levels[::2], colors="0.25", linewidths=0.35, alpha=0.55
+        )
         return True
     except Exception:
         return False
@@ -244,14 +248,15 @@ def write_freegsnke_efit_side_by_side_gif(
     n_frames: int = 16,
     fps: float = 2.0,
 ) -> Dict[str, Any]:
-    """Write dual-panel GIF: FreeGSNKE (left, color) | EFIT++ archive (right, color).
+    """Write dual-panel GIF: FreeGSNKE (left) | EFIT++ archive (right).
 
-    Matches the FreeGSNKE README demo layout for classic MAST using archive EFIT++.
-    Soft-skips when matplotlib/Pillow/LCFS missing (never invents contours).
+    LCFS overlay is the primary geometry compare. Filled ψ is drawn only when
+    FreeGSNKE total ψ is available (not plasma-only), and always with
+    independent relative scales — never presented as amplitude-matched.
     """
     from .efit_compare import _extract_lcfs_at, _extract_psi_at, _nearest_index, _rel
     from .equilibrium_presentation import write_gif_from_pngs
-    from .freegsnke_lcfs import load_inverse_dump, plasma_psi_pack_from_dump
+    from .freegsnke_lcfs import load_inverse_dump, psi_pack_from_dump
 
     run_dir = Path(run_dir)
     out_dir = Path(out_dir)
@@ -264,6 +269,7 @@ def write_freegsnke_efit_side_by_side_gif(
         "gif_rel": None,
         "frame_rels": [],
         "freegsnke_source": None,
+        "freegsnke_psi_kind": None,
         "notes": [],
         "errors": [],
     }
@@ -281,16 +287,21 @@ def write_freegsnke_efit_side_by_side_gif(
         report["notes"].append("window_missing_used_efit_time_span")
     query_times = np.linspace(float(t0), float(t1), n_frames)
     fg_series = _freegsnke_lcfs_timeseries(run_dir)
-    fg_psi_pack = plasma_psi_pack_from_dump(load_inverse_dump(run_dir) or {})
+    fg_psi_pack = psi_pack_from_dump(load_inverse_dump(run_dir) or {})
+    draw_fg_psi = bool(
+        fg_psi_pack is not None and fg_psi_pack.get("comparable_to_efit_total_psi")
+    )
+    if fg_psi_pack is not None:
+        report["freegsnke_psi_kind"] = fg_psi_pack.get("kind")
+        if not draw_fg_psi:
+            report["notes"].append(
+                "freegsnke_plasma_psi_omitted_not_comparable_to_efit_total_psi"
+            )
     if not fg_series:
         report["notes"].append("freegsnke_lcfs_unavailable_efit_only_right_panel")
     else:
         report["freegsnke_source"] = fg_series[0].get("source")
-        if fg_series[0].get("t") is None and len(fg_series) == 1:
-            report["notes"].append(
-                "freegsnke_single_time_lcfs_repeated_across_frames_honest_label"
-            )
-        elif fg_series[0].get("t") is not None and len(fg_series) == 1:
+        if len(fg_series) == 1:
             report["notes"].append(
                 "freegsnke_single_time_lcfs_repeated_across_frames_honest_label"
             )
@@ -307,17 +318,26 @@ def write_freegsnke_efit_side_by_side_gif(
         fig, axes = plt.subplots(1, 2, figsize=(11.0, 6.4), sharex=False, sharey=False)
         ax_l, ax_r = axes
 
-        # Left — FreeGSNKE (color ψ + LCFS)
+        # Left — FreeGSNKE (total ψ when available + LCFS)
         ax_l.set_title("FreeGSNKE (classic MAST)", fontsize=11, color="#0b3d5c")
         drawn_l = False
-        if fg_psi_pack is not None:
+        if draw_fg_psi and fg_psi_pack is not None:
             drawn_l = _draw_colored_psi(
                 ax_l,
                 fg_psi_pack["psi"],
                 fg_psi_pack["R"],
                 fg_psi_pack["Z"],
-                cmap="magma",
+                cmap="viridis",
                 n_levels=22,
+            )
+            ax_l.text(
+                0.02,
+                0.02,
+                "total ψ · relative scale",
+                transform=ax_l.transAxes,
+                fontsize=7,
+                color="0.2",
+                bbox=dict(boxstyle="round,pad=0.15", fc="w", ec="none", alpha=0.7),
             )
         if fg is not None:
             ax_l.plot(
@@ -360,6 +380,16 @@ def write_freegsnke_efit_side_by_side_gif(
                 transform=ax_l.transAxes,
                 color="0.5",
             )
+        if fg_psi_pack is not None and not draw_fg_psi and fg is not None:
+            ax_l.text(
+                0.5,
+                0.04,
+                "ψ fill omitted (dump has plasma_ψ only)",
+                ha="center",
+                transform=ax_l.transAxes,
+                fontsize=7,
+                color="0.35",
+            )
         ax_l.set_aspect("equal", adjustable="datalim")
         ax_l.set_xlabel("R (m)")
         ax_l.set_ylabel("Z (m)")
@@ -379,6 +409,16 @@ def write_freegsnke_efit_side_by_side_gif(
                 cmap="viridis",
                 n_levels=22,
             )
+            if drawn_r:
+                ax_r.text(
+                    0.02,
+                    0.02,
+                    "archive ψ · relative scale",
+                    transform=ax_r.transAxes,
+                    fontsize=7,
+                    color="0.2",
+                    bbox=dict(boxstyle="round,pad=0.15", fc="w", ec="none", alpha=0.7),
+                )
             if not drawn_r:
                 report.setdefault("psi_contour_skips", 0)
                 report["psi_contour_skips"] = int(report["psi_contour_skips"]) + 1
@@ -418,7 +458,7 @@ def write_freegsnke_efit_side_by_side_gif(
         ax_r.grid(True, alpha=0.25)
         ax_r.legend(loc="best", fontsize=7, frameon=False)
 
-        # Shared axis limits when both have geometry
+        # Shared axis limits from LCFS geometry (primary compare)
         xs: List[float] = []
         ys: List[float] = []
         for ax in (ax_l, ax_r):
@@ -437,7 +477,7 @@ def write_freegsnke_efit_side_by_side_gif(
 
         footer = (
             f"Shot {shot}  ·  t = {t_efit:.4f} s  ·  "
-            "FreeGSNKE vs FAIR-MAST EFIT++ (classic MAST, colored ψ)"
+            "FreeGSNKE vs FAIR-MAST EFIT++ (LCFS primary; ψ scales independent)"
         )
         if pf:
             bits = [f"{k}={v/1e3:.1f}kA" for k, v in list(pf.items())[:6]]

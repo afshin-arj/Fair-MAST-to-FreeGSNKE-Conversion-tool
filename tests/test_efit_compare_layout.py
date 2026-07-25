@@ -128,6 +128,10 @@ def test_efit_compare_with_synthetic_zarr(tmp_path: Path) -> None:
     assert sc["compare_mode"] == "reconstruction_vs_archive"
     assert any(r["quantity"] == "R_in_midplane" for r in sc["rows"])
     assert any(r["quantity"] == "lcfs_mean_nn_symmetric" for r in sc["rows"])
+    rin = next(r for r in sc["rows"] if r["quantity"] == "R_in_midplane")
+    assert rin["freegsnke"] is not None  # midplane from LCFS without eq object
+    assert rep.time_align_note
+    assert (run_dir / "04_efit_compare" / "efit_snapshot.json").exists()
 
 
 def test_midplane_and_lcfs_distance_helpers() -> None:
@@ -142,6 +146,87 @@ def test_midplane_and_lcfs_distance_helpers() -> None:
     d = polyline_mean_nearest_distance_m(r, z, r * 1.01, z)
     assert d["mean_nn_symmetric_m"] is not None
     assert d["mean_nn_symmetric_m"] > 0.0
+
+
+def test_psi_pack_prefers_total_psi_over_plasma() -> None:
+    from mast_freegsnke.freegsnke_lcfs import psi_pack_from_dump
+
+    R = np.linspace(0.2, 1.5, 8)
+    Z = np.linspace(-1, 1, 10)
+    plasma = np.ones((10, 8))
+    total = np.full((10, 8), 2.0)
+    pack = psi_pack_from_dump(
+        {
+            "plasma_psi": plasma,
+            "total_psi": total,
+            "grid": {"R": R, "Z": Z},
+            "t0": 0.25,
+        }
+    )
+    assert pack is not None
+    assert pack["kind"] == "total_psi"
+    assert pack["comparable_to_efit_total_psi"] is True
+    assert float(pack["psi"][0, 0]) == 2.0
+    plasma_only = psi_pack_from_dump(
+        {"plasma_psi": plasma, "grid": {"R": R, "Z": Z}, "t0": 0.25}
+    )
+    assert plasma_only is not None
+    assert plasma_only["kind"] == "plasma_psi"
+    assert plasma_only["comparable_to_efit_total_psi"] is False
+
+
+def test_lcfs_candidate_order_prefers_presentation(tmp_path: Path) -> None:
+    from mast_freegsnke.freegsnke_lcfs import freegsnke_lcfs_csv_candidates
+
+    run = tmp_path / "shot"
+    cands = freegsnke_lcfs_csv_candidates(run)
+    assert "presentation" in str(cands[0]).replace("\\", "/")
+    assert cands[0].name == "freegsnke_lcfs.csv"
+
+
+def test_scorecard_aligns_efit_to_freegsnke_t0(tmp_path: Path) -> None:
+    """Single-time FreeGSNKE LCFS must not be scored against window-mid EFIT."""
+    cache = tmp_path / "cache"
+    _write_mini_equilibrium_zarr(cache / "equilibrium.zarr")
+    run_dir = tmp_path / "run"
+    (run_dir / "inputs").mkdir(parents=True)
+    # Window mid ≈ 0.4; FreeGSNKE solve at t0=0.1
+    (run_dir / "inputs" / "window.json").write_text(
+        json.dumps({"t_start": 0.0, "t_end": 0.8}), encoding="utf-8"
+    )
+    pd = pytest.importorskip("pandas")
+    (run_dir / "presentation").mkdir(parents=True, exist_ok=True)
+    theta = np.linspace(0, 2 * np.pi, 40)
+    pd.DataFrame(
+        {
+            "R": 0.85 + 0.35 * np.cos(theta),
+            "Z": 0.4 * np.sin(theta),
+            "time": np.full(40, 0.1),
+        }
+    ).to_csv(run_dir / "presentation" / "freegsnke_lcfs.csv", index=False)
+    import pickle
+
+    R = np.linspace(0.2, 1.5, 8)
+    Z = np.linspace(-1, 1, 10)
+    with open(run_dir / "inverse_dump.pkl", "wb") as f:
+        pickle.dump(
+            {
+                "t0": 0.1,
+                "plasma_psi": np.ones((10, 8)),
+                "grid": {"R": R, "Z": Z, "nx": 8, "ny": 10},
+                "lcfs_R": 0.85 + 0.35 * np.cos(theta),
+                "lcfs_Z": 0.4 * np.sin(theta),
+            },
+            f,
+        )
+    auth_obj = load_efit_compare_authority(
+        Path(__file__).resolve().parents[1] / "configs" / "efit_compare_authority.json"
+    )
+    rep = run_efit_compare(run_dir, shot=30201, cache_dir=cache, auth=auth_obj)
+    assert rep.ok is True
+    assert rep.t_freegsnke == pytest.approx(0.1)
+    assert rep.t_efit == pytest.approx(0.0) or abs(float(rep.t_efit) - 0.1) <= 0.25
+    assert "scorecard_efit_nearest_to_freegsnke_t0" in (rep.time_align_note or "")
 
 
 def test_finalize_shot_layout_moves(tmp_path: Path) -> None:

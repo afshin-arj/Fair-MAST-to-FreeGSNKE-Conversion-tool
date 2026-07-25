@@ -1168,14 +1168,71 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
             ]
         )
     if score and isinstance(score, dict):
-        srows = [html.Tr([html.Td(str(k)), html.Td(str(v)[:200])]) for k, v in list(score.items())[:40]]
-        score_body = dbc.Table(
-            [html.Thead(html.Tr([html.Th("Metric"), html.Th("Value")])), html.Tbody(srows)],
-            bordered=False,
-            size="sm",
-            responsive=True,
-            className="fg-scorecard",
-        )
+        metric_rows = score.get("rows") if isinstance(score.get("rows"), list) else None
+        if metric_rows:
+            srows = []
+            for r in metric_rows[:48]:
+                if not isinstance(r, dict):
+                    continue
+                srows.append(
+                    html.Tr(
+                        [
+                            html.Td(str(r.get("quantity") or "")),
+                            html.Td(str(r.get("unit") or "")),
+                            html.Td(_fmt(r.get("efit_archive"))),
+                            html.Td(_fmt(r.get("freegsnke"))),
+                            html.Td(_fmt(r.get("delta_freegsnke_minus_efit"))),
+                        ]
+                    )
+                )
+            align_bits = []
+            if score.get("t_efit_s") is not None:
+                align_bits.append(f"EFIT t≈{_fmt(score.get('t_efit_s'))}s")
+            if score.get("t_freegsnke_s") is not None:
+                align_bits.append(f"FreeGSNKE t≈{_fmt(score.get('t_freegsnke_s'))}s")
+            if score.get("time_align_note"):
+                align_bits.append(str(score.get("time_align_note")))
+            score_body = html.Div(
+                [
+                    html.P(
+                        " · ".join(align_bits) if align_bits else "Shape metrics (archive vs FreeGSNKE).",
+                        className="small text-muted mb-2",
+                    ),
+                    dbc.Table(
+                        [
+                            html.Thead(
+                                html.Tr(
+                                    [
+                                        html.Th("Quantity"),
+                                        html.Th("Unit"),
+                                        html.Th("EFIT++ archive"),
+                                        html.Th("FreeGSNKE"),
+                                        html.Th("Δ (FG−EFIT)"),
+                                    ]
+                                )
+                            ),
+                            html.Tbody(srows),
+                        ],
+                        bordered=False,
+                        size="sm",
+                        responsive=True,
+                        className="fg-scorecard",
+                    ),
+                ]
+            )
+        else:
+            srows = [
+                html.Tr([html.Td(str(k)), html.Td(str(v)[:200])])
+                for k, v in list(score.items())[:40]
+                if k != "rows"
+            ]
+            score_body = dbc.Table(
+                [html.Thead(html.Tr([html.Th("Metric"), html.Th("Value")])), html.Tbody(srows)],
+                bordered=False,
+                size="sm",
+                responsive=True,
+                className="fg-scorecard",
+            )
     plots = art.efit_plot_paths(run_dir)
     sbs = [
         p
@@ -1184,15 +1241,34 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
         or p.name.lower().startswith("sbs_")
         or "side_by_side" in str(p).replace("\\", "/").lower()
     ]
+    # Prefer GIF, then static LCFS/psi, then SBS frame PNGs (avoid flooding gallery)
+    def _sbs_rank(p: Path) -> tuple:
+        n = p.name.lower()
+        if n.endswith(".gif"):
+            return (0, n)
+        if "lcfs_compare" in n or "efit_psi" in n:
+            return (1, n)
+        if n.startswith("sbs_"):
+            return (3, n)
+        return (2, n)
+
+    sbs = sorted(sbs, key=_sbs_rank)
     other = [p for p in plots if p not in sbs]
-    ordered_plots = sbs + other
+    # Put static geometry plots ahead of raw frame dumps in the light gallery
+    static_first = [
+        p
+        for p in other
+        if "lcfs_compare" in p.name.lower() or p.name.lower() == "efit_psi.png"
+    ]
+    rest = [p for p in other if p not in static_first]
+    ordered_plots = sbs + static_first + rest
     return html.Div(
         [
             tab_banner(
                 "EFIT archive compare",
                 "FreeGSNKE vs FAIR-MAST Level-2 EFIT++ archive (ADR-002) — classic MAST. "
-                "Side-by-side GIF mirrors FreeGSNKE's public MAST-U demo layout using archive EFIT++ "
-                "(not a live EFIT++ / efit-ai / Py-EFIT solve).",
+                "Primary metric is LCFS/shape at a time-aligned snapshot (not live EFIT++ / efit-ai). "
+                "Side-by-side ψ fills use independent relative scales; plasma-only ψ is omitted.",
             ),
             lead,
             ui_kit.section(
@@ -1207,8 +1283,9 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
                         html.Div(
                             [
                                 html.P(
-                                    "Left: FreeGSNKE LCFS · Right: FAIR-MAST EFIT++ archive ψ/LCFS "
-                                    "(classic MAST). Open / download like other decks.",
+                                    "Left: FreeGSNKE LCFS (+ total ψ when dumped) · "
+                                    "Right: FAIR-MAST EFIT++ archive ψ/LCFS. "
+                                    "LCFS overlay is the geometry compare; ψ color scales are independent.",
                                     className="small text-muted",
                                 ),
                                 media_gallery(

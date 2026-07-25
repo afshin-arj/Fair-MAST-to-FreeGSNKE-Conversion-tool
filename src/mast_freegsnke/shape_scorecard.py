@@ -108,11 +108,7 @@ def extract_freegsnke_shape_targets(eq: Any) -> Dict[str, Any]:
         out["notes"].append("no_equilibrium_object")
         return out
 
-    # Magnetic axis
-    for r_attr, z_attr in (
-        ("Rmin", None),  # placeholder skip
-    ):
-        pass
+    # Magnetic axis — attrs, then FreeGSNKE/FreeGS APIs
     for pair in (
         ("Raxis", "Zaxis"),
         ("magnetic_axis_r", "magnetic_axis_z"),
@@ -122,6 +118,20 @@ def extract_freegsnke_shape_targets(eq: Any) -> Dict[str, Any]:
             out["magnetic_axis_r"] = _finite(ra)
             out["magnetic_axis_z"] = _finite(za)
             break
+    if out["magnetic_axis_r"] is None:
+        for meth_name in ("magneticAxis", "magnetic_axis"):
+            meth = getattr(eq, meth_name, None)
+            if not callable(meth):
+                continue
+            try:
+                ax = meth()
+                arr = np.asarray(ax, dtype=float).ravel()
+                if arr.size >= 2:
+                    out["magnetic_axis_r"] = _finite(arr[0])
+                    out["magnetic_axis_z"] = _finite(arr[1])
+                    break
+            except Exception:
+                out["notes"].append(f"{meth_name}_failed")
     # FreeGS often stores opt as (R,Z) of O-point
     opt = getattr(eq, "_opt", None) or getattr(eq, "opt", None)
     if out["magnetic_axis_r"] is None and opt is not None:
@@ -157,17 +167,59 @@ def extract_freegsnke_shape_targets(eq: Any) -> Dict[str, Any]:
         except Exception:
             out["notes"].append("xpoint_parse_failed")
 
-    # Midplane from boundary
+    # Midplane from boundary / FreeGSNKE APIs
     r = getattr(eq, "rboundary", None) or getattr(eq, "Rbound", None)
     z = getattr(eq, "zboundary", None) or getattr(eq, "Zbound", None)
-    if r is not None and z is not None:
+    if r is None or z is None:
+        for meth_name in ("innerOuterSeparatrix", "inner_outer_separatrix"):
+            meth = getattr(eq, meth_name, None)
+            if not callable(meth):
+                continue
+            try:
+                io = meth()
+                arr = np.asarray(io, dtype=float).ravel()
+                if arr.size >= 2:
+                    out["R_in_m"] = _finite(min(arr[0], arr[1]))
+                    out["R_out_m"] = _finite(max(arr[0], arr[1]))
+                    out["notes"].append(f"midplane_from_{meth_name}")
+                    break
+            except Exception:
+                out["notes"].append(f"{meth_name}_failed")
+    if out["R_in_m"] is None and r is not None and z is not None:
         z_ref = out["magnetic_axis_z"] if out["magnetic_axis_z"] is not None else 0.0
         mid = midplane_radii(np.asarray(r), np.asarray(z), z_ref=float(z_ref))
         out["R_in_m"] = mid["R_in_m"]
         out["R_out_m"] = mid["R_out_m"]
         out["midplane"] = mid
-    else:
+    elif out["R_in_m"] is None:
         out["notes"].append("no_boundary_for_midplane")
+    return out
+
+
+def shape_from_lcfs_polyline(
+    r: np.ndarray,
+    z: np.ndarray,
+    *,
+    z_ref: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Fill midplane Rin/Rout from an LCFS polyline when no ``eq`` object exists.
+
+    Does **not** invent magnetic axis or X-point from the polyline.
+    """
+    out: Dict[str, Any] = {
+        "magnetic_axis_r": None,
+        "magnetic_axis_z": None,
+        "x_point_r": None,
+        "x_point_z": None,
+        "R_in_m": None,
+        "R_out_m": None,
+        "notes": ["shape_from_lcfs_polyline_midplane_only"],
+    }
+    zr = 0.0 if z_ref is None else float(z_ref)
+    mid = midplane_radii(np.asarray(r), np.asarray(z), z_ref=zr)
+    out["R_in_m"] = mid["R_in_m"]
+    out["R_out_m"] = mid["R_out_m"]
+    out["midplane"] = mid
     return out
 
 
@@ -180,6 +232,9 @@ def build_shape_scorecard(
     psi_convention: str,
     compare_mode: str,
     validation_reference: str,
+    t_efit: Optional[float] = None,
+    t_freegsnke: Optional[float] = None,
+    time_align_note: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Assemble arXiv:2407.12432-style shape scorecard (reconstruction vs archive)."""
     rows: List[Dict[str, Any]] = []
@@ -199,7 +254,23 @@ def build_shape_scorecard(
             }
         )
 
-    fg = freegsnke_shape or {}
+    fg = dict(freegsnke_shape or {})
+    # Fill midplane from FG LCFS when eq-derived shape is incomplete
+    if freegsnke_lcfs is not None and (fg.get("R_in_m") is None or fg.get("R_out_m") is None):
+        z_ref = _finite(fg.get("magnetic_axis_z"))
+        if z_ref is None:
+            z_ref = _finite(efit_scalars.get("magnetic_axis_z"))
+        filled = shape_from_lcfs_polyline(
+            freegsnke_lcfs[0], freegsnke_lcfs[1], z_ref=z_ref
+        )
+        if fg.get("R_in_m") is None:
+            fg["R_in_m"] = filled.get("R_in_m")
+        if fg.get("R_out_m") is None:
+            fg["R_out_m"] = filled.get("R_out_m")
+        notes = list(fg.get("notes") or [])
+        notes.extend(filled.get("notes") or [])
+        fg["notes"] = notes
+
     _row("magnetic_axis_r", efit_scalars.get("magnetic_axis_r"), fg.get("magnetic_axis_r"), "m")
     _row("magnetic_axis_z", efit_scalars.get("magnetic_axis_z"), fg.get("magnetic_axis_z"), "m")
     _row("x_point_r", efit_scalars.get("x_point_r"), fg.get("x_point_r"), "m")
@@ -246,11 +317,16 @@ def build_shape_scorecard(
         "psi_convention": psi_convention,
         "psi_convention_note": (
             "FreeGSNKE and EFIT++ use poloidal flux in Wb/2π (Pentland et al. arXiv:2407.12432). "
-            "Do not mix with codes that report ψ in Wb without the 2π factor."
+            "Do not mix with codes that report ψ in Wb without the 2π factor. "
+            "Side-by-side filled contours use independent relative scales unless labeled otherwise."
         ),
         "validation_reference": validation_reference,
+        "t_efit_s": t_efit,
+        "t_freegsnke_s": t_freegsnke,
+        "time_align_note": time_align_note,
         "efit_midplane": efit_mid,
         "lcfs_distance": lcfs_metrics,
+        "freegsnke_shape_notes": list(fg.get("notes") or []),
         "rows": rows,
         "n_rows_with_both": sum(
             1

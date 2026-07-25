@@ -180,6 +180,8 @@ class EfitCompareReport:
     equilibrium_path: str = ""
     t_query: Optional[float] = None
     t_efit: Optional[float] = None
+    t_freegsnke: Optional[float] = None
+    time_align_note: str = ""
     files_written: List[str] = field(default_factory=list)
     plots_written: List[str] = field(default_factory=list)
     available_vars: List[str] = field(default_factory=list)
@@ -340,30 +342,58 @@ def _extract_psi_at(ds: Any, idx: int, psi_name: str) -> Optional[Dict[str, Any]
 
 def _try_freegsnke_products(
     run_dir: Path,
-) -> Tuple[Optional[Tuple[np.ndarray, np.ndarray]], Optional[Dict[str, Any]]]:
-    """Best-effort LCFS + shape targets from FreeGSNKE dumps / CSVs — never invent."""
+    *,
+    t_compare: Optional[float] = None,
+) -> Tuple[
+    Optional[Tuple[np.ndarray, np.ndarray]],
+    Optional[Dict[str, Any]],
+    Optional[float],
+    List[str],
+]:
+    """Best-effort LCFS + shape targets from FreeGSNKE dumps / CSVs — never invent.
+
+    Prefer multi-time LCFS nearest to ``t_compare`` when a timeseries exists.
+    Returns ``(boundary, shape, t_freegsnke, notes)``.
+    """
     from .freegsnke_lcfs import (
         freegsnke_lcfs_csv_candidates,
+        freegsnke_t0_from_run,
+        lcfs_at_time_from_timeseries,
         lcfs_from_dump_dict,
         load_inverse_dump,
         read_lcfs_csv,
     )
-    from .shape_scorecard import extract_freegsnke_shape_targets
+    from .shape_scorecard import extract_freegsnke_shape_targets, shape_from_lcfs_polyline
 
     boundary: Optional[Tuple[np.ndarray, np.ndarray]] = None
     shape: Optional[Dict[str, Any]] = None
+    t_fg: Optional[float] = None
+    notes: List[str] = []
 
-    for p in freegsnke_lcfs_csv_candidates(Path(run_dir)):
-        if not p.is_file():
-            continue
-        got = read_lcfs_csv(p)
-        if got is not None:
-            boundary = got
-            break
+    if t_compare is not None:
+        ts = lcfs_at_time_from_timeseries(Path(run_dir), float(t_compare))
+        if ts is not None:
+            boundary, t_fg, src = ts
+            notes.append(f"freegsnke_lcfs_timeseries_nearest_to_t_compare:{src}")
+
+    if boundary is None:
+        for p in freegsnke_lcfs_csv_candidates(Path(run_dir)):
+            if not p.is_file():
+                continue
+            got = read_lcfs_csv(p)
+            if got is not None:
+                boundary = got
+                notes.append(f"freegsnke_lcfs_csv:{p.as_posix()}")
+                break
 
     dump = load_inverse_dump(Path(run_dir))
     if boundary is None and dump is not None:
         boundary = lcfs_from_dump_dict(dump)
+        if boundary is not None:
+            notes.append("freegsnke_lcfs_from_inverse_dump")
+
+    if t_fg is None:
+        t_fg = freegsnke_t0_from_run(Path(run_dir))
 
     for dump_name in ("inverse_dump.pkl", "forward_dump.pkl"):
         dump_path = Path(run_dir) / dump_name
@@ -382,14 +412,30 @@ def _try_freegsnke_products(
             eq = obj.get("eq") or obj.get("equilibrium") or obj.get("tokamak")
             if eq is None and "equilibria" in obj and isinstance(obj["equilibria"], list) and obj["equilibria"]:
                 eq = obj["equilibria"][0]
+            if shape is None:
+                ax_r = obj.get("magnetic_axis_r")
+                ax_z = obj.get("magnetic_axis_z")
+                if ax_r is not None or ax_z is not None:
+                    shape = {
+                        "magnetic_axis_r": float(ax_r) if ax_r is not None else None,
+                        "magnetic_axis_z": float(ax_z) if ax_z is not None else None,
+                        "x_point_r": obj.get("x_point_r"),
+                        "x_point_z": obj.get("x_point_z"),
+                        "R_in_m": obj.get("R_in_m"),
+                        "R_out_m": obj.get("R_out_m"),
+                        "notes": ["shape_from_inverse_dump_scalars"],
+                    }
         else:
             eq = getattr(obj, "eq", None) or obj
         if eq is None:
+            if shape is not None:
+                break
             continue
         try:
             shape = extract_freegsnke_shape_targets(eq)
+            notes.append(f"freegsnke_shape_from_eq:{dump_name}")
         except Exception:
-            shape = None
+            pass
         if boundary is None:
             r = getattr(eq, "rboundary", None) or getattr(eq, "Rbound", None)
             z = getattr(eq, "zboundary", None) or getattr(eq, "Zbound", None)
@@ -401,10 +447,29 @@ def _try_freegsnke_products(
                     boundary = (rr[m], zz[m])
         if boundary is not None or shape is not None:
             break
-    return boundary, shape
+
+    if boundary is not None and (shape is None or shape.get("R_in_m") is None):
+        z_ref = None
+        if shape and shape.get("magnetic_axis_z") is not None:
+            z_ref = shape.get("magnetic_axis_z")
+        filled = shape_from_lcfs_polyline(boundary[0], boundary[1], z_ref=z_ref)
+        if shape is None:
+            shape = filled
+        else:
+            if shape.get("R_in_m") is None:
+                shape["R_in_m"] = filled.get("R_in_m")
+            if shape.get("R_out_m") is None:
+                shape["R_out_m"] = filled.get("R_out_m")
+            notes2 = list(shape.get("notes") or [])
+            notes2.extend(filled.get("notes") or [])
+            shape["notes"] = notes2
+        notes.append("freegsnke_midplane_from_lcfs_polyline")
+
+    return boundary, shape, t_fg, notes
+
 
 def _try_freegsnke_boundary(run_dir: Path) -> Optional[Tuple[np.ndarray, np.ndarray]]:
-    b, _ = _try_freegsnke_products(run_dir)
+    b, _, _, _ = _try_freegsnke_products(run_dir)
     return b
 
 
@@ -492,6 +557,30 @@ def run_efit_compare(
         idx = _nearest_index(times, t_query)
     report.t_efit = float(times[idx]) if idx < len(times) else None
 
+    # Align scorecard time: window-mid EFIT vs FreeGSNKE inverse t0 was a major
+    # false-divergence source. Prefer FG timeseries @ window mid; else snap EFIT
+    # to FreeGSNKE t0 when only a single-time LCFS exists.
+    from .freegsnke_lcfs import freegsnke_lcfs_timeseries_candidates, freegsnke_t0_from_run
+
+    t_fg_probe = freegsnke_t0_from_run(run_dir)
+    has_fg_timeseries = any(p.is_file() for p in freegsnke_lcfs_timeseries_candidates(run_dir))
+    if has_fg_timeseries:
+        report.time_align_note = (
+            "efit_at_window_midpoint_freegsnke_lcfs_timeseries_nearest"
+        )
+    elif t_fg_probe is not None and report.t_efit is not None:
+        idx = _nearest_index(times, float(t_fg_probe))
+        report.t_efit = float(times[idx]) if idx < len(times) else report.t_efit
+        report.time_align_note = (
+            "scorecard_efit_nearest_to_freegsnke_t0_not_window_mid"
+        )
+        report.warnings.append(report.time_align_note)
+        report.warnings.append(
+            f"freegsnke_t0={float(t_fg_probe):.6f}s window_mid_query={float(t_query):.6f}s"
+        )
+    else:
+        report.time_align_note = "efit_at_window_midpoint_freegsnke_time_unknown"
+
     # Shape scalar timeseries CSV
     scalar_cols: Dict[str, np.ndarray] = {"time": times}
     for name in auth.shape_scalars:
@@ -556,8 +645,9 @@ def run_efit_compare(
         np.savez_compressed(npz_path, **save_kw)
         report.files_written.append(_rel(run_dir, npz_path))
 
-    # FreeGSNKE boundary + shape targets
-    fg, fg_shape = _try_freegsnke_products(run_dir)
+    # FreeGSNKE boundary + shape targets (time-aligned)
+    t_cmp = report.t_efit if report.t_efit is not None else t_query
+    fg, fg_shape, t_fg, fg_notes = _try_freegsnke_products(run_dir, t_compare=t_cmp)
     if fg is None:
         # Older dumps lacked lcfs_R/CSV — recover via FreeGSNKE venv when possible
         try:
@@ -582,7 +672,9 @@ def run_efit_compare(
                 )
                 if rec.get("ok"):
                     report.warnings.append("freegsnke_lcfs_recovered_from_inverse_dump")
-                    fg, fg_shape = _try_freegsnke_products(run_dir)
+                    fg, fg_shape, t_fg, fg_notes = _try_freegsnke_products(
+                        run_dir, t_compare=t_cmp
+                    )
                 else:
                     report.warnings.append(
                         "freegsnke_lcfs_recover_failed:"
@@ -590,9 +682,15 @@ def run_efit_compare(
                     )
         except Exception as e:
             report.warnings.append(f"freegsnke_lcfs_recover_exception:{type(e).__name__}:{e}")
+    for n in fg_notes:
+        report.warnings.append(n)
+    report.t_freegsnke = t_fg
     report.freegsnke_boundary_available = fg is not None
     report.compare_mode = auth.compare_mode
     report.psi_convention = auth.psi_convention
+    snap["t_freegsnke_s"] = t_fg
+    snap["time_align_note"] = report.time_align_note
+    snap_path.write_text(json.dumps(snap, indent=2) + "\n", encoding="utf-8")
 
     from .shape_scorecard import build_shape_scorecard
 
@@ -604,6 +702,9 @@ def run_efit_compare(
         psi_convention=auth.psi_convention,
         compare_mode=auth.compare_mode,
         validation_reference=auth.validation_reference,
+        t_efit=report.t_efit,
+        t_freegsnke=t_fg,
+        time_align_note=report.time_align_note,
     )
     report.shape_scorecard = scorecard
     score_path = out / "shape_scorecard.json"
@@ -647,11 +748,14 @@ def run_efit_compare(
             ax.set_aspect("equal", adjustable="datalim")
             ax.set_xlabel("R (m)")
             ax.set_ylabel("Z (m)")
-            ax.set_title(
-                f"Shot {shot}: LCFS compare @ t≈{report.t_efit:.4f}s"
-                if report.t_efit is not None
-                else f"Shot {shot}: LCFS"
-            )
+            _title = f"Shot {shot}: LCFS compare"
+            if report.t_efit is not None:
+                _title += f" · EFIT t≈{report.t_efit:.4f}s"
+            if report.t_freegsnke is not None:
+                _title += f" · FG t≈{report.t_freegsnke:.4f}s"
+            if report.time_align_note:
+                _title += f"\n({report.time_align_note})"
+            ax.set_title(_title, fontsize=10)
             ax.grid(True, alpha=0.35)
             ax.legend(loc="best", fontsize=8, frameon=False)
             fig.tight_layout()
@@ -740,6 +844,8 @@ def run_efit_compare(
         f"- **Validation metrics reference:** {auth.validation_reference}",
         f"- **t_query (window mid):** `{report.t_query}`",
         f"- **t_efit (nearest):** `{report.t_efit}`",
+        f"- **t_freegsnke:** `{report.t_freegsnke}`",
+        f"- **time align:** `{report.time_align_note}`",
         f"- **FreeGSNKE boundary available:** `{report.freegsnke_boundary_available}`",
         "",
         "## Mode honesty",
