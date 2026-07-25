@@ -443,6 +443,7 @@ def overview_kpis(run_dir: Path) -> Dict[str, Any]:
 _COMPARE_NUMERIC_KEYS = (
     "t_start",
     "t_end",
+    "window_dt",
     "n_scored",
     "evolutive_rms_A",
     "blocking_n",
@@ -450,11 +451,28 @@ _COMPARE_NUMERIC_KEYS = (
 
 
 def _kpi_delta(a: Any, b: Any) -> Any:
-    """B − A for numeric KPIs; None when either side is missing/non-numeric."""
+    """B − A for numeric KPIs; None when either side is missing/non-numeric.
+
+    Booleans are excluded (``float(True) == 1.0`` would invent a fake delta).
+    """
     try:
         if a is None or b is None:
             return None
+        if isinstance(a, bool) or isinstance(b, bool):
+            return None
         return float(b) - float(a)
+    except (TypeError, ValueError):
+        return None
+
+
+def _window_duration_s(kpis: Dict[str, Any]) -> Optional[float]:
+    """Formed-plasma window length [s] from t_end − t_start when both finite."""
+    try:
+        t0 = kpis.get("t_start")
+        t1 = kpis.get("t_end")
+        if t0 is None or t1 is None:
+            return None
+        return float(t1) - float(t0)
     except (TypeError, ValueError):
         return None
 
@@ -479,11 +497,16 @@ def compare_scorecard(
         ka = {**ka, "shot": int(shot_a)}
     if shot_b is not None and b_present:
         kb = {**kb, "shot": int(shot_b)}
+    if a_present:
+        ka = {**ka, "window_dt": _window_duration_s(ka)}
+    if b_present:
+        kb = {**kb, "window_dt": _window_duration_s(kb)}
 
     labels = (
         ("status", "Status"),
         ("t_start", "Window t_start [s]"),
         ("t_end", "Window t_end [s]"),
+        ("window_dt", "Window Δt [s]"),
         ("n_scored", "Contracts scored"),
         ("metrics_ok", "Metrics ok"),
         ("evolutive_ok", "Evolutive Ip ok"),

@@ -81,6 +81,32 @@ def test_compare_scorecard_deltas(tmp_path: Path) -> None:
     assert by_key["evolutive_rms_A"]["delta"] == 150.0
     assert abs(float(by_key["t_start"]["delta"]) - (-0.01)) < 1e-9
     assert by_key["modes"]["delta"] is None
+    assert abs(float(by_key["window_dt"]["a"]) - 0.2) < 1e-9
+    assert abs(float(by_key["window_dt"]["delta"]) - 0.02) < 1e-9
+
+
+def test_kpi_delta_rejects_bool() -> None:
+    assert art._kpi_delta(True, False) is None
+    assert art._kpi_delta(1, 3) == 2.0
+
+
+def test_fmt_delta_signed() -> None:
+    assert panels._fmt_delta(None) == "—"
+    assert panels._fmt_delta(0) == "0"
+    assert panels._fmt_delta(12.5).startswith("+")
+    assert panels._fmt_delta(-3.0).startswith("−")
+
+
+def test_compare_detail_uses_paired_gallery(tmp_path: Path) -> None:
+    runs = tmp_path / "SHOT"
+    _mini_shot(runs / "30203", 30203, rms=100.0, t0=0.2, t1=0.4)
+    _mini_shot(runs / "30204", 30204, rms=200.0, t0=0.2, t1=0.4)
+    # Extra A-only plot to exercise unpaired badge path
+    (runs / "30203" / "02_measured_data" / "05_plots" / "01_plasma_only_a.png").write_bytes(_PNG)
+    detail = panels.compare_detail(runs, 30203, 30204, "plasma")
+    text = str(detail)
+    assert "compare-pair" in text or "paired" in text.lower() or "Scorecard" in text
+    assert "compare-id-strip" in text or "SHOT/30203" in text
 
 
 def test_compare_scorecard_missing_side(tmp_path: Path) -> None:

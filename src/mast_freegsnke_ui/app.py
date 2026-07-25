@@ -990,6 +990,20 @@ def create_app(
         return panels.compare_detail(runs_dir, a, b, fam), a, b, fam
 
     @app.callback(
+        Output("compare-dd-a", "value", allow_duplicate=True),
+        Output("compare-dd-b", "value", allow_duplicate=True),
+        Input("compare-btn-swap", "n_clicks"),
+        State("compare-dd-a", "value"),
+        State("compare-dd-b", "value"),
+        prevent_initial_call=True,
+    )
+    def on_compare_swap(n_clicks, shot_a, shot_b):
+        """Swap Shot A ↔ Shot B (dropdown values; on_compare refreshes detail)."""
+        if not n_clicks:
+            return no_update, no_update
+        return shot_b, shot_a
+
+    @app.callback(
         Output("compare-shot-a", "data", allow_duplicate=True),
         Output("compare-shot-b", "data", allow_duplicate=True),
         Input("results-tabs", "value"),
