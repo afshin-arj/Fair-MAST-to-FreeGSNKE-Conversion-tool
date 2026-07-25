@@ -36,9 +36,9 @@ class EvolutiveAuthority:
     script_timeout_s: float
     n_steps: Optional[int] = None
     cover_window: bool = False
-    max_steps: int = 50
+    max_steps: int = 100
     scale_paxis_with_ip: bool = False
-    snapshot_equilibria_every_n: int = 5
+    snapshot_equilibria_every_n: int = 1
     min_dIy_dI: Optional[float] = None
     # Hard kill for a single hung nlstepper call (Windows FreeGSNKE native hangs).
     per_step_timeout_s: float = 180.0
@@ -167,14 +167,14 @@ def load_evolutive_authority(path: Path) -> EvolutiveAuthority:
         full_timestep_s=float(obj["full_timestep_s"]),
         n_steps=n_steps,
         cover_window=cover_window,
-        max_steps=int(obj.get("max_steps", 50)),
+        max_steps=int(obj.get("max_steps", 100)),
         linear_only=bool(obj["linear_only"]),
         scale_paxis_with_ip=bool(obj.get("scale_paxis_with_ip", False)),
         plasma_resistivity_ohm_m=float(obj["plasma_resistivity_ohm_m"]),
         max_solving_iterations=int(obj["max_solving_iterations"]),
         max_mode_frequency=float(obj["max_mode_frequency"]),
         script_timeout_s=float(obj["script_timeout_s"]),
-        snapshot_equilibria_every_n=int(obj.get("snapshot_equilibria_every_n", 5)),
+        snapshot_equilibria_every_n=int(obj.get("snapshot_equilibria_every_n", 1)),
         min_dIy_dI=(float(obj["min_dIy_dI"]) if obj.get("min_dIy_dI") is not None else None),
         per_step_timeout_s=float(obj.get("per_step_timeout_s", 180.0)),
         notes=str(obj.get("notes", "")),

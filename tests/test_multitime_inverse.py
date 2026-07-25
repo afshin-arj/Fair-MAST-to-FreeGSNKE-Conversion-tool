@@ -155,7 +155,7 @@ def test_runner_success_untimed(tmp_path: Path) -> None:
 def test_default_config_ships_script_timeout() -> None:
     cfg = AppConfig.load(REPO / "configs" / "default.json")
     assert cfg.freegsnke_script_timeout_s == 1200.0
-    assert cfg.metrics_n_times == 5
+    assert cfg.metrics_n_times == 11
 
 
 def test_synthetic_times_schema_records_per_time_status(tmp_path: Path) -> None:

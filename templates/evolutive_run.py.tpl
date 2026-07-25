@@ -71,7 +71,7 @@ def _resolve_n_steps(ea_evolv: dict, t_start: float, t_end: float) -> dict:
     span = float(t_end) - float(t_start)
     n_from_window = max(1, int(math.ceil(span / dt))) if span > 0.0 else 1
     cover = bool(ea_evolv.get("cover_window", False))
-    max_steps = int(ea_evolv.get("max_steps", 50))
+    max_steps = int(ea_evolv.get("max_steps", 100))
     n_override = ea_evolv.get("n_steps", None)
     if cover:
         if n_override is not None:

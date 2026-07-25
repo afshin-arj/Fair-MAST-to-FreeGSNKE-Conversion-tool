@@ -7,10 +7,10 @@ from typing import Any, Dict, List, Optional
 from mast_freegsnke_ui import artifacts as art
 from mast_freegsnke_ui import ui_kit
 
-_MAX_GALLERY = 4
+_MAX_GALLERY = 8
 _MAX_CSV_PREVIEW = 1
-_MAX_GIFS = 3
-_MAX_FILE_LINKS = 20
+_MAX_GIFS = 8
+_MAX_FILE_LINKS = 32
 
 
 def _require() -> tuple[Any, Any, Any]:
@@ -1249,8 +1249,8 @@ _COMPARE_FAMILY_DEFS: tuple[tuple[str, str], ...] = (
 )
 
 # Compare shows basename-aligned pairs; allow more than the single-shot gallery cap.
-_COMPARE_PAIR_LIMIT = 12
-_COMPARE_CSV_LIMIT = 24
+_COMPARE_PAIR_LIMIT = 16
+_COMPARE_CSV_LIMIT = 32
 
 
 def _fmt_delta(value: Any) -> str:
