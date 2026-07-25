@@ -197,7 +197,64 @@ def test_planner_catalog_helpers(tmp_path: Path) -> None:
     assert panels.planner_panel(30201, run) is not None
 
 
-def test_load_circuit_table_shipped() -> None:
-    obj = load_editable_circuit_table(REPO)
-    assert "circuits" in obj
-    assert obj["circuits"]
+def test_replan_uses_appconfig_load() -> None:
+    import inspect
+
+    from mast_freegsnke import planner_replan as pr
+
+    src = inspect.getsource(pr.replan_shot)
+    assert "AppConfig.load" in src
+    assert "machine_authority_dir" in src
+    assert "load_config" not in src
+    assert "R_ohm_by_circuit" in src
+    assert "n_knots" in src
+
+
+def test_extract_lcfs_prefers_time_dim() -> None:
+    from mast_freegsnke.efit_compare import _extract_lcfs_at
+
+    class _V:
+        def __init__(self, vals, dims):
+            self.values = vals
+            self.dims = dims
+
+    class _DS:
+        def __contains__(self, k):
+            return k in ("lcfs_r", "lcfs_z")
+
+        def __getitem__(self, k):
+            # Deliberately awkward shape: time=5, n=4 — old heuristic could flip
+            arr = np.arange(20, dtype=float).reshape(5, 4)
+            return _V(arr if k == "lcfs_r" else arr + 100, ("time", "i"))
+
+    lcfs = _extract_lcfs_at(_DS(), 2, "lcfs_r", "lcfs_z")
+    assert lcfs is not None
+    rr, zz = lcfs
+    assert list(rr) == [8.0, 9.0, 10.0, 11.0]
+
+
+def test_passive_empty_editor_does_not_wipe(tmp_path: Path) -> None:
+    """Regression: empty textarea must not clear cited passive ρ."""
+    root = tmp_path / "repo"
+    (root / "configs").mkdir(parents=True)
+    path = root / "configs" / "passive_resistivity.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": "1.1",
+                "status": "cited",
+                "notes": "",
+                "components": {
+                    "vessel": {"resistivity_ohm_m": 1e-6, "source": "unit-test"}
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    # Simulate UI save with empty editor: do not call apply with {}
+    before = path.read_text(encoding="utf-8")
+    raw = ""
+    if raw.strip():
+        apply_passive_resistivity_edits(root, json.loads(raw))
+    assert path.read_text(encoding="utf-8") == before

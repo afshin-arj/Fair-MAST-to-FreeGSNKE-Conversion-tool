@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 
 class PlannerReplanError(ValueError):
@@ -70,7 +70,6 @@ def apply_circuit_rl_edits(
         if note not in prev:
             obj["citation"] = (prev + " | " if prev else "") + f"UI edit: {note}"
     path.write_text(json.dumps(obj, indent=2) + "\n", encoding="utf-8")
-    # Validate
     load_circuit_dynamics_authority(path)
     return path
 
@@ -132,7 +131,7 @@ def replan_shot(
         load_circuit_dynamics_authority,
         write_circuit_dynamics_authority,
     )
-    from .config import load_config
+    from .config import AppConfig
     from .planner import (
         extract_circuit_dynamics_from_freegsnke_machine,
         load_planner_authority,
@@ -141,8 +140,8 @@ def replan_shot(
     )
     from .voltage_map import load_voltage_map
 
-    repo_root = Path(repo_root)
-    cfg = load_config(Path(config_path))
+    repo_root = Path(repo_root).resolve()
+    cfg = AppConfig.load(Path(config_path))
     runs = Path(runs_dir) if runs_dir else (repo_root / (cfg.runs_dir or "SHOT"))
     if not runs.is_absolute():
         runs = (repo_root / runs).resolve()
@@ -157,7 +156,10 @@ def replan_shot(
     if not window_path.is_file():
         raise PlannerReplanError("inputs/window.json required")
     window = json.loads(window_path.read_text(encoding="utf-8"))
-    t0, t1 = float(window["t_start"]), float(window["t_end"])
+    try:
+        t0, t1 = float(window["t_start"]), float(window["t_end"])
+    except (KeyError, TypeError, ValueError) as e:
+        raise PlannerReplanError(f"inputs/window.json missing t_start/t_end: {e}") from e
 
     pl_path = Path(cfg.planner_authority_path or "configs/planner_authority.json")
     if not pl_path.is_absolute():
@@ -171,9 +173,11 @@ def replan_shot(
     vm_path = Path(cfg.voltage_map_path or "configs/voltage_map.json")
     if not vm_path.is_absolute():
         vm_path = repo_root / vm_path
-    ma = Path(cfg.machine_authority_path or "machine_authority")
+    ma = Path(cfg.machine_authority_dir or "machine_authority")
     if not ma.is_absolute():
         ma = repo_root / ma
+    if not ma.is_dir():
+        raise PlannerReplanError(f"missing machine_authority_dir: {ma}")
 
     pl = load_planner_authority(pl_path)
     if not pl.enabled:
@@ -182,16 +186,7 @@ def replan_shot(
     vm = load_voltage_map(vm_path)
     order = list(vm.machine_active_circuit_order)
 
-    # Resolve measured-peak limits into run snapshot when needed
-    lim_res = resolve_measured_peak_limits(
-        limits,
-        inputs_dir=inputs,
-        circuit_order=order,
-        t_start=t0,
-        t_end=t1,
-    )
-    write_coil_limits(inputs, lim_res)
-
+    # Build dynamics first so measured-peak Vmax can use ohmic / RI+L dI/dt peaks
     dyn_auth = load_circuit_dynamics_authority(dyn_path)
     write_circuit_dynamics_authority(inputs, dyn_auth)
     try:
@@ -204,6 +199,29 @@ def replan_shot(
         dyn_auth, circuit_order=order, freegsnke_fill=fill
     )
     write_circuit_dynamics(inputs / "circuit_dynamics_snapshot.json", dyn)
+
+    import numpy as np
+
+    R_for_limits = {
+        name: float(r) for name, r in zip(dyn.circuit_order, np.asarray(dyn.R_ohm, dtype=float).ravel())
+    }
+    Lm = np.asarray(dyn.L_henry, dtype=float)
+    diag = np.diag(Lm) if Lm.ndim == 2 else Lm.ravel()
+    L_for_limits = {
+        name: float(diag[i]) for i, name in enumerate(dyn.circuit_order) if i < len(diag)
+    }
+
+    lim_res = resolve_measured_peak_limits(
+        limits,
+        inputs_dir=inputs,
+        circuit_order=order,
+        t_start=t0,
+        t_end=t1,
+        R_ohm_by_circuit=R_for_limits or None,
+        L_henry_by_circuit=L_for_limits or None,
+        n_knots=int(pl.n_knots),
+    )
+    write_coil_limits(inputs, lim_res)
 
     st = None
     st_path = inputs / "shape_targets_authority" / "shape_targets.json"

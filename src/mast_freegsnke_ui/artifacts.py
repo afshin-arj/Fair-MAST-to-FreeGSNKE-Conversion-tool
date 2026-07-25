@@ -286,6 +286,7 @@ def gif_paths(run_dir: Path) -> List[Path]:
         "03_reconstruction/presentation",
         "03_reconstruction/evolutive",
         "04_efit_compare/plots",
+        "07_planner",
         "presentation",
         "evolutive",
     ):

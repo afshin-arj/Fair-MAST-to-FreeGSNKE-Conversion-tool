@@ -272,12 +272,20 @@ def _series_1d(ds: Any, name: str) -> Optional[np.ndarray]:
 def _extract_lcfs_at(ds: Any, idx: int, r_name: str, z_name: str) -> Optional[Tuple[np.ndarray, np.ndarray]]:
     if r_name not in ds or z_name not in ds:
         return None
-    r = np.asarray(ds[r_name].values)
-    z = np.asarray(ds[z_name].values)
-    # Common layouts: (time, n) or (n, time)
-    if r.ndim == 2:
-        if r.shape[0] > idx and r.shape[0] <= r.shape[1] * 2:
-            # likely (time, n)
+    da_r = ds[r_name]
+    da_z = ds[z_name]
+    r = np.asarray(da_r.values)
+    z = np.asarray(da_z.values)
+    dims = list(getattr(da_r, "dims", ()))
+    # Prefer explicit time axis when present
+    if r.ndim == 2 and "time" in dims:
+        t_axis = dims.index("time")
+        rr = np.take(r, idx, axis=t_axis)
+        zz = np.take(z, idx, axis=t_axis)
+    elif r.ndim == 2:
+        # Default: axis 0 is time when it matches a plausible time length
+        n0, n1 = int(r.shape[0]), int(r.shape[1])
+        if n0 >= 2 and n0 <= max(64, n1):
             rr, zz = r[idx], z[idx]
         else:
             rr, zz = r[:, idx], z[:, idx]

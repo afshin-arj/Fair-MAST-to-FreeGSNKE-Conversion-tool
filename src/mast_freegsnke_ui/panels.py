@@ -565,12 +565,12 @@ def overview_panel(shot: int, run_dir: Path) -> Any:
     )
 
 
-def _planner_passive_textarea_default() -> str:
+def _planner_passive_textarea_default(repo_root: Optional[Path] = None) -> str:
     """Current configs/passive_resistivity components JSON for the Planner edit box."""
     try:
         from mast_freegsnke.planner_replan import load_editable_passive
 
-        root = Path(__file__).resolve().parents[2]
+        root = Path(repo_root) if repo_root is not None else Path(__file__).resolve().parents[2]
         obj = load_editable_passive(root)
         comps = obj.get("components") if isinstance(obj, dict) else {}
         return json.dumps(comps or {}, indent=2)
@@ -578,7 +578,7 @@ def _planner_passive_textarea_default() -> str:
         return "{}"
 
 
-def planner_panel(shot: int, run_dir: Path) -> Any:
+def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None) -> Any:
     """Path B6-full+: GSPulse-method planner — collapsible decks, media gallery, R/L edit."""
     html, dcc, dbc = _require()
     pinfo = art.load_planner_info(run_dir)
@@ -770,7 +770,7 @@ def planner_panel(shot: int, run_dir: Path) -> Any:
                 id="planner-passive-json",
                 className="fg-planner-passive",
                 style={"minHeight": "110px", "fontFamily": "var(--fg-mono)", "fontSize": "0.8rem"},
-                value=_planner_passive_textarea_default(),
+                value=_planner_passive_textarea_default(repo_root),
                 placeholder=(
                     '{\n  "vessel": {"resistivity_ohm_m": 1.0e-6, "source": "citation DOI"}\n}'
                 ),
@@ -2821,7 +2821,13 @@ _TAB_LABELS = {k: v for k, v in TAB_DEFS}
 _TAB_DEFS = TAB_DEFS
 
 
-def fill_one_tab(tab_id: Optional[str], shot: Optional[int], run_dir: Optional[Path]) -> Any:
+def fill_one_tab(
+    tab_id: Optional[str],
+    shot: Optional[int],
+    run_dir: Optional[Path],
+    *,
+    repo_root: Optional[Path] = None,
+) -> Any:
     """Build only the active results tab (lazy) for smoother UI."""
     html, _, _ = _require()
     tid = (tab_id or "overview").lower()
@@ -2855,7 +2861,7 @@ def fill_one_tab(tab_id: Optional[str], shot: Optional[int], run_dir: Optional[P
     if tid == "residuals":
         return residuals_panel(shot_i, run_dir)
     if tid == "planner":
-        return planner_panel(shot_i, run_dir)
+        return planner_panel(shot_i, run_dir, repo_root=repo_root)
     if tid == "efit":
         return efit_panel(shot_i, run_dir)
     if tid == "gifs":

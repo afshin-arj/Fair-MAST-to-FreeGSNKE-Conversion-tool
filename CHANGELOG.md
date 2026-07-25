@@ -1,3 +1,8 @@
+## 11.12.1 — Planner replan / UI wiring fixes
+- Fix `mast-freegsnke plan` / UI re-calc: `AppConfig.load`, `machine_authority_dir`, measured-peak Vmax with R/L + n_knots.
+- Do not wipe cited passive ρ when Planner textarea is empty; pass `repo_root` into Planner panel.
+- Accordion/`ui_kit.section` HTML validity; LCFS time-axis extract; GIFs include `07_planner/`. Version **11.12.1**.
+
 ## 11.12.0 — Classic MAST FreeGSNKE|EFIT side-by-side + Planner edit/replan
 - EFIT tab: FreeGSNKE | FAIR-MAST EFIT++ side-by-side GIF (classic MAST; archive only — mirrors FreeGSNKE README layout).
 - Planner: collapsible decks (start open), media gallery Open/Download, Files catalog for `07_planner/`.

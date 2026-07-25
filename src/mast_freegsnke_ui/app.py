@@ -1054,7 +1054,7 @@ def create_app(
                 family=fam,
             )
         else:
-            body = panels.fill_one_tab(tid, shot_i, run_dir)
+            body = panels.fill_one_tab(tid, shot_i, run_dir, repo_root=repo_root)
         return heading, body
 
     @app.callback(
@@ -1173,17 +1173,18 @@ def create_app(
             # Passiveives: empty object clears to awaiting
             import json as _json
 
-            comps = {}
             raw = (passive_json or "").strip()
             if raw:
                 comps = _json.loads(raw)
                 if not isinstance(comps, dict):
                     return "Passive JSON must be an object of components", no_update
-            apply_passive_resistivity_edits(repo_root, comps)
-            msgs.append(
-                f"Passive resistivity: {len(comps)} component(s) "
-                f"({'cited' if comps else 'awaiting_authority'})."
-            )
+                apply_passive_resistivity_edits(repo_root, comps)
+                msgs.append(
+                    f"Passive resistivity: {len(comps)} component(s) "
+                    f"({'cited' if comps else 'awaiting_authority'})."
+                )
+            else:
+                msgs.append("Passive rho unchanged (empty editor — not wiped).")
         except PlannerReplanError as e:
             return f"Save failed: {e}", no_update
         except Exception as e:

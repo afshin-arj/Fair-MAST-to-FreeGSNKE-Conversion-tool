@@ -173,16 +173,19 @@ def section(title: str, note: str, body: Any, *, meta: Optional[str] = None) -> 
     head: List[Any] = [html.Span(title, className="fg-section-title")]
     if meta:
         head.append(html.Span(meta, className="fg-section-meta"))
-    summary_kids: List[Any] = [
-        html.Div(head, className="fg-section-head"),
+    kids: List[Any] = [
+        html.Summary(
+            html.Div(head, className="fg-section-head"),
+            className="fg-section-summary",
+        ),
     ]
+    body_kids: List[Any] = []
     if note:
-        summary_kids.append(html.P(note, className="fg-section-note mb-0"))
+        body_kids.append(html.P(note, className="fg-section-note"))
+    body_kids.append(html.Div(body, className="fg-section-body-inner"))
+    kids.append(html.Div(body_kids, className="fg-section-body"))
     return html.Details(
-        [
-            html.Summary(summary_kids, className="fg-section-summary"),
-            html.Div(body, className="fg-section-body"),
-        ],
+        kids,
         open=True,
         className="fg-section fg-section-collapsible",
     )
