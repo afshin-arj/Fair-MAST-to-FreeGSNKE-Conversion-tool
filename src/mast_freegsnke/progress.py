@@ -52,5 +52,6 @@ def write_run_progress(
         "blocking_errors": list(blocking_errors or []),
     }
     out = run_dir / "progress.json"
+    # write_json retries Windows replace locks; still may raise after exhaustion.
     write_json(out, payload)
     return out

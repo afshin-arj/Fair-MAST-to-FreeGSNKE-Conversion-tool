@@ -17,11 +17,17 @@ _IMAGE_EXTS = {".png", ".gif", ".jpg", ".jpeg", ".webp"}
 
 
 def _safe_json(path: Path) -> Optional[Dict[str, Any]]:
+    """Load JSON without holding a long lock (Windows replace vs UI poll).
+
+    Prefer a single ``read_bytes`` so the file handle is released immediately;
+    partial/torn reads during a rare non-atomic fallback write return None.
+    """
     if not path.is_file():
         return None
     try:
-        obj = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        raw = path.read_bytes()
+        obj = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
     return obj if isinstance(obj, dict) else None
 

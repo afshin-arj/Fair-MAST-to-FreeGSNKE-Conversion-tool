@@ -68,3 +68,27 @@ def test_write_run_progress_creates_parent(tmp_path: Path) -> None:
     )
     assert out == run_dir / "progress.json"
     assert out.is_file()
+
+
+def test_pipeline_progress_flush_is_best_effort(tmp_path: Path) -> None:
+    """UI locks on progress.json must not turn a successful stage into voltage_map_failed."""
+    stage_log = []
+    blocking_errors: list = []
+    status = "running"
+    run_dir = tmp_path / "30202"
+    run_dir.mkdir()
+
+    def _flush_progress(current_stage=None):
+        try:
+            raise PermissionError(5, "Access is denied")
+        except OSError:
+            pass
+
+    def _stage(name, ok, **kw):
+        stage_log.append({"stage": name, "ok": bool(ok), **kw})
+        _flush_progress(current_stage=name)
+
+    _stage("voltage_map_apply", True, n_mapped=5)
+    assert stage_log[-1]["stage"] == "voltage_map_apply"
+    assert stage_log[-1]["ok"] is True
+    assert blocking_errors == []

@@ -275,14 +275,19 @@ class ShotPipeline:
         from .progress import write_run_progress
 
         def _flush_progress(current_stage: Optional[str] = None) -> None:
-            write_run_progress(
-                run_dir,
-                shot=int(shot),
-                status=status,
-                stage_log=stage_log,
-                blocking_errors=blocking_errors,
-                current_stage=current_stage,
-            )
+            # Progress is a UI sidecar — never let reader locks (WinError 5/32) abort
+            # a real stage (false voltage_map_failed / similar).
+            try:
+                write_run_progress(
+                    run_dir,
+                    shot=int(shot),
+                    status=status,
+                    stage_log=stage_log,
+                    blocking_errors=blocking_errors,
+                    current_stage=current_stage,
+                )
+            except OSError:
+                pass
 
         def _stage(name: str, ok: bool, **kw: Any) -> None:
             stage_log.append({"stage": name, "ok": bool(ok), **kw})

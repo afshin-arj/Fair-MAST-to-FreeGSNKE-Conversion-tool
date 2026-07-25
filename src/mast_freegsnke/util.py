@@ -2,6 +2,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -18,15 +19,54 @@ def sha256_file(path: Path, chunk_bytes: int = 1024 * 1024) -> str:
             h.update(b)
     return h.hexdigest()
 
+
+def _is_windows_replace_lock(exc: BaseException) -> bool:
+    """True when os.replace failed because another process still has the dest open.
+
+    On Windows, readers opened without FILE_SHARE_DELETE (Python's default open)
+    block atomic replace with WinError 5 (access denied) or 32 (sharing violation).
+    """
+    if not isinstance(exc, OSError):
+        return False
+    winerr = getattr(exc, "winerror", None)
+    if winerr in (5, 32):
+        return True
+    # Non-Windows / errno fallbacks (EACCES / EBUSY / EPERM).
+    return getattr(exc, "errno", None) in (13, 16, 1)
+
+
 def write_json(path: Path, obj: Dict[str, Any]) -> None:
-    """Atomic JSON write (temp + replace) so concurrent readers never see a partial file."""
+    """Atomic JSON write (temp + replace) so concurrent readers never see a partial file.
+
+    Retries replace on Windows reader locks (UI polling ``progress.json`` / AV).
+    Falls back to a direct overwrite only after retries are exhausted so a live
+    Dash poll cannot abort the pipeline mid-stage.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(obj, indent=2, sort_keys=True) + "\n"
     tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
+    last: BaseException | None = None
     try:
         tmp.write_text(payload, encoding="utf-8")
-        os.replace(tmp, path)
+        for attempt in range(10):
+            try:
+                os.replace(tmp, path)
+                return
+            except OSError as e:
+                last = e
+                if not _is_windows_replace_lock(e):
+                    raise
+                time.sleep(0.05 * (attempt + 1))
+        # Last resort: non-atomic overwrite (brief partial-read window for pollers).
+        try:
+            path.write_text(payload, encoding="utf-8")
+            return
+        except OSError as e:
+            last = e
+            raise PermissionError(
+                f"Could not write {path} after retries (likely locked by another process): {last}"
+            ) from last
     finally:
         if tmp.exists():
             try:
