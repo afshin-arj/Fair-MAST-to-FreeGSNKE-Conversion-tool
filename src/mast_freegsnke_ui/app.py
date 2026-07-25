@@ -98,8 +98,22 @@ def _library_fingerprint(runs_dir: Path, *, cache_dir: Optional[Path] = None) ->
         return ""
 
 
+def _parse_shot_number(raw: Any) -> Optional[int]:
+    """Parse a MAST shot from text/number input; reject empty / non-positive."""
+    if raw is None:
+        return None
+    s = str(raw).strip().replace(",", "")
+    if not s:
+        return None
+    try:
+        shot = int(float(s)) if "." in s else int(s)
+    except (TypeError, ValueError):
+        return None
+    return shot if shot >= 1 else None
+
+
 def _shot_library_options(runs_dir: Path, *, cache_dir: Optional[Path] = None, required_groups: Optional[List[str]] = None) -> List[dict]:
-    # Expert labels: shot · status · cache · blocking
+    # Expert labels: bare shot first so dropdown search matches typed numbers.
     from mast_freegsnke_ui.level2 import shot_cache_status
 
     opts = []
@@ -233,7 +247,7 @@ def create_app(
             html.Div(
                 id="shot-dossier",
                 children=panels.shot_dossier(None, None),
-                className="shot-dossier-sticky mb-3",
+                className="shot-dossier-bar mb-3",
             ),
             dcc.Store(id="kbd-bound", data=False),
             html.Div(id="kbd-sink", style={"display": "none"}),
@@ -256,12 +270,12 @@ def create_app(
                                             [
                                                 dbc.Input(
                                                     id="shot-input",
-                                                    type="number",
-                                                    min=1,
-                                                    step=1,
-                                                    placeholder="e.g. 30201",
-                                                    debounce=True,
+                                                    type="text",
+                                                    placeholder="e.g. 30201 — new or existing",
+                                                    debounce=False,
                                                     n_submit=0,
+                                                    className="shot-number-input",
+                                                    persistence=False,
                                                 ),
                                                 dbc.Button(
                                                     "Open",
@@ -271,15 +285,24 @@ def create_app(
                                                     title="Browse existing SHOT/<N>/ without re-running",
                                                 ),
                                             ],
-                                            className="mb-2",
+                                            className="mb-1",
+                                        ),
+                                        html.Div(
+                                            "Type any MAST shot here, then Open or Reconstruct. New shots need Reconstruct.",
+                                            className="action-hint mb-2",
                                         ),
                                         dbc.Label("Local SHOT library", html_for="shot-picker", className="fg-label"),
                                         dcc.Dropdown(
                                             id="shot-picker",
                                             options=library_opts,
-                                            placeholder="Select an existing reconstruction…",
+                                            placeholder="Search existing SHOT folders…",
                                             clearable=True,
-                                            className="mb-2 shot-dropdown",
+                                            searchable=True,
+                                            className="mb-1 shot-dropdown",
+                                        ),
+                                        html.Div(
+                                            "Browse-only list of folders already under SHOT/ — type a new number in the field above.",
+                                            className="action-hint mb-2",
                                         ),
                                         html.Div(
                                             [
@@ -301,7 +324,7 @@ def create_app(
                                             className="action-hints mb-2",
                                         ),
                                         html.Div(
-                                            ["Enter", html.Kbd("⏎"), "opens · Start reconstructs"],
+                                            ["Enter", html.Kbd("⏎"), "opens · Start reconstructs · / focuses shot"],
                                             className="kbd-hint",
                                         ),
                                     ],
@@ -515,17 +538,10 @@ def create_app(
         return "overview"
 
     def _resolve_shot(shot_val: Any, picker_val: Any) -> Optional[int]:
-        if shot_val is not None and str(shot_val).strip() != "":
-            try:
-                return int(shot_val)
-            except (TypeError, ValueError):
-                pass
-        if picker_val is not None and str(picker_val).strip() != "":
-            try:
-                return int(picker_val)
-            except (TypeError, ValueError):
-                pass
-        return None
+        parsed = _parse_shot_number(shot_val)
+        if parsed is not None:
+            return parsed
+        return _parse_shot_number(picker_val)
 
     def _dossier_for(shot: Optional[int]) -> Any:
         if shot is None:
@@ -562,7 +578,7 @@ def create_app(
                 None,
                 "idle" if not manager.is_running else no_update,
                 manager.is_running,
-                shot,
+                str(int(shot)),
                 "",
                 panels.shot_dossier(None, None),
             )
@@ -595,7 +611,7 @@ def create_app(
                     html.Strong(f"Opened SHOT/{shot}"),
                     html.Span(f" · status={st}"),
                     html.Div(
-                        "Tabs: Overview · Level-2 · Residuals · EFIT · Equilibria · Authorities · Files.",
+                        "Tabs: Overview · Level-2 · Residuals · Compare · EFIT · Equilibria · Authorities · Files.",
                         className="small mt-1",
                     ),
                 ],
@@ -605,7 +621,7 @@ def create_app(
             shot,
             "idle" if not manager.is_running else no_update,
             manager.is_running,
-            shot,
+            str(int(shot)),
             rd.as_posix(),
             dossier,
         )
@@ -703,7 +719,7 @@ def create_app(
                 active_shot,
                 "running",
                 True,
-                shot,
+                str(int(shot)),
                 no_update,
                 _dossier_for(active_shot) if active_shot is not None else no_update,
                 no_update,
@@ -716,7 +732,7 @@ def create_app(
                 active_shot,
                 "failed",
                 False,
-                shot,
+                str(int(shot)),
                 no_update,
                 no_update,
                 no_update,
@@ -737,7 +753,7 @@ def create_app(
             shot,
             "running",
             True,
-            shot,
+            str(int(shot)),
             rd.as_posix(),
             _dossier_for(shot),
             tok + 1,

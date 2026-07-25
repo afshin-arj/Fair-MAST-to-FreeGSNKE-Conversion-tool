@@ -541,6 +541,22 @@ body {
   border-radius: var(--fg-radius-sm) !important;
 }
 
+/* react-select search field must stay typed-text visible (Cyborg often hides it). */
+.shot-dropdown input,
+.shot-dropdown [class*="Input"] input,
+.shot-dropdown .Select-input input {
+  color: var(--fg-ink) !important;
+  opacity: 1 !important;
+  background: transparent !important;
+  font-family: var(--fg-mono) !important;
+  caret-color: var(--fg-accent) !important;
+}
+
+.shot-number-input {
+  font-family: var(--fg-mono) !important;
+  letter-spacing: 0.02em;
+}
+
 .shot-dropdown .css-1dimb5e-singleValue,
 .shot-dropdown .css-qc6syf,
 .shot-dropdown [class*="singleValue"] {
@@ -551,7 +567,7 @@ body {
 .shot-dropdown [class*="menu"] {
   background: var(--fg-bg2) !important;
   border: 1px solid var(--fg-line);
-  z-index: 30;
+  z-index: 50;
   border-radius: var(--fg-radius-sm);
 }
 
@@ -1578,17 +1594,16 @@ a.btn,
 }
 
 /* ——— Expert console polish (shared kit) ——— */
-.shot-dossier-sticky {
-  position: sticky;
-  top: 0;
-  z-index: 40;
+/* Shot dossier — not sticky: sticky full-width overlay blocked the left
+   Shot control / library dropdown from receiving clicks and keyboard. */
+.shot-dossier-bar {
+  position: relative;
+  z-index: 1;
   background:
     linear-gradient(180deg, rgba(2, 6, 23, 0.96) 0%, rgba(11, 18, 32, 0.94) 100%);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--fg-line-soft);
-  padding: 0.55rem 0.15rem 0.65rem;
-  margin-left: -0.15rem;
-  margin-right: -0.15rem;
+  border: 1px solid var(--fg-line-soft);
+  border-radius: var(--fg-radius-sm);
+  padding: 0.55rem 0.75rem 0.65rem;
 }
 .dossier-top {
   display: flex;
