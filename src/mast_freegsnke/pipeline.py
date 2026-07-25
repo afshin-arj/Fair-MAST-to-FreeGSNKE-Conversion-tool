@@ -1431,11 +1431,19 @@ class ShotPipeline:
                     if not ec_snap.exists():
                         raise FileNotFoundError("efit_compare_authority snapshot missing")
                     ec_auth = load_efit_compare_authority(ec_snap)
+                    ma_path = None
+                    if self.cfg.machine_authority_dir:
+                        ma_path = Path(self.cfg.machine_authority_dir)
+                        if not ma_path.is_absolute():
+                            ma_path = (repo_root / ma_path).resolve()
                     ecr = run_efit_compare(
                         run_dir,
                         shot=int(shot),
                         cache_dir=shot_cache,
                         auth=ec_auth,
+                        freegsnke_python=self.cfg.freegsnke_python,
+                        machine_dir=ma_path,
+                        repo_root=repo_root,
                     )
                     efit_compare_report = ecr.to_dict()
                     write_json(run_dir / "04_efit_compare" / "COMPARE.json", efit_compare_report)

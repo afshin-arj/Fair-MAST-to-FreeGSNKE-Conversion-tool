@@ -8,7 +8,7 @@
   "basis_type": "ConstrainPaxisIp",
   "fit_mode": "auto",
   "knot_policy": "linspace_window_inclusive",
-  "n_knots": 11,
+  "n_knots": 21,
   "interpolation": "linear",
   "wmhd_var": "wmhd",
   "pprime_vars": ["pprime", "p_prime", "p'"],

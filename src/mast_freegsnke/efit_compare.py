@@ -342,44 +342,43 @@ def _try_freegsnke_products(
     run_dir: Path,
 ) -> Tuple[Optional[Tuple[np.ndarray, np.ndarray]], Optional[Dict[str, Any]]]:
     """Best-effort LCFS + shape targets from FreeGSNKE dumps / CSVs — never invent."""
+    from .freegsnke_lcfs import (
+        freegsnke_lcfs_csv_candidates,
+        lcfs_from_dump_dict,
+        load_inverse_dump,
+        read_lcfs_csv,
+    )
     from .shape_scorecard import extract_freegsnke_shape_targets
 
     boundary: Optional[Tuple[np.ndarray, np.ndarray]] = None
     shape: Optional[Dict[str, Any]] = None
 
-    for rel in (
-        "03_reconstruction/freegsnke_lcfs.csv",
-        "synthetic/freegsnke_lcfs.csv",
-        "presentation/freegsnke_lcfs.csv",
-    ):
-        p = Path(run_dir) / rel
-        if not p.exists():
+    for p in freegsnke_lcfs_csv_candidates(Path(run_dir)):
+        if not p.is_file():
             continue
-        try:
-            df = pd.read_csv(p)
-            cols = {c.lower(): c for c in df.columns}
-            if "r" in cols and "z" in cols:
-                rr = df[cols["r"]].to_numpy(dtype=float)
-                zz = df[cols["z"]].to_numpy(dtype=float)
-                m = np.isfinite(rr) & np.isfinite(zz)
-                if m.sum() >= 3:
-                    boundary = (rr[m], zz[m])
-                    break
-        except Exception:
-            pass
+        got = read_lcfs_csv(p)
+        if got is not None:
+            boundary = got
+            break
+
+    dump = load_inverse_dump(Path(run_dir))
+    if boundary is None and dump is not None:
+        boundary = lcfs_from_dump_dict(dump)
 
     for dump_name in ("inverse_dump.pkl", "forward_dump.pkl"):
-        dump = Path(run_dir) / dump_name
-        if not dump.exists():
+        dump_path = Path(run_dir) / dump_name
+        if not dump_path.exists():
             continue
         try:
             import pickle
 
-            obj = pickle.loads(dump.read_bytes())
+            obj = pickle.loads(dump_path.read_bytes())
         except Exception:
             continue
         eq = None
         if isinstance(obj, dict):
+            if boundary is None:
+                boundary = lcfs_from_dump_dict(obj)
             eq = obj.get("eq") or obj.get("equilibrium") or obj.get("tokamak")
             if eq is None and "equilibria" in obj and isinstance(obj["equilibria"], list) and obj["equilibria"]:
                 eq = obj["equilibria"][0]
@@ -387,7 +386,10 @@ def _try_freegsnke_products(
             eq = getattr(obj, "eq", None) or obj
         if eq is None:
             continue
-        shape = extract_freegsnke_shape_targets(eq)
+        try:
+            shape = extract_freegsnke_shape_targets(eq)
+        except Exception:
+            shape = None
         if boundary is None:
             r = getattr(eq, "rboundary", None) or getattr(eq, "Rbound", None)
             z = getattr(eq, "zboundary", None) or getattr(eq, "Zbound", None)
@@ -395,12 +397,11 @@ def _try_freegsnke_products(
                 rr = np.asarray(r, dtype=float).ravel()
                 zz = np.asarray(z, dtype=float).ravel()
                 m = np.isfinite(rr) & np.isfinite(zz)
-                if m.sum() >= 3:
+                if int(m.sum()) >= 3:
                     boundary = (rr[m], zz[m])
         if boundary is not None or shape is not None:
             break
     return boundary, shape
-
 
 def _try_freegsnke_boundary(run_dir: Path) -> Optional[Tuple[np.ndarray, np.ndarray]]:
     b, _ = _try_freegsnke_products(run_dir)
@@ -413,6 +414,9 @@ def run_efit_compare(
     shot: int,
     cache_dir: Path,
     auth: EfitCompareAuthority,
+    freegsnke_python: Optional[str] = None,
+    machine_dir: Optional[Path] = None,
+    repo_root: Optional[Path] = None,
 ) -> EfitCompareReport:
     """Extract EFIT++ archive products and compare to FreeGSNKE when possible."""
     run_dir = Path(run_dir)
@@ -554,6 +558,38 @@ def run_efit_compare(
 
     # FreeGSNKE boundary + shape targets
     fg, fg_shape = _try_freegsnke_products(run_dir)
+    if fg is None:
+        # Older dumps lacked lcfs_R/CSV — recover via FreeGSNKE venv when possible
+        try:
+            from .freegsnke_lcfs import recover_lcfs_via_freegsnke_venv
+
+            ma = Path(machine_dir) if machine_dir is not None else None
+            if ma is None:
+                for cand in (
+                    Path(run_dir) / "inputs" / "machine_authority",
+                    Path(run_dir).resolve().parents[1] / "machine_authority",
+                    Path(__file__).resolve().parents[2] / "machine_authority",
+                ):
+                    if (cand / "active_coils.pickle").is_file():
+                        ma = cand
+                        break
+            if ma is not None:
+                rec = recover_lcfs_via_freegsnke_venv(
+                    run_dir,
+                    machine_dir=ma,
+                    freegsnke_python=freegsnke_python,
+                    repo_root=repo_root,
+                )
+                if rec.get("ok"):
+                    report.warnings.append("freegsnke_lcfs_recovered_from_inverse_dump")
+                    fg, fg_shape = _try_freegsnke_products(run_dir)
+                else:
+                    report.warnings.append(
+                        "freegsnke_lcfs_recover_failed:"
+                        + ",".join(str(x) for x in (rec.get("errors") or [])[:2])
+                    )
+        except Exception as e:
+            report.warnings.append(f"freegsnke_lcfs_recover_exception:{type(e).__name__}:{e}")
     report.freegsnke_boundary_available = fg is not None
     report.compare_mode = auth.compare_mode
     report.psi_convention = auth.psi_convention

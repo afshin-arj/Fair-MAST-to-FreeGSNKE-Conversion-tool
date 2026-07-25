@@ -80,7 +80,7 @@ class AppConfig:
     enable_shot_suitability_gate: bool
     # Number of deterministic window sample times for multi-time synthetic
     # diagnostics / residual scoring (rule: linspace_window_inclusive).
-    metrics_n_times: int = 11
+    metrics_n_times: int = 21
     # PNG frames + animated GIFs across the formed-plasma window (inverse/forward)
     # and evolutive steps (presentation only; no new interactive prompts).
     write_equilibrium_gifs: bool = True
@@ -197,9 +197,11 @@ class AppConfig:
         allow_cache_reuse = bool(obj.get("allow_cache_reuse", True))
         batch_abort_on_failure = bool(obj.get("batch_abort_on_failure", False))
         enable_shot_suitability_gate = bool(obj.get("enable_shot_suitability_gate", True))
-        metrics_n_times = int(obj.get("metrics_n_times", 11))
-        if metrics_n_times < 1:
-            raise ValueError(f"metrics_n_times must be >= 1 (got {metrics_n_times})")
+        metrics_n_times = int(obj.get("metrics_n_times", 21))
+        if metrics_n_times < 1 or metrics_n_times > 101:
+            raise ValueError(
+                f"metrics_n_times must be in [1, 101] (got {metrics_n_times})"
+            )
         write_equilibrium_gifs = bool(obj.get("write_equilibrium_gifs", True))
         write_eq_frames = bool(obj.get("write_eq_frames", True))
         if write_equilibrium_gifs and not write_eq_frames:

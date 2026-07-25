@@ -20,7 +20,7 @@ from mast_freegsnke_ui import ui_kit
 REPO = Path(__file__).resolve().parents[1]
 
 
-def test_accordion_starts_open() -> None:
+def test_accordion_starts_collapsed() -> None:
     html, _, _ = panels._require()
     body = panels.accordion(
         [
@@ -29,17 +29,22 @@ def test_accordion_starts_open() -> None:
             ("C", html.Div("c"), False),
         ]
     )
-    # dbc.Accordion serializes active_item with open sections
-    text = str(body)
-    assert "sec-0" in text or "A" in text
+    # All subsections start collapsed regardless of the legacy third flag
+    assert getattr(body, "start_collapsed", None) is True or "start_collapsed=True" in str(body)
+    active = getattr(body, "active_item", None)
+    assert active in ([], None) or active == []
 
 
-def test_ui_kit_section_is_details_open() -> None:
+def test_ui_kit_section_starts_collapsed() -> None:
     html, _, _ = ui_kit.require()
     sec = ui_kit.section("Title", "note", html.Div("body"))
     assert getattr(sec, "type", None) == "Details" or "Details" in type(sec).__name__ or (
         isinstance(sec, dict) and sec.get("type") == "Details"
     ) or "fg-section-collapsible" in str(sec)
+    # Must not start open — user clicks to expand
+    assert getattr(sec, "open", None) is False or "open=False" in str(sec) or (
+        isinstance(sec, dict) and sec.get("props", {}).get("open") is False
+    )
 
 
 def test_apply_circuit_rl_edit_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -174,9 +179,45 @@ def test_side_by_side_gif_synthetic(tmp_path: Path) -> None:
 
     assert rep["n_frames_written"] >= 2
     assert (out / "side_by_side_meta.json").is_file()
+    assert rep.get("freegsnke_source")
+    assert "freegsnke_lcfs_unavailable_efit_only_right_panel" not in (rep.get("notes") or [])
     # GIF may require Pillow
     if rep.get("ok") and rep.get("gif_rel"):
         assert (run / rep["gif_rel"]).is_file() or (out / "freegsnke_efit_side_by_side.gif").is_file()
+
+
+def test_lcfs_from_inverse_dump_arrays(tmp_path: Path) -> None:
+    import pickle
+
+    import pandas as pd
+
+    from mast_freegsnke.efit_compare import _try_freegsnke_products
+    from mast_freegsnke.freegsnke_lcfs import lcfs_arrays_from_eq
+
+    run = tmp_path / "30201"
+    run.mkdir()
+    th = np.linspace(0, 2 * np.pi, 40)
+    rr = 1.0 + 0.3 * np.cos(th)
+    zz = 0.4 * np.sin(th)
+    dump = {
+        "lcfs_R": rr,
+        "lcfs_Z": zz,
+        "t0": 0.25,
+        "plasma_psi": np.ones((8, 8)),
+        "grid": {"R": np.ones((8, 8)), "Z": np.ones((8, 8)), "nx": 8, "ny": 8},
+    }
+    (run / "inverse_dump.pkl").write_bytes(pickle.dumps(dump))
+    fg, _ = _try_freegsnke_products(run)
+    assert fg is not None
+    assert len(fg[0]) >= 3
+
+    class _Eq:
+        def separatrix(self, ntheta=101):
+            return np.column_stack([rr, zz])
+
+    got = lcfs_arrays_from_eq(_Eq())
+    assert got is not None
+    assert len(got[0]) >= 3
 
 
 def test_planner_catalog_helpers(tmp_path: Path) -> None:

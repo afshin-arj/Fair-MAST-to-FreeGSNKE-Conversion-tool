@@ -255,7 +255,7 @@ def test_evolutive_authority_cover_window() -> None:
     ea = load_evolutive_authority(REPO / "configs" / "evolutive_authority.json")
     assert ea.cover_window is True
     assert ea.n_steps is None
-    assert ea.max_steps == 100
+    assert ea.max_steps == 200
     assert ea.full_timestep_s == 0.01
     assert ea.scale_paxis_with_ip is False
     assert ea.per_step_timeout_s == 180.0
@@ -270,7 +270,7 @@ def test_evolutive_authority_cover_window() -> None:
 def test_evolutive_authority_max_steps_cap() -> None:
     ea = load_evolutive_authority(REPO / "configs" / "evolutive_authority.json")
     plan = resolve_n_steps(ea, t_start=0.0, t_end=5.0)  # 500 steps uncapped at dt=0.01
-    assert plan["n_steps"] == 100
+    assert plan["n_steps"] == 200
     assert plan["n_from_window"] == 500
 
 

@@ -125,11 +125,10 @@ def quick_links(shot: int, run_dir: Path) -> Any:
 
 
 def accordion(sections: List[tuple[str, Any, bool]], *, always_open: bool = True) -> Any:
-    """Click-to-collapse expert subsections — all start expanded (open)."""
+    """Click-to-expand expert subsections — all start collapsed (titles only)."""
     html, _, dbc = _require()
     items = []
-    active: List[str] = []
-    for i, (title, body, start_open) in enumerate(sections):
+    for i, (title, body, _start_open) in enumerate(sections):
         if body is None:
             continue
         item_id = f"sec-{i}"
@@ -140,16 +139,15 @@ def accordion(sections: List[tuple[str, Any, bool]], *, always_open: bool = True
                 item_id=item_id,
             )
         )
-        # Third flag defaults to open; only skip when explicitly False.
-        if start_open is not False:
-            active.append(item_id)
     if not items:
         return html.Div()
+    # Always start collapsed so panels (Authorities, EFIT, Planner, …) show
+    # titles only; user clicks to open. Third tuple flag is ignored (compat).
     return dbc.Accordion(
         items,
         always_open=always_open,
-        start_collapsed=False,
-        active_item=active if always_open else (active[0] if active else None),
+        start_collapsed=True,
+        active_item=[] if always_open else None,
         class_name="fg-accordion",
     )
 

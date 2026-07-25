@@ -42,7 +42,7 @@
   "experimental_data_plots": true,
   "experimental_data_include_l1": true,
   "experimental_data_include_l3": true,
-  "metrics_n_times": 11,
+  "metrics_n_times": 21,
   "write_equilibrium_gifs": true,
   "write_eq_frames": true,
   "equilibrium_gif_fps": 2.0,

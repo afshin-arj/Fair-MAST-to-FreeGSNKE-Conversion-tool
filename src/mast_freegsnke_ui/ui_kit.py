@@ -168,7 +168,7 @@ def tab_banner(title: str, note: str) -> Any:
 
 
 def section(title: str, note: str, body: Any, *, meta: Optional[str] = None) -> Any:
-    """Collapsible section — starts open; click summary to collapse."""
+    """Collapsible section — starts collapsed; click summary to expand."""
     html, _, _ = require()
     head: List[Any] = [html.Span(title, className="fg-section-title")]
     if meta:
@@ -186,7 +186,7 @@ def section(title: str, note: str, body: Any, *, meta: Optional[str] = None) -> 
     kids.append(html.Div(body_kids, className="fg-section-body"))
     return html.Details(
         kids,
-        open=True,
+        open=False,
         className="fg-section fg-section-collapsible",
     )
 

@@ -1,3 +1,8 @@
+## 11.12.3 — EFIT side-by-side FreeGSNKE LCFS + color panels + denser solves
+- Persist FreeGSNKE LCFS (`separatrix`) into `inverse_dump` + `presentation/freegsnke_lcfs.csv` (+ timeseries); recover from dump via FreeGSNKE venv when older runs lack CSV.
+- EFIT side-by-side: both panels use colored ψ fills; FreeGSNKE LCFS no longer shows “unavailable” after a successful solve.
+- UI subsections start **collapsed** (click to open); `metrics_n_times=21`; evolutive `max_steps=200`. Version **11.12.3**.
+
 ## 11.12.2 — Replan mutuals + Planner/EFIT UI wiring
 - Replan: FreeGSNKE mutual extract via in-process → venv subprocess → prior `circuit_dynamics_snapshot` (never silently wipe mutuals); `machine_dir` on build; fail-closed for `L_model=full_matrix`.
 - CLI `plan` / `ui`: package repo root (`Path(__file__).parents[2]`), not fragile cwd.

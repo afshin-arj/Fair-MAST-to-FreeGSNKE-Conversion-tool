@@ -501,6 +501,7 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
     fl_rows = []
     pu_rows = []
     per_time = []
+    _lcfs_series_rows = []
     n_inverse = 0
     n_forward = 0
     n_skipped = 0
@@ -598,6 +599,17 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
                 f"duration_s={result.get('duration_s')}",
                 flush=True,
             )
+            # Capture LCFS polyline for EFIT side-by-side timeseries
+            try:
+                from mast_freegsnke.freegsnke_lcfs import lcfs_arrays_from_eq
+
+                _lc = lcfs_arrays_from_eq(eq)
+                if _lc is not None:
+                    _lcfs_series_rows.append(
+                        {"t": float(t_i), "R": _lc[0], "Z": _lc[1]}
+                    )
+            except Exception as _lce:
+                print(f"[WARN] LCFS capture at t={t_i:.6f}s failed: {_lce}", flush=True)
             # Presentation frame (formed-plasma window sample)
             try:
                 from mast_freegsnke.equilibrium_presentation import (
@@ -675,6 +687,19 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
         f"{len(fl_rows)} window sample times "
         f"(inverse={n_inverse}, forward_gs={n_forward}, skipped={n_skipped})"
     )
+    try:
+        from mast_freegsnke.freegsnke_lcfs import write_freegsnke_lcfs_timeseries_csv
+
+        for _ts_path in (
+            HERE / "presentation" / "freegsnke_lcfs_timeseries.csv",
+            HERE / "03_reconstruction" / "presentation" / "freegsnke_lcfs_timeseries.csv",
+        ):
+            _w = write_freegsnke_lcfs_timeseries_csv(_ts_path, _lcfs_series_rows)
+            if _w is not None:
+                print(f"[OK] Wrote FreeGSNKE LCFS timeseries ({len(_lcfs_series_rows)} knots): {_w}")
+                break
+    except Exception as _ts_e:
+        print(f"[WARN] FreeGSNKE LCFS timeseries write failed: {_ts_e}")
 
     # Stitch inverse equilibrium GIF across successful window samples
     try:
@@ -821,6 +846,23 @@ def main():
     pn = np.linspace(0.0, 1.0, 401)
     fvac_val = profiles.fvac() if callable(getattr(profiles, "fvac", None)) else float(profiles.fvac)
     coil_currents = {cname: float(coil.current) for cname, coil in getattr(eq.tokamak, "coils", []) if hasattr(coil, "current")}
+    # Persist LCFS polyline so EFIT side-by-side / scorecard can load without eq object
+    _lcfs_R = _lcfs_Z = None
+    try:
+        from mast_freegsnke.freegsnke_lcfs import lcfs_arrays_from_eq, persist_lcfs_from_eq
+
+        _lcfs = lcfs_arrays_from_eq(eq)
+        if _lcfs is not None:
+            _lcfs_R, _lcfs_Z = np.asarray(_lcfs[0], dtype=float), np.asarray(_lcfs[1], dtype=float)
+            _pers = persist_lcfs_from_eq(HERE, eq, time_s=float(t0))
+            if _pers.get("ok"):
+                print(f"[OK] Wrote FreeGSNKE LCFS ({_pers.get('n_points')} pts): {_pers.get('paths')}")
+            else:
+                print(f"[WARN] FreeGSNKE LCFS persist failed: {_pers.get('error')}")
+        else:
+            print("[WARN] FreeGSNKE LCFS extract returned None after inverse")
+    except Exception as _lcfs_e:
+        print(f"[WARN] FreeGSNKE LCFS extract failed: {_lcfs_e}")
     dump = dict(
         execution_authority_bundle=ea,
         pn=pn,
@@ -833,6 +875,8 @@ def main():
         coil_currents=coil_currents,
         t0=float(t0),
         Ip=float(ip0),
+        lcfs_R=_lcfs_R,
+        lcfs_Z=_lcfs_Z,
     )
     with open(HERE/"inverse_dump.pkl", "wb") as f:
         pickle.dump(dump, f)

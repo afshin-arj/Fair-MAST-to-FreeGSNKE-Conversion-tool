@@ -226,7 +226,7 @@ class MetricsTimebaseSpec:
     """
 
     rule: str = "linspace_window_inclusive"
-    n_times: int = 11
+    n_times: int = 21
 
     def validate(self) -> None:
         _require(
@@ -283,7 +283,7 @@ class ExecutionAuthorityBundle:
         return asdict(self)
 
 
-def default_execution_authority_bundle(metrics_n_times: int = 11) -> ExecutionAuthorityBundle:
+def default_execution_authority_bundle(metrics_n_times: int = 21) -> ExecutionAuthorityBundle:
     """Defaults that reproduce v8.0.0 template behavior (+ v10.5.0 multi-time inverse)."""
 
     grid = GridSpec(Rmin=0.1, Rmax=2.0, Zmin=-2.2, Zmax=2.2, nx=65, ny=129)
@@ -336,7 +336,7 @@ def default_execution_authority_bundle(metrics_n_times: int = 11) -> ExecutionAu
     )
 
 
-def write_execution_authority(inputs_dir: Path, metrics_n_times: int = 11) -> Path:
+def write_execution_authority(inputs_dir: Path, metrics_n_times: int = 21) -> Path:
     """Write the execution authority bundle under inputs/.
 
     Parameters

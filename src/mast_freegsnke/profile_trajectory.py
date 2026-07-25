@@ -70,7 +70,7 @@ class ProfileTrajectoryPolicy:
     basis_type: str = "ConstrainPaxisIp"
     fit_mode: str = "auto"
     knot_policy: str = "linspace_window_inclusive"
-    n_knots: int = 11
+    n_knots: int = 21
     interpolation: str = "linear"
     wmhd_var: str = "wmhd"
     pprime_vars: Tuple[str, ...] = ("pprime", "p_prime", "p'")
@@ -175,7 +175,7 @@ def load_profile_trajectory_policy(path: Path) -> ProfileTrajectoryPolicy:
         basis_type=str(obj.get("basis_type", "ConstrainPaxisIp")),
         fit_mode=str(obj.get("fit_mode", "auto")),
         knot_policy=str(obj.get("knot_policy", "linspace_window_inclusive")),
-        n_knots=int(obj.get("n_knots", 11)),
+        n_knots=int(obj.get("n_knots", 21)),
         interpolation=str(obj.get("interpolation", "linear")),
         wmhd_var=str(obj.get("wmhd_var", "wmhd")),
         pprime_vars=tuple(obj.get("pprime_vars") or ("pprime", "p_prime", "p'")),
