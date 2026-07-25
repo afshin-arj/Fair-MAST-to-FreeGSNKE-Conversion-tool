@@ -305,15 +305,26 @@ def build_shape_scorecard(
         rows[-1]["delta_freegsnke_minus_efit"] = None
         rows[-1]["note"] = "symmetric mean nearest-neighbour LCFS distance"
 
+    if compare_mode == "forward_replay":
+        mode_note = (
+            "forward_replay: FreeGSNKE forward GS at compare time driven by measured PF "
+            "currents (FAIR-MAST pf_active via coil_map) + ADR-004 profile_trajectory "
+            "(EFIT++ archive ConstrainPaxisIp fit), scored vs archived EFIT++ shapes. "
+            "This is the Pentland-style matched-drive compare (arXiv:2407.12432 spirit); "
+            "remaining residual is solver/grid/basis/geometry — not unrelated currents/profiles."
+        )
+    elif compare_mode == "reconstruction_vs_archive":
+        mode_note = (
+            "reconstruction_vs_archive: FreeGSNKE inverse/forward from FAIR-MAST magnetics "
+            "vs archived EFIT++ shapes. Prefer compare_mode=both/forward_replay when "
+            "profile_trajectory is available for a matched-drive Pentland-style scorecard."
+        )
+    else:
+        mode_note = str(compare_mode)
+
     return {
         "compare_mode": compare_mode,
-        "compare_mode_note": (
-            "reconstruction_vs_archive: FreeGSNKE inverse/forward from FAIR-MAST magnetics "
-            "vs archived EFIT++ shapes. This is NOT the Pentland et al. forward-replay setup "
-            "(EFIT++ currents+profiles → FreeGSNKE forward)."
-            if compare_mode == "reconstruction_vs_archive"
-            else str(compare_mode)
-        ),
+        "compare_mode_note": mode_note,
         "psi_convention": psi_convention,
         "psi_convention_note": (
             "FreeGSNKE and EFIT++ use poloidal flux in Wb/2π (Pentland et al. arXiv:2407.12432). "

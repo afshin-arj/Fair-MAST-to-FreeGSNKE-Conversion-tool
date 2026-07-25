@@ -1,3 +1,8 @@
+## 11.13.0 — EFIT forward_replay scorecard (matched drive)
+- ADR-002 v1.2: `compare_mode=both` prefers **forward_replay** — measured PF (`pf_active`/coil_map) + ADR-004 `profile_trajectory` → FreeGSNKE forward GS, scored vs archived EFIT++ shapes (Pentland-style matched drive).
+- Soft-skips to reconstruction_vs_archive when trajectory/FreeGSNKE unavailable (loud notes); UI chips for scorecard source + forward_replay ok.
+- New `efit_forward_replay.py`; COMPARE.md honesty updated. Version **11.13.0**.
+
 ## 11.12.4 — EFIT compare time-align + honest ψ / scorecard UI
 - Scorecard: align EFIT archive to FreeGSNKE inverse `t0` when only a single-time LCFS exists (was window-mid vs t0 — major false divergence); prefer FG LCFS timeseries nearest to compare time.
 - Fill FreeGSNKE midplane Rin/Rout from LCFS polyline when no live `eq` object; dump `total_psi` + axis scalars from inverse.

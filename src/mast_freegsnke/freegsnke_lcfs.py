@@ -176,9 +176,10 @@ def load_inverse_dump(run_dir: Path) -> Optional[Dict[str, Any]]:
 
 
 def freegsnke_lcfs_csv_candidates(run_dir: Path) -> List[Path]:
-    """Prefer paths written by :func:`persist_lcfs_from_eq` (presentation/)."""
+    """Prefer forward-replay LCFS, then paths written by :func:`persist_lcfs_from_eq`."""
     run_dir = Path(run_dir)
     return [
+        run_dir / "04_efit_compare" / "forward_replay" / "freegsnke_forward_replay_lcfs.csv",
         run_dir / "presentation" / "freegsnke_lcfs.csv",
         run_dir / "03_reconstruction" / "presentation" / "freegsnke_lcfs.csv",
         run_dir / "03_reconstruction" / "freegsnke_lcfs.csv",

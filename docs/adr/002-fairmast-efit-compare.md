@@ -62,7 +62,8 @@ signals as reconstruction targets — confirming they are the open, citeable EFI
 | Shape scorecard (axis, midplane R, X-point, LCFS NN distance) | done (`shape_scorecard.csv`) |
 | Declared ψ convention Wb/2π | done |
 | Mode label `reconstruction_vs_archive` | done |
-| Forward replay (EFIT currents+profiles → FreeGSNKE) | deferred as full forward-replay mode; **profile-coeff trajectory** for evolutive is ADR-004 Phase 1 |
+| Forward replay (measured PF + EFIT profile_trajectory → FreeGSNKE forward) | done (v1.2 / `compare_mode=both`; soft-skip if trajectory/FreeGSNKE missing) |
+| Profile-coeff trajectory for evolutive | ADR-004 Phase 1 |
 
 ## Related
 

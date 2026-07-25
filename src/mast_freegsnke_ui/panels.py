@@ -1127,11 +1127,21 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
     compare_body: Any = None
     score_body: Any = None
     efit_ok = efit.get("ok") if isinstance(efit, dict) else None
+    score_src = None
+    if isinstance(score, dict):
+        score_src = score.get("compare_mode")
+    if isinstance(efit, dict) and efit.get("scorecard_source"):
+        score_src = efit.get("scorecard_source")
+    fwd_ok = None
+    if isinstance(efit, dict) and isinstance(efit.get("forward_replay"), dict):
+        fwd_ok = efit["forward_replay"].get("ok")
     lead = html.Div(
         [
             chip("archive compare", "ADR-002"),
             chip("live EFIT++", "no", tone="warn"),
             chip("ok", efit_ok, tone=ui_kit.status_tone(efit_ok)),
+            chip("scorecard", score_src or "—"),
+            chip("forward_replay", fwd_ok, tone=ui_kit.status_tone(fwd_ok)),
             chip("n_times", efit.get("n_times") if isinstance(efit, dict) else None),
         ],
         className="compare-chip-row mb-2",
@@ -1267,8 +1277,9 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
             tab_banner(
                 "EFIT archive compare",
                 "FreeGSNKE vs FAIR-MAST Level-2 EFIT++ archive (ADR-002) — classic MAST. "
-                "Primary metric is LCFS/shape at a time-aligned snapshot (not live EFIT++ / efit-ai). "
-                "Side-by-side ψ fills use independent relative scales; plasma-only ψ is omitted.",
+                "Primary scorecard prefers forward_replay (measured PF + EFIT profile_trajectory → "
+                "FreeGSNKE forward) when available; otherwise reconstruction_vs_archive. "
+                "Not a live EFIT++ / efit-ai / Py-EFIT solve. ψ fills use independent relative scales.",
             ),
             lead,
             ui_kit.section(

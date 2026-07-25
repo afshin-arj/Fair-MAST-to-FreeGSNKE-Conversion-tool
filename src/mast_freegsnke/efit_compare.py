@@ -41,13 +41,16 @@ class EfitCompareError(ValueError):
 @dataclass(frozen=True)
 class EfitCompareAuthority:
     authority_name: str = "efit_compare"
-    authority_version: str = "1.1"
+    authority_version: str = "1.2"
     source: str = "fairmast_level2_equilibrium"
     label: str = "FAIR-MAST EFIT++ archive (not efit-ai Fortran)"
     tokamark_reference: str = "https://github.com/UKAEA-IBM-STFC-Fusion-FMs/tokamark"
     fairmast_docs: str = "https://mastapp.site/level2-data.html"
     validation_reference: str = "https://arxiv.org/html/2407.12432v4"
-    compare_mode: str = "reconstruction_vs_archive"
+    compare_mode: str = "both"
+    enable_forward_replay: bool = True
+    require_forward_replay: bool = False
+    current_source: str = "measured_pf_at_compare_time"
     psi_convention: str = "Wb_per_2pi"
     equilibrium_group: str = "equilibrium"
     output_relpath: str = "04_efit_compare"
@@ -76,10 +79,9 @@ class EfitCompareAuthority:
     side_by_side_n_frames: int = 16
     side_by_side_fps: float = 2.0
     notes: str = (
-        "ADR-002/v11.11. Shape scorecard metrics follow Pentland et al. arXiv:2407.12432 "
-        "(axis, midplane R, X-point, LCFS distance). Mode is reconstruction_vs_archive, "
-        "not EFIT++→FreeGSNKE forward replay. Optional FreeGSNKE|EFIT++ side-by-side GIF "
-        "mirrors FreeGSNKE README MAST-U demo for classic MAST archive products."
+        "ADR-002/v1.2. Prefer forward_replay scorecard when profile_trajectory is ok: "
+        "measured PF + EFIT-fitted profiles → FreeGSNKE forward vs archive shapes. "
+        "Falls back to reconstruction_vs_archive. Optional side-by-side GIF."
     )
 
     def validate(self) -> None:
@@ -97,11 +99,20 @@ class EfitCompareAuthority:
                 f"unsupported time_policy {self.time_policy!r} "
                 "(v1: nearest_to_window_midpoint)"
             )
-        if self.compare_mode != "reconstruction_vs_archive":
+        allowed = {
+            "reconstruction_vs_archive",
+            "forward_replay",
+            "both",
+        }
+        if self.compare_mode not in allowed:
             raise EfitCompareError(
                 f"unsupported compare_mode {self.compare_mode!r} "
-                "(v1.1: reconstruction_vs_archive only; forward_replay needs EFIT profile "
-                "coeff authority — out of scope until cited)"
+                f"(allowed: {sorted(allowed)})"
+            )
+        if self.current_source != "measured_pf_at_compare_time":
+            raise EfitCompareError(
+                f"unsupported current_source {self.current_source!r} "
+                "(v1.2: measured_pf_at_compare_time — FAIR-MAST pf_active via coil_map)"
             )
         if self.psi_convention != "Wb_per_2pi":
             raise EfitCompareError(
@@ -143,7 +154,10 @@ def load_efit_compare_authority(path: Path) -> EfitCompareAuthority:
         validation_reference=str(
             obj.get("validation_reference", "https://arxiv.org/html/2407.12432v4")
         ),
-        compare_mode=str(obj.get("compare_mode", "reconstruction_vs_archive")),
+        compare_mode=str(obj.get("compare_mode", "both")),
+        enable_forward_replay=bool(obj.get("enable_forward_replay", True)),
+        require_forward_replay=bool(obj.get("require_forward_replay", False)),
+        current_source=str(obj.get("current_source", "measured_pf_at_compare_time")),
         psi_convention=str(obj.get("psi_convention", "Wb_per_2pi")),
         equilibrium_group=str(obj.get("equilibrium_group", "equilibrium")),
         output_relpath=str(obj.get("output_relpath", "04_efit_compare")),
@@ -187,6 +201,8 @@ class EfitCompareReport:
     available_vars: List[str] = field(default_factory=list)
     missing_vars: List[str] = field(default_factory=list)
     freegsnke_boundary_available: bool = False
+    forward_replay: Optional[Dict[str, Any]] = None
+    scorecard_source: str = "reconstruction"
     shape_scorecard: Optional[Dict[str, Any]] = None
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
@@ -645,11 +661,12 @@ def run_efit_compare(
         np.savez_compressed(npz_path, **save_kw)
         report.files_written.append(_rel(run_dir, npz_path))
 
-    # FreeGSNKE boundary + shape targets (time-aligned)
+    # FreeGSNKE boundary + shape targets (time-aligned reconstruction products)
     t_cmp = report.t_efit if report.t_efit is not None else t_query
-    fg, fg_shape, t_fg, fg_notes = _try_freegsnke_products(run_dir, t_compare=t_cmp)
-    if fg is None:
-        # Older dumps lacked lcfs_R/CSV — recover via FreeGSNKE venv when possible
+    fg_recon, fg_shape_recon, t_fg, fg_notes = _try_freegsnke_products(
+        run_dir, t_compare=t_cmp
+    )
+    if fg_recon is None:
         try:
             from .freegsnke_lcfs import recover_lcfs_via_freegsnke_venv
 
@@ -672,7 +689,7 @@ def run_efit_compare(
                 )
                 if rec.get("ok"):
                     report.warnings.append("freegsnke_lcfs_recovered_from_inverse_dump")
-                    fg, fg_shape, t_fg, fg_notes = _try_freegsnke_products(
+                    fg_recon, fg_shape_recon, t_fg, fg_notes = _try_freegsnke_products(
                         run_dir, t_compare=t_cmp
                     )
                 else:
@@ -684,12 +701,91 @@ def run_efit_compare(
             report.warnings.append(f"freegsnke_lcfs_recover_exception:{type(e).__name__}:{e}")
     for n in fg_notes:
         report.warnings.append(n)
+
+    # ADR-002 v1.2: preferred scorecard = forward_replay (measured PF + EFIT profiles)
+    fg = fg_recon
+    fg_shape = fg_shape_recon
+    scorecard_mode = "reconstruction_vs_archive"
+    report.scorecard_source = "reconstruction"
+    want_fwd = bool(getattr(auth, "enable_forward_replay", True)) and auth.compare_mode in (
+        "forward_replay",
+        "both",
+    )
+    if want_fwd:
+        try:
+            from .efit_forward_replay import run_efit_forward_replay
+
+            ma = Path(machine_dir) if machine_dir is not None else None
+            if ma is None:
+                for cand in (
+                    Path(run_dir) / "inputs" / "machine_authority",
+                    Path(run_dir).resolve().parents[1] / "machine_authority",
+                    Path(__file__).resolve().parents[2] / "machine_authority",
+                ):
+                    if (cand / "active_coils.pickle").is_file():
+                        ma = cand
+                        break
+            if ma is None:
+                fwd = {
+                    "ok": False,
+                    "status": "skipped_missing_machine_dir",
+                    "errors": ["machine_dir required for forward_replay"],
+                }
+            else:
+                fwd = run_efit_forward_replay(
+                    run_dir=run_dir,
+                    t_s=float(t_cmp) if t_cmp is not None else float(t_fg or 0.0),
+                    machine_dir=ma,
+                    freegsnke_python=freegsnke_python,
+                    repo_root=repo_root,
+                    out_dir=out / "forward_replay",
+                )
+            report.forward_replay = {
+                k: v
+                for k, v in fwd.items()
+                if k not in ("lcfs", "freegsnke_shape")
+            }
+            for frel in fwd.get("files") or []:
+                try:
+                    report.files_written.append(_rel(run_dir, Path(frel)))
+                except Exception:
+                    report.files_written.append(str(frel))
+            if fwd.get("ok") and fwd.get("lcfs") is not None:
+                fg = fwd["lcfs"]
+                fg_shape = fwd.get("freegsnke_shape") or fg_shape
+                t_fg = float(fwd.get("t_s")) if fwd.get("t_s") is not None else t_fg
+                scorecard_mode = "forward_replay"
+                report.scorecard_source = "forward_replay"
+                report.warnings.append("scorecard_source=forward_replay")
+            else:
+                report.warnings.append(
+                    "forward_replay_soft_skip:"
+                    + str(fwd.get("status") or "failed")
+                    + ":"
+                    + ",".join(str(x) for x in (fwd.get("errors") or [])[:2])
+                )
+                if auth.compare_mode == "forward_replay" and bool(
+                    getattr(auth, "require_forward_replay", False)
+                ):
+                    report.errors.append(
+                        "forward_replay_required_but_unavailable:"
+                        + str(fwd.get("status"))
+                    )
+                elif auth.compare_mode == "forward_replay":
+                    report.warnings.append(
+                        "forward_replay_unavailable_falling_back_disabled_by_mode"
+                    )
+        except Exception as e:
+            report.warnings.append(f"forward_replay_exception:{type(e).__name__}:{e}")
+            report.forward_replay = {"ok": False, "errors": [str(e)]}
+
     report.t_freegsnke = t_fg
     report.freegsnke_boundary_available = fg is not None
     report.compare_mode = auth.compare_mode
     report.psi_convention = auth.psi_convention
     snap["t_freegsnke_s"] = t_fg
     snap["time_align_note"] = report.time_align_note
+    snap["scorecard_source"] = report.scorecard_source
     snap_path.write_text(json.dumps(snap, indent=2) + "\n", encoding="utf-8")
 
     from .shape_scorecard import build_shape_scorecard
@@ -700,7 +796,7 @@ def run_efit_compare(
         freegsnke_lcfs=fg,
         freegsnke_shape=fg_shape,
         psi_convention=auth.psi_convention,
-        compare_mode=auth.compare_mode,
+        compare_mode=scorecard_mode,
         validation_reference=auth.validation_reference,
         t_efit=report.t_efit,
         t_freegsnke=t_fg,
@@ -839,7 +935,8 @@ def run_efit_compare(
         f"# Shot {shot}: FreeGSNKE vs FAIR-MAST EFIT++",
         "",
         f"- **Archive label:** {auth.label}",
-        f"- **Compare mode:** `{auth.compare_mode}`",
+        f"- **Compare mode (authority):** `{auth.compare_mode}`",
+        f"- **Scorecard source:** `{report.scorecard_source}`",
         f"- **ψ convention:** `{auth.psi_convention}` (FreeGSNKE & EFIT++: Wb/2π)",
         f"- **Validation metrics reference:** {auth.validation_reference}",
         f"- **t_query (window mid):** `{report.t_query}`",
@@ -847,6 +944,7 @@ def run_efit_compare(
         f"- **t_freegsnke:** `{report.t_freegsnke}`",
         f"- **time align:** `{report.time_align_note}`",
         f"- **FreeGSNKE boundary available:** `{report.freegsnke_boundary_available}`",
+        f"- **forward_replay ok:** `{(report.forward_replay or {}).get('ok')}`",
         "",
         "## Mode honesty",
         "",
@@ -897,8 +995,10 @@ def run_efit_compare(
         "",
         "These products are **archived EFIT++** from FAIR-MAST Level-2, not a fresh efit-ai / Py-EFIT solve.",
         "TokaMark uses the same derived equilibrium signals as ML targets.",
-        "Shape metrics follow the family used in arXiv:2407.12432; agreement like that paper requires",
-        "matched EFIT++ currents+profiles into FreeGSNKE **forward** (not enabled here).",
+        "When `scorecard_source=forward_replay`, FreeGSNKE is driven at the compare time by measured PF",
+        "currents (`pf_active` via coil_map) + ADR-004 `profile_trajectory` (EFIT++ archive fit) —",
+        "the Pentland-style matched-drive setup. Remaining residual is then solver/grid/basis/geometry.",
+        "If forward_replay soft-skips, the scorecard falls back to reconstruction_vs_archive (loud note).",
         "The side-by-side GIF mirrors FreeGSNKE's public MAST-U demo layout for **classic MAST**",
         "using FAIR-MAST archive reconstructions (not a live EFIT++ run).",
         "",

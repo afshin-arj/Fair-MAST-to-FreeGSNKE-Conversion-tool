@@ -1,12 +1,15 @@
 {
   "authority_name": "efit_compare",
-  "authority_version": "1.1",
+  "authority_version": "1.2",
   "source": "fairmast_level2_equilibrium",
   "label": "FAIR-MAST EFIT++ archive (not efit-ai Fortran)",
   "tokamark_reference": "https://github.com/UKAEA-IBM-STFC-Fusion-FMs/tokamark",
   "fairmast_docs": "https://mastapp.site/level2-data.html",
   "validation_reference": "https://arxiv.org/html/2407.12432v4",
-  "compare_mode": "reconstruction_vs_archive",
+  "compare_mode": "both",
+  "enable_forward_replay": true,
+  "require_forward_replay": false,
+  "current_source": "measured_pf_at_compare_time",
   "psi_convention": "Wb_per_2pi",
   "equilibrium_group": "equilibrium",
   "output_relpath": "04_efit_compare",
@@ -34,5 +37,5 @@
   "write_side_by_side_gif": true,
   "side_by_side_n_frames": 16,
   "side_by_side_fps": 2.0,
-  "notes": "ADR-002/v11.11. Shape scorecard + optional FreeGSNKE|EFIT++ side-by-side GIF (classic MAST; archive EFIT++ only). Mode is reconstruction_vs_archive, not forward replay."
+  "notes": "ADR-002/v1.2. Primary scorecard prefers forward_replay when ADR-004 profile_trajectory is ok: measured PF (pf_active/coil_map) + EFIT-fitted ConstrainPaxisIp → FreeGSNKE forward GS, scored vs archived EFIT++ shapes. Falls back to reconstruction_vs_archive if forward_replay soft-skips. Not a live EFIT++ / efit-ai solve."
 }

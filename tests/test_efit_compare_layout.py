@@ -24,6 +24,8 @@ def test_shipped_efit_authority_validates() -> None:
     auth = load_efit_compare_authority(repo / "configs" / "efit_compare_authority.json")
     assert auth.source == "fairmast_level2_equilibrium"
     assert auth.output_relpath == "04_efit_compare"
+    assert auth.compare_mode == "both"
+    assert auth.enable_forward_replay is True
 
 
 def test_authority_rejects_efit_ai_source() -> None:
@@ -115,7 +117,7 @@ def test_efit_compare_with_synthetic_zarr(tmp_path: Path) -> None:
         ),
     )
     auth_obj = load_efit_compare_authority(auth)
-    assert auth_obj.compare_mode == "reconstruction_vs_archive"
+    assert auth_obj.compare_mode == "both"
     assert auth_obj.psi_convention == "Wb_per_2pi"
     rep = run_efit_compare(run_dir, shot=30201, cache_dir=cache, auth=auth_obj)
     assert rep.ok is True
@@ -180,8 +182,8 @@ def test_lcfs_candidate_order_prefers_presentation(tmp_path: Path) -> None:
 
     run = tmp_path / "shot"
     cands = freegsnke_lcfs_csv_candidates(run)
-    assert "presentation" in str(cands[0]).replace("\\", "/")
-    assert cands[0].name == "freegsnke_lcfs.csv"
+    assert cands[0].name == "freegsnke_forward_replay_lcfs.csv"
+    assert any(p.name == "freegsnke_lcfs.csv" and "presentation" in str(p).replace("\\", "/") for p in cands)
 
 
 def test_scorecard_aligns_efit_to_freegsnke_t0(tmp_path: Path) -> None:
@@ -227,6 +229,106 @@ def test_scorecard_aligns_efit_to_freegsnke_t0(tmp_path: Path) -> None:
     assert rep.t_freegsnke == pytest.approx(0.1)
     assert rep.t_efit == pytest.approx(0.0) or abs(float(rep.t_efit) - 0.1) <= 0.25
     assert "scorecard_efit_nearest_to_freegsnke_t0" in (rep.time_align_note or "")
+
+
+def test_forward_replay_scorecard_uses_matched_drive(tmp_path: Path) -> None:
+    """Scorecard prefers forward_replay LCFS when GS succeeds with mocked solver."""
+    from mast_freegsnke.efit_forward_replay import run_efit_forward_replay
+    from mast_freegsnke.execution_authority import write_execution_authority
+    from mast_freegsnke.profile_trajectory import (
+        ProfileKnot,
+        ProfileTrajectory,
+        write_profile_trajectory,
+    )
+
+    run = tmp_path / "run"
+    inputs = run / "inputs"
+    inputs.mkdir(parents=True)
+    write_execution_authority(inputs, metrics_n_times=5)
+    traj = ProfileTrajectory(
+        authority_name="profile_trajectory",
+        authority_version="1.0.0",
+        status="ok",
+        fit_mode_used="scalar_bridge",
+        basis_type="ConstrainPaxisIp",
+        interpolation="linear",
+        knots=[
+            ProfileKnot(t_s=0.2, paxis_Pa=8e3, fvac=0.5, alpha_m=1.8, alpha_n=1.2),
+            ProfileKnot(t_s=0.4, paxis_Pa=9e3, fvac=0.5, alpha_m=1.8, alpha_n=1.2),
+        ],
+    )
+    write_profile_trajectory(inputs, traj)
+    pd = pytest.importorskip("pandas")
+    circuits = ["P2_inner", "P2_outer", "P3", "P4", "P5", "P6", "Solenoid"]
+    rows = {"time": [0.2, 0.3, 0.4]}
+    for c in circuits:
+        rows[c] = [1e3, 1.1e3, 1.2e3]
+    pd.DataFrame(rows).to_csv(inputs / "pf_currents.csv", index=False)
+    pd.DataFrame({"time": [0.2, 0.3, 0.4], "Ip": [6e5, 6.1e5, 6.2e5]}).to_csv(
+        inputs / "ip.csv", index=False
+    )
+    machine = tmp_path / "machine"
+    machine.mkdir()
+    (machine / "active_coils.pickle").write_bytes(b"x")
+
+    th = np.linspace(0, 2 * np.pi, 40)
+    rr = 0.9 + 0.3 * np.cos(th)
+    zz = 0.35 * np.sin(th)
+
+    def fake_gs(**kwargs):
+        class _Eq:
+            plasma_psi = np.ones((8, 8))
+            R = np.linspace(0.2, 1.5, 8)
+            Z = np.linspace(-1, 1, 8)
+            nx = ny = 8
+            rboundary = rr
+            zboundary = zz
+            Raxis = 0.95
+            Zaxis = 0.0
+
+            def psi(self):
+                return self.plasma_psi * 2.0
+
+        return {"ok": True, "converged": True, "eq": _Eq()}
+
+    fwd = run_efit_forward_replay(
+        run_dir=run,
+        t_s=0.3,
+        machine_dir=machine,
+        solve_gs_fn=fake_gs,
+    )
+    assert fwd["ok"] is True
+    assert fwd["profile_source"] == "profile_trajectory"
+    assert fwd["current_source"] == "measured_pf_at_compare_time"
+    assert (run / "04_efit_compare" / "forward_replay" / "FORWARD_REPLAY.json").is_file()
+    assert fwd["lcfs"] is not None
+
+    cache = tmp_path / "cache"
+    _write_mini_equilibrium_zarr(cache / "equilibrium.zarr")
+    (run / "inputs" / "window.json").write_text(
+        json.dumps({"t_start": 0.2, "t_end": 0.4}), encoding="utf-8"
+    )
+    (run / "presentation").mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        {"R": 0.5 + 0.1 * np.cos(th), "Z": 0.1 * np.sin(th), "time": np.full(40, 0.3)}
+    ).to_csv(run / "presentation" / "freegsnke_lcfs.csv", index=False)
+    auth = load_efit_compare_authority(
+        Path(__file__).resolve().parents[1] / "configs" / "efit_compare_authority.json"
+    )
+    import mast_freegsnke.efit_forward_replay as efr
+
+    orig = efr.run_efit_forward_replay
+    efr.run_efit_forward_replay = lambda **kwargs: fwd  # type: ignore
+    try:
+        rep = run_efit_compare(run, shot=30201, cache_dir=cache, auth=auth, machine_dir=machine)
+    finally:
+        efr.run_efit_forward_replay = orig  # type: ignore
+    assert rep.ok is True
+    assert rep.scorecard_source == "forward_replay"
+    assert (rep.shape_scorecard or {}).get("compare_mode") == "forward_replay"
+    rin = next(r for r in (rep.shape_scorecard or {})["rows"] if r["quantity"] == "R_in_midplane")
+    assert rin["freegsnke"] is not None
+    assert abs(float(rin["freegsnke"]) - float(np.min(rr[np.abs(zz) <= 0.05]))) < 0.05
 
 
 def test_finalize_shot_layout_moves(tmp_path: Path) -> None:
