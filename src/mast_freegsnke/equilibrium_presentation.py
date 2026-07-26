@@ -139,6 +139,122 @@ def overlay_honest_xpoints(ax: Any, eq: Any) -> None:
         )
 
 
+def plot_equilibrium_curated(
+    ax: Any,
+    eq: Any,
+    tokamak: Any = None,
+    *,
+    n_core_contours: int = 10,
+    show_open_field: bool = False,
+    n_open_contours: int = 4,
+) -> None:
+    """Curated ψ plot: wall + nested core surfaces + LCFS + honest X/O.
+
+    Avoids freegs4e default (35 global levels + all-red ×) which looks noisy
+    near coils and implies secondary nulls lie on the separatrix.
+    """
+    import numpy as np
+    from numpy import amax, amin, linspace
+
+    try:
+        psi = np.asarray(eq.psi(), dtype=float)
+        opt = eq._profiles.opt
+        xpt = eq._profiles.xpt
+    except Exception as e:
+        raise PresentationError(f"equilibrium not solved for curated plot: {e}") from e
+
+    if tokamak is not None:
+        try:
+            tokamak.plot(axis=ax, show=False)
+        except Exception:
+            pass
+
+    # Prefer ψ_bndry from primary X; fall back to profiles attribute.
+    try:
+        psi_bndry = float(xpt[0][2])
+    except Exception:
+        psi_bndry = float(getattr(eq, "psi_bndry", float("nan")))
+    try:
+        psi_axis = float(opt[0][2])
+    except Exception:
+        psi_axis = float(getattr(eq, "psi_axis", float("nan")))
+
+    R = eq.R
+    Z = eq.Z
+    # Core nested surfaces strictly between axis and boundary (exclusive).
+    if np.isfinite(psi_axis) and np.isfinite(psi_bndry) and abs(psi_bndry - psi_axis) > 0.0:
+        lo, hi = (psi_axis, psi_bndry) if psi_axis < psi_bndry else (psi_bndry, psi_axis)
+        # Exclude exact axis/boundary endpoints for cleaner nesting.
+        core_levels = linspace(lo, hi, int(n_core_contours) + 2)[1:-1]
+        if len(core_levels) > 0:
+            ax.contour(
+                R,
+                Z,
+                psi,
+                levels=core_levels,
+                colors="0.35",
+                linewidths=0.7,
+                alpha=0.85,
+            )
+    elif show_open_field:
+        levels = linspace(amin(psi), amax(psi), 12)
+        ax.contour(R, Z, psi, levels=levels, linewidths=0.5, alpha=0.5)
+
+    # Optional muted open-field contours outside LCFS (never denser than core).
+    if show_open_field and np.isfinite(psi_bndry):
+        outside = psi[np.isfinite(psi)]
+        if psi_axis < psi_bndry:
+            cand = outside[outside > psi_bndry]
+        else:
+            cand = outside[outside < psi_bndry]
+        if cand.size > 8:
+            open_levels = linspace(float(amin(cand)), float(amax(cand)), int(n_open_contours) + 2)[1:-1]
+            ax.contour(
+                R,
+                Z,
+                psi,
+                levels=open_levels,
+                colors="0.65",
+                linewidths=0.4,
+                alpha=0.35,
+                linestyles=":",
+            )
+
+    # Separatrix / LCFS at primary-X ψ
+    if np.isfinite(psi_bndry):
+        ax.contour(
+            R,
+            Z,
+            psi,
+            levels=[psi_bndry],
+            colors="r",
+            linewidths=2.0,
+            linestyles="solid",
+        )
+        ax.plot([], [], "r-", lw=2.0, label="LCFS (primary X ψ)")
+
+    # O-points (magnetic axis first)
+    try:
+        for i, row in enumerate(opt):
+            ax.plot(
+                float(row[0]),
+                float(row[1]),
+                "g2",
+                markersize=10 if i == 0 else 7,
+                markeredgewidth=1.8 if i == 0 else 1.0,
+                zorder=6,
+                label="O-point (axis)" if i == 0 else None,
+            )
+    except Exception:
+        pass
+
+    overlay_honest_xpoints(ax, eq)
+    ax.set_aspect("equal")
+    ax.grid(alpha=0.25)
+    ax.set_xlabel("Major radius [m]")
+    ax.set_ylabel("Height [m]")
+
+
 def save_equilibrium_png(
     *,
     tokamak: Any,
@@ -147,11 +263,12 @@ def save_equilibrium_png(
     title: str,
     dpi: int = 100,
     figsize: tuple[float, float] = (4.0, 8.0),
+    curated: bool = True,
 ) -> Path:
     """Save one equilibrium PNG frame (Agg-safe).
 
-    Separatrix is drawn at primary-X ψ; X markers distinguish primary (on LCFS)
-    from secondary nulls that freegs4e still reports.
+    Default ``curated=True``: core surfaces + LCFS + honest X/O (not freegs4e's
+    dense global contour soup). Separatrix is primary-X ψ only.
     """
     import matplotlib
 
@@ -161,26 +278,31 @@ def save_equilibrium_png(
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(1, 1, figsize=figsize, dpi=dpi)
-    try:
-        tokamak.plot(axis=ax, show=False)
-    except Exception:
-        pass
-    try:
-        # Skip default all-red ×; we overlay honest primary vs secondary markers.
-        eq.plot(axis=ax, show=False, xpoints=False, opoints=True)
-    except TypeError:
-        # Older freegs4e without xpoints kw — fall back then restyle.
+    if curated:
         try:
-            eq.plot(axis=ax, show=False)
+            plot_equilibrium_curated(ax, eq, tokamak)
+        except Exception as e:
+            plt.close(fig)
+            raise PresentationError(f"curated plot failed: {e}") from e
+    else:
+        try:
+            tokamak.plot(axis=ax, show=False)
+        except Exception:
+            pass
+        try:
+            eq.plot(axis=ax, show=False, xpoints=False, opoints=True)
+        except TypeError:
+            try:
+                eq.plot(axis=ax, show=False)
+            except Exception as e:
+                plt.close(fig)
+                raise PresentationError(f"eq.plot failed: {e}") from e
         except Exception as e:
             plt.close(fig)
             raise PresentationError(f"eq.plot failed: {e}") from e
-    except Exception as e:
-        plt.close(fig)
-        raise PresentationError(f"eq.plot failed: {e}") from e
-    overlay_honest_xpoints(ax, eq)
-    ax.set_aspect("equal")
-    ax.grid(alpha=0.3)
+        overlay_honest_xpoints(ax, eq)
+        ax.set_aspect("equal")
+        ax.grid(alpha=0.3)
     ax.set_title(title)
     try:
         ax.legend(loc="upper right", fontsize=7, framealpha=0.85)

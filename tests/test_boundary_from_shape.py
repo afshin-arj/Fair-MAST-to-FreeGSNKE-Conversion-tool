@@ -28,9 +28,9 @@ def test_boundary_from_shape_knot_prepends_archive_x() -> None:
             "magnetic_axis_z": 0.02,
         },
         "control_points": {
-            "R_m": [0.7, 1.2, 1.4, 1.2, 0.7],
-            "Z_m": [0.0, 0.8, 0.0, -0.8, 0.0],
-        },
+                            "r_m": [0.7, 1.2, 1.4, 1.2, 0.7],
+                            "z_m": [0.0, 0.8, 0.0, -0.8, 0.0],
+                        },
     }
     spec, prov = boundary_from_shape_knot(knot, fallback=fallback)
     assert spec is not None
@@ -71,8 +71,8 @@ def test_apply_rewrites_execution_authority(tmp_path: Path) -> None:
                             "magnetic_axis_z": 0.01,
                         },
                         "control_points": {
-                            "R_m": [0.6, 1.0, 1.3, 1.0],
-                            "Z_m": [0.0, 0.7, 0.0, -0.7],
+                            "r_m": [0.6, 1.0, 1.3, 1.0],
+                            "z_m": [0.0, 0.7, 0.0, -0.7],
                         },
                     }
                 ],

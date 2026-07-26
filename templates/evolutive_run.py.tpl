@@ -301,6 +301,13 @@ def main() -> None:
             f"(got {ic_coil_src!r})"
         )
     clamp_ip = bool(ea_evolv.get("clamp_ip_to_measured", True))
+    abort_axis_drift_m = ea_evolv.get("abort_when_axis_drift_m", 0.12)
+    if abort_axis_drift_m is not None:
+        abort_axis_drift_m = float(abort_axis_drift_m)
+        if not (abort_axis_drift_m > 0.0):
+            raise ValueError(
+                "evolutive_authority.abort_when_axis_drift_m must be > 0 or null"
+            )
     traj, interpolate_profile_at = _try_load_profile_trajectory()
     use_trajectory = traj is not None
     if use_trajectory and scale_paxis:
@@ -585,6 +592,33 @@ def main() -> None:
 
     stepping.initialize_from_ICs(eq, profiles)
 
+    # IC magnetic axis for axis-drift soft-stop (Alfvén-unstable / no passives).
+    r_axis0 = float("nan")
+    z_axis0 = float("nan")
+    try:
+        opt0 = stepping.eq1.opt[0]
+        r_axis0, z_axis0 = float(opt0[0]), float(opt0[1])
+    except Exception:
+        try:
+            opt0 = eq._profiles.opt[0]
+            r_axis0, z_axis0 = float(opt0[0]), float(opt0[1])
+        except Exception:
+            pass
+    if abort_axis_drift_m is not None and not (
+        math.isfinite(r_axis0) and math.isfinite(z_axis0)
+    ):
+        print(
+            "[WARN] abort_when_axis_drift_m set but IC axis unavailable — drift gate disabled",
+            flush=True,
+        )
+        abort_axis_drift_m = None
+    else:
+        print(
+            f"[INFO] IC magnetic axis R={r_axis0:.4f} Z={z_axis0:.4f} "
+            f"(abort_when_axis_drift_m={abort_axis_drift_m})",
+            flush=True,
+        )
+
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "coil_resist_snapshot.json").write_text(
         json.dumps(resist_snapshot, indent=2) + "\n", encoding="utf-8"
@@ -774,8 +808,15 @@ def main() -> None:
         if snap_every > 0 and (step % snap_every == 0):
             try:
                 fig, ax = plt.subplots(1, 1, figsize=(4, 8), dpi=100)
-                stepping.eq1.plot(axis=ax, show=False)
-                tokamak.plot(axis=ax, show=False)
+                try:
+                    from mast_freegsnke.equilibrium_presentation import (
+                        plot_equilibrium_curated,
+                    )
+
+                    plot_equilibrium_curated(ax, stepping.eq1, tokamak)
+                except Exception:
+                    stepping.eq1.plot(axis=ax, show=False)
+                    tokamak.plot(axis=ax, show=False)
                 ax.set_title(f"evolutive step {step}  t={t_abs:.4f}s")
                 fig.tight_layout()
                 fig.savefig(OUT / f"eq_snapshot_step{step:04d}.png", dpi=120, bbox_inches="tight")
@@ -819,6 +860,37 @@ def main() -> None:
                     )
                     break
 
+        # Soft-stop: magnetic axis drifted too far (no-passive Alfvén instability).
+        if (
+            abort_axis_drift_m is not None
+            and math.isfinite(Raxis)
+            and math.isfinite(Zaxis)
+            and math.isfinite(r_axis0)
+            and math.isfinite(z_axis0)
+        ):
+            drift = math.hypot(Raxis - r_axis0, Zaxis - z_axis0)
+            if drift > float(abort_axis_drift_m):
+                early_stop = "axis_drift"
+                early_stop_detail = {
+                    "t_abs": float(t_abs),
+                    "step": int(step),
+                    "Raxis": float(Raxis),
+                    "Zaxis": float(Zaxis),
+                    "Raxis0": float(r_axis0),
+                    "Zaxis0": float(z_axis0),
+                    "drift_m": float(drift),
+                    "threshold_m": float(abort_axis_drift_m),
+                }
+                print(
+                    f"[ABORT] evolutive axis drift {drift:.4f} m > "
+                    f"{abort_axis_drift_m} m at step {step} t={t_abs:.6f} "
+                    f"(R,Z)=({Raxis:.4f},{Zaxis:.4f}) vs IC "
+                    f"({r_axis0:.4f},{z_axis0:.4f}) — stopping before hung "
+                    f"nlstepper (no passives / Alfvén-unstable); partial history retained",
+                    flush=True,
+                )
+                break
+
     # Final CSV + meta (history already flushed incrementally)
     hist_df = pd.read_csv(OUT / "history.csv") if (OUT / "history.csv").exists() else pd.DataFrame()
     if hist_df.empty and history["t_abs"]:
@@ -850,6 +922,7 @@ def main() -> None:
         "max_solving_iterations": max_iter,
         "per_step_timeout_s": per_step_timeout_s,
         "abort_when_ip_below_measured_frac": abort_ip_frac,
+        "abort_when_axis_drift_m": abort_axis_drift_m,
         "early_stop": early_stop,
         "early_stop_detail": early_stop_detail,
         "active_circuit_order": coil_names,

@@ -1,3 +1,8 @@
+## 11.15.1 — Evolutive axis-drift soft-stop + curated eq plots + LCFS isoflux fix
+- Shot 30201 after Ip clamp: residual Ip~0 but Raxis drifted 0.77→1.13 (no passives / Alfvén-unstable) then hung on step 4 — `abort_when_axis_drift_m=0.12` soft-stops before the 180s kill.
+- Curated equilibrium plots (core + LCFS + honest primary/secondary X) for inverse/forward/evolutive — no freegs4e contour soup.
+- Fix: shape_targets `r_m`/`z_m` were ignored (looked for `R_m`) so Inverse isoflux fell back to a weak template; now uses archive LCFS control points + divertor X. Version **11.15.1**.
+
 ## 11.15.0 — Evolutive Ip science: measured-PF IC + Ip clamp
 - Root cause (shot 30201): FreeGSNKE linear stepper has `forcing[-1]=0` (no Ip voltage drive); inverse Solenoid IC was ~7× measured so applied FAIR-MAST V unloaded coils and dragged Ip 777→92 kA while measured stayed ~890 kA.
 - Declared laws (no invented metrology): `ic_coil_currents=measured_pf` (start from `pf_currents.csv` so V≈IR) + `clamp_ip_to_measured=true` (pin Ip each step from `ip.csv`).

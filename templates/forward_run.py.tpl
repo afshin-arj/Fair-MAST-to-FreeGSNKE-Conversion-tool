@@ -342,14 +342,33 @@ def main():
     )
 
     fig, ax = plt.subplots(1, 1, figsize=(6, 10), dpi=140)
-    tokamak.plot(axis=ax, show=False)
-    eq.plot(axis=ax, show=False)
-    ax.set_aspect("equal"); ax.grid(alpha=0.3)
+    try:
+        from mast_freegsnke.equilibrium_presentation import plot_equilibrium_curated
+
+        plot_equilibrium_curated(ax, eq, tokamak)
+    except Exception:
+        tokamak.plot(axis=ax, show=False)
+        try:
+            eq.plot(axis=ax, show=False, xpoints=False, opoints=True)
+        except TypeError:
+            eq.plot(axis=ax, show=False)
+        try:
+            from mast_freegsnke.equilibrium_presentation import overlay_honest_xpoints
+
+            overlay_honest_xpoints(ax, eq)
+        except Exception:
+            pass
+    ax.set_aspect("equal")
+    ax.grid(alpha=0.3)
     t0 = dump.get("t0"); Ip = dump.get("Ip")
     if t0 is not None and Ip is not None:
         ax.set_title(f"Forward replay (t0={t0:.3f}s, Ip={Ip/1e6:.3f}MA)")
     else:
         ax.set_title("Forward replay")
+    try:
+        ax.legend(loc="upper right", fontsize=8)
+    except Exception:
+        pass
     fig.tight_layout()
     fig.savefig(HERE / "forward_equilibrium.png", dpi=250, bbox_inches="tight")
     plt.close(fig)

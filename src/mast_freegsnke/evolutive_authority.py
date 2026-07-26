@@ -59,6 +59,11 @@ class EvolutiveAuthority:
     # FreeGSNKE linear stepper has forcing[-1]=0 (no Ip drive); without a clamp,
     # Ip rides mutual inductance as coils unload under measured V.
     clamp_ip_to_measured: bool = True
+    # Soft-stop when magnetic axis drifts from IC by more than this (metres).
+    # No-passive classic MAST is Alfvén-unstable; linear_only steps can hang after
+    # large centroid motion (shot 30201: R 0.77→1.13 then step-4 timeout).
+    # null disables.
+    abort_when_axis_drift_m: Optional[float] = 0.12
     notes: str = ""
 
     def validate(self) -> None:
@@ -115,6 +120,12 @@ class EvolutiveAuthority:
             f"ic_coil_currents must be one of {sorted(IC_COIL_CURRENT_SOURCES)}",
         )
         _require(isinstance(self.clamp_ip_to_measured, bool), "clamp_ip_to_measured must be bool")
+        if self.abort_when_axis_drift_m is not None:
+            _require(
+                _is_number(self.abort_when_axis_drift_m)
+                and float(self.abort_when_axis_drift_m) > 0.0,
+                "abort_when_axis_drift_m must be > 0 or null",
+            )
         _require(isinstance(self.notes, str), "notes must be str")
 
     def to_json_dict(self) -> Dict[str, Any]:
@@ -207,6 +218,11 @@ def load_evolutive_authority(path: Path) -> EvolutiveAuthority:
         ),
         ic_coil_currents=str(obj.get("ic_coil_currents", "measured_pf")),
         clamp_ip_to_measured=bool(obj.get("clamp_ip_to_measured", True)),
+        abort_when_axis_drift_m=(
+            None
+            if obj.get("abort_when_axis_drift_m", 0.12) is None
+            else float(obj.get("abort_when_axis_drift_m", 0.12))
+        ),
         notes=str(obj.get("notes", "")),
     )
     ea.validate()

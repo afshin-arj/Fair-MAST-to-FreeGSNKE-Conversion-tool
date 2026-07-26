@@ -906,18 +906,22 @@ def main():
     print("Saved inverse_dump.pkl")
 
     fig, ax = plt.subplots(1,1, figsize=(6,10), dpi=140)
-    tokamak.plot(axis=ax, show=False)
-    # Separatrix uses primary-X ψ only; do not draw all critical × as if on LCFS.
     try:
-        eq.plot(axis=ax, show=False, xpoints=False, opoints=True)
-    except TypeError:
-        eq.plot(axis=ax, show=False)
-    try:
-        from mast_freegsnke.equilibrium_presentation import overlay_honest_xpoints
+        from mast_freegsnke.equilibrium_presentation import plot_equilibrium_curated
 
-        overlay_honest_xpoints(ax, eq)
+        plot_equilibrium_curated(ax, eq, tokamak)
     except Exception:
-        pass
+        tokamak.plot(axis=ax, show=False)
+        try:
+            eq.plot(axis=ax, show=False, xpoints=False, opoints=True)
+        except TypeError:
+            eq.plot(axis=ax, show=False)
+        try:
+            from mast_freegsnke.equilibrium_presentation import overlay_honest_xpoints
+
+            overlay_honest_xpoints(ax, eq)
+        except Exception:
+            pass
     # Overlay Inverse *targets* (archive-remapped when shape_targets present)
     try:
         Rx, Ro = float(null_points[0][0]), float(null_points[0][1])

@@ -99,8 +99,19 @@ def boundary_from_shape_knot(
     r_cp: List[float] = []
     z_cp: List[float] = []
     if isinstance(cp, dict):
-        rr = cp.get("R_m") or cp.get("R") or cp.get("r")
-        zz = cp.get("Z_m") or cp.get("Z") or cp.get("z")
+        # FAIR-MAST / shape_targets use r_m/z_m; also accept R_m/R/r variants.
+        rr = (
+            cp.get("r_m")
+            or cp.get("R_m")
+            or cp.get("R")
+            or cp.get("r")
+        )
+        zz = (
+            cp.get("z_m")
+            or cp.get("Z_m")
+            or cp.get("Z")
+            or cp.get("z")
+        )
         if rr is not None and zz is not None:
             r_arr = np.asarray(rr, dtype=float).ravel()
             z_arr = np.asarray(zz, dtype=float).ravel()

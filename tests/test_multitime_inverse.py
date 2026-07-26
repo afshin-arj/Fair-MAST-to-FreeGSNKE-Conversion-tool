@@ -139,7 +139,15 @@ def test_evolutive_template_has_ip_collapse_abort() -> None:
     assert "early_stop" in tpl
     assert "clamp_ip_to_measured" in tpl
     assert "ic_coil_currents=measured_pf" in tpl
+    assert "abort_when_axis_drift_m" in tpl
+    assert "[ABORT] evolutive axis drift" in tpl
     assert 'profiles_parameters["Ip"]' in tpl or "profiles_parameters[\"Ip\"]" in tpl
+
+
+def test_forward_template_uses_curated_plot() -> None:
+    tpl = (REPO / "templates" / "forward_run.py.tpl").read_text(encoding="utf-8")
+    assert "plot_equilibrium_curated" in tpl
+    assert "overlay_honest_xpoints" in tpl
 
 
 def test_runner_pins_blas_threads_by_default() -> None:

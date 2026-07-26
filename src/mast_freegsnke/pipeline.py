@@ -1273,7 +1273,8 @@ class ShotPipeline:
 
                 t_prefer = None
                 if final_tw is not None:
-                    t_prefer = 0.5 * (float(final_tw.t_start) + float(final_tw.t_end))
+                    # Prefer window start (near inverse t0) over mid for X/LCFS remap.
+                    t_prefer = float(final_tw.t_start)
                 bnd_rep = apply_shape_targets_to_execution_boundary(
                     inputs_dir, t_s=t_prefer
                 )
