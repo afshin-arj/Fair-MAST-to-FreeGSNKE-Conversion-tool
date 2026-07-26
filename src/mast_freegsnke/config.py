@@ -95,6 +95,8 @@ class AppConfig:
     efit_compare_authority_path: Optional[str] = None
     # ADR-004 Phase 2: GSPulse-style planner (default off; hard-gated by coil_limits).
     execute_planner: bool = False
+    # Optional ADR-004: second evolutive from 07_planner/planned_voltages.csv (default off).
+    execute_evolutive_from_plan: bool = False
     planner_authority_path: Optional[str] = None
     plasma_scalars_authority_path: Optional[str] = None
     coil_limits_authority_path: Optional[str] = None
@@ -189,6 +191,7 @@ class AppConfig:
         experimental_data_include_l1 = bool(obj.get("experimental_data_include_l1", True))
         experimental_data_include_l3 = bool(obj.get("experimental_data_include_l3", True))
         execute_evolutive = bool(obj.get("execute_evolutive", False))
+        execute_evolutive_from_plan = bool(obj.get("execute_evolutive_from_plan", False))
 
         machine_authority_dir = (str(obj["machine_authority_dir"]) if obj.get("machine_authority_dir") else None)
         require_machine_authority = bool(obj.get("require_machine_authority", False))
@@ -264,6 +267,11 @@ class AppConfig:
                 "execute_planner=true requires coil_limits_authority_path "
                 "(ADR-004 hard gate — never invent Imax/Vmax)"
             )
+        if execute_evolutive_from_plan and not execute_planner:
+            raise ValueError(
+                "execute_evolutive_from_plan=true requires execute_planner=true "
+                "(planned_voltages from 07_planner)"
+            )
         # Ensure equilibrium group is downloaded when EFIT compare is enabled
         if compare_efit_archive and "equilibrium" not in optional_groups:
             optional_groups = list(optional_groups) + ["equilibrium"]
@@ -313,6 +321,7 @@ class AppConfig:
             experimental_data_include_l1=experimental_data_include_l1,
             experimental_data_include_l3=experimental_data_include_l3,
             execute_evolutive=execute_evolutive,
+            execute_evolutive_from_plan=execute_evolutive_from_plan,
             machine_authority_dir=machine_authority_dir,
             require_machine_authority=require_machine_authority,
             rebuild_machine_authority=rebuild_machine_authority,

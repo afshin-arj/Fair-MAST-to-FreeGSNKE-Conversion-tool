@@ -96,7 +96,7 @@ no new happy-path prompts).
 | Path B2 vacuum-coil Green’s isoflux / x-point B | done |
 | Path B3 Picard (forward GS freeze plasma offsets) | done (soft-skip) |
 | Path B4 ψ_bry / Vloop / Ejima (cited Rp+L_I only) | done (soft-skip) |
-| Path B5 passives in dynamics | **blocked** on classic-MAST `passive_resistivity` |
+| Path B5 passives in dynamics | **blocked** on classic-MAST `passive_resistivity` (wiring ready — ADR-005) |
 | Path B6-thin Planner tab | done |
 | Path B6-full Planner + Compare A\|B residuals | done |
 | Path B7 this ADR Phase 2b + README honesty | done |

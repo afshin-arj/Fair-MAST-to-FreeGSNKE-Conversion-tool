@@ -527,12 +527,28 @@ class ShotPipeline:
             ):
                 from .machine_sync import maybe_rebuild_classic_machine
 
+                pr_comps = None
+                if self.cfg.passive_resistivity_path:
+                    try:
+                        from .passive_resistivity import load_passive_resistivity
+
+                        prp = _resolve_config_path(
+                            self.cfg.passive_resistivity_path, repo_root
+                        )
+                        if prp is not None and prp.exists():
+                            pra = load_passive_resistivity(prp)
+                            if not pra.awaiting:
+                                pr_comps = pra.components
+                    except Exception:
+                        pr_comps = None
+
                 rebuild_rep = maybe_rebuild_classic_machine(
                     shot_cache,
                     ma_root,
                     shot=int(shot),
                     force=False,
                     archive_mastu=False,
+                    passive_resistivity_components=pr_comps,
                 )
                 write_json(run_dir / "machine_rebuild_report.json", rebuild_rep)
                 _stage(
@@ -1715,6 +1731,11 @@ class ShotPipeline:
                         )
                         _stage("planner", False, note="planner_authority.enabled=false")
                         blocking_errors.append(f"planner_required: {msg}")
+                        _stage(
+                            "evolutive_from_plan",
+                            True,
+                            note="skipped_planner_disabled",
+                        )
                     else:
                         vm_path = _resolve_config_path(self.cfg.voltage_map_path, repo_root)
                         if vm_path is None or not vm_path.exists():
@@ -1742,19 +1763,6 @@ class ShotPipeline:
                             L_for_limits = {
                                 name: float(rl.L_henry) for name, rl in _cd_early.circuits.items()
                             }
-
-                        if cl_auth.limit_policy == "measured_peak_margin":
-                            cl_auth = resolve_measured_peak_limits(
-                                cl_auth,
-                                inputs_dir=inputs_dir,
-                                circuit_order=order,
-                                t_start=float(final_tw.t_start),
-                                t_end=float(final_tw.t_end),
-                                R_ohm_by_circuit=R_for_limits or None,
-                                L_henry_by_circuit=L_for_limits or None,
-                                n_knots=int(pl_auth.n_knots),
-                            )
-                            write_coil_limits(inputs_dir, cl_auth)
 
                         # Prefer cited circuit_dynamics_authority (user PF R/L); FreeGSNKE fills gaps.
                         dyn = None
@@ -1846,6 +1854,42 @@ class ShotPipeline:
                                     "and/or provide FreeGSNKE machine R/L extract"
                                 )
 
+                        # Resolve measured_peak_margin after dynamics so V peaks use mutuals
+                        # when the QP L matrix is available (honesty: same model as planner).
+                        if cl_auth.limit_policy == "measured_peak_margin":
+                            import numpy as _np
+
+                            L_mat = None
+                            if dyn is not None:
+                                Lm = _np.asarray(dyn.L_henry, dtype=float)
+                                if Lm.ndim == 2:
+                                    L_mat = Lm
+                                R_for_limits = {
+                                    name: float(r)
+                                    for name, r in zip(
+                                        dyn.circuit_order,
+                                        _np.asarray(dyn.R_ohm, dtype=float).ravel(),
+                                    )
+                                }
+                                diag = _np.diag(Lm) if Lm.ndim == 2 else Lm.ravel()
+                                L_for_limits = {
+                                    name: float(diag[i])
+                                    for i, name in enumerate(dyn.circuit_order)
+                                    if i < len(diag)
+                                }
+                            cl_auth = resolve_measured_peak_limits(
+                                cl_auth,
+                                inputs_dir=inputs_dir,
+                                circuit_order=order,
+                                t_start=float(final_tw.t_start),
+                                t_end=float(final_tw.t_end),
+                                R_ohm_by_circuit=R_for_limits or None,
+                                L_henry_by_circuit=L_for_limits or None,
+                                L_henry_matrix=L_mat,
+                                n_knots=int(pl_auth.n_knots),
+                            )
+                            write_coil_limits(inputs_dir, cl_auth)
+
                         prep = run_planner_stage(
                             run_dir=run_dir,
                             inputs_dir=inputs_dir,
@@ -1882,14 +1926,54 @@ class ShotPipeline:
                             residual_rms=prep.get("residual_rms_by_circuit"),
                             n_voltage_violations=prep.get("n_voltage_violations_raw"),
                         )
+                        if self.cfg.execute_evolutive_from_plan:
+                            from .evolutive_from_plan import run_evolutive_from_plan_stage
+
+                            efp = run_evolutive_from_plan_stage(
+                                run_dir=run_dir,
+                                cfg=self.cfg,
+                                repo_root=repo_root,
+                                inputs_dir=inputs_dir,
+                                freegsnke_runner_cls=FreeGSNKERunner,
+                            )
+                            _stage(
+                                "evolutive_from_plan",
+                                bool(efp.get("ok")),
+                                **{k: v for k, v in efp.items() if k != "ok"},
+                            )
+                            if efp.get("blocking_error"):
+                                blocking_errors.append(str(efp["blocking_error"]))
+                        else:
+                            _stage(
+                                "evolutive_from_plan",
+                                True,
+                                note="execute_evolutive_from_plan=false",
+                            )
                 except Exception as e:
                     _stage("planner", False, error=str(e))
                     blocking_errors.append(f"planner_failed: {type(e).__name__}: {e}")
+                    _stage(
+                        "evolutive_from_plan",
+                        True,
+                        note="skipped_planner_failed",
+                    )
             elif self.cfg.execute_planner:
                 _stage("planner", False, note="no_window")
                 blocking_errors.append("planner_failed: window not finalized")
+                _stage(
+                    "evolutive_from_plan",
+                    True,
+                    note="skipped_no_planner_window",
+                )
             else:
                 _stage("planner", True, note="execute_planner=false")
+                _stage(
+                    "evolutive_from_plan",
+                    True,
+                    note="execute_evolutive_from_plan=false"
+                    if not self.cfg.execute_evolutive_from_plan
+                    else "skipped_execute_planner=false",
+                )
 
             status = "success" if not blocking_errors else "failed"
             _write_manifest(

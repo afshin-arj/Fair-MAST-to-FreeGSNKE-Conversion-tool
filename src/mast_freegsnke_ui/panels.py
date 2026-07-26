@@ -779,8 +779,8 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
     )
 
     gate_chips = [
-        chip("rms_V", pinfo.get("residual_rms_mean_V")),
         chip("rms_meas_V", pinfo.get("residual_rms_mean_measured_V")),
+        chip("rms_V_mixed", pinfo.get("residual_rms_mean_V")),
         chip("isoflux_rms", pinfo.get("isoflux_rms_mean")),
         chip("xpoint_B_rms", pinfo.get("xpoint_B_rms_mean")),
         chip("psi_bry_rms", pinfo.get("psi_bry_rms_mean")),
@@ -1720,8 +1720,8 @@ def auth_panel(shot: int, run_dir: Path) -> Any:
         chip("status", pinfo.get("status") or "—"),
         chip("knots", pinfo.get("n_knots")),
         chip("margin", pinfo.get("margin_factor")),
-        chip("rms_V", pinfo.get("residual_rms_mean_V")),
         chip("rms_meas_V", pinfo.get("residual_rms_mean_measured_V")),
+        chip("rms_V_mixed", pinfo.get("residual_rms_mean_V")),
         chip("V_viol", pinfo.get("n_voltage_violations_raw")),
         chip("limits", pinfo.get("limits_status") or "—"),
     ]

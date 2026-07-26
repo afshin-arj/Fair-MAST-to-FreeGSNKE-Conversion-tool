@@ -1,6 +1,6 @@
 {
   "authority_name": "planner",
-  "authority_version": "1.3.0",
+  "authority_version": "1.3.1",
   "enabled": true,
   "require": false,
   "output_relpath": "07_planner",
@@ -19,9 +19,10 @@
   "enable_picard": true,
   "require_picard": false,
   "max_picard_iterations": 2,
+  "picard_rel_tol": 1.0e-3,
   "enable_psi_bry": true,
   "require_psi_bry": false,
   "weight_psi_bry": 1.0,
   "max_qp_iterations": 40,
-  "notes": "ADR-004 Phase 2b / Path B. Python GSPulse-method planner (no MATLAB). v1.3: current-tracking + L/R + vacuum isoflux + Picard plasma freeze + optional ψ_bry (archive / Vloop / Ejima only when Rp+L_I cited). Soft-skip missing data. Certify YELLOW without successful isoflux+Picard. Passives blocked on classic-MAST ρ. Never invents I/V limits or Rp."
+  "notes": "ADR-004 Phase 2b / Path B. Python GSPulse-method planner (no MATLAB). v1.3.1: current-tracking + L/R + vacuum isoflux + Picard plasma freeze (picard_rel_tol + converged) + optional ψ_bry. Soft-skip missing data. Certify YELLOW without successful isoflux+Picard; warn on voltage_exceeds_measured_peak_margin. Passives blocked on classic-MAST ρ. Never invents I/V limits or Rp."
 }

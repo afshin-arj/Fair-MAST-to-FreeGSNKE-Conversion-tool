@@ -293,6 +293,7 @@ def replan_shot(
     L_for_limits = {
         name: float(diag[i]) for i, name in enumerate(dyn.circuit_order) if i < len(diag)
     }
+    L_mat = Lm if Lm.ndim == 2 else None
 
     lim_res = resolve_measured_peak_limits(
         limits,
@@ -302,6 +303,7 @@ def replan_shot(
         t_end=t1,
         R_ohm_by_circuit=R_for_limits or None,
         L_henry_by_circuit=L_for_limits or None,
+        L_henry_matrix=L_mat,
         n_knots=int(pl.n_knots),
     )
     write_coil_limits(inputs, lim_res)

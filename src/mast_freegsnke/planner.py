@@ -38,7 +38,7 @@ def _strict_bool(value: Any, name: str, *, default: Optional[bool] = None) -> bo
 @dataclass(frozen=True)
 class PlannerAuthority:
     authority_name: str = "planner"
-    authority_version: str = "1.3.0"
+    authority_version: str = "1.3.1"
     enabled: bool = False
     require: bool = False
     output_relpath: str = "07_planner"
@@ -59,6 +59,7 @@ class PlannerAuthority:
     enable_picard: bool = True
     require_picard: bool = False
     max_picard_iterations: int = 2
+    picard_rel_tol: float = 1.0e-3
     # Path B4: absolute mean ψ_bry cost
     enable_psi_bry: bool = True
     require_psi_bry: bool = False
@@ -93,6 +94,11 @@ class PlannerAuthority:
             raise PlannerError("max_qp_iterations must be in [1, 500]")
         if not (0 <= int(self.max_picard_iterations) <= 20):
             raise PlannerError("max_picard_iterations must be in [0, 20]")
+        if (
+            not isinstance(self.picard_rel_tol, (int, float))
+            or not (float(self.picard_rel_tol) > 0.0)
+        ):
+            raise PlannerError("picard_rel_tol must be > 0")
         if not isinstance(self.enabled, bool) or not isinstance(self.require, bool):
             raise PlannerError("enabled/require must be bool")
         if not isinstance(self.enable_isoflux, bool) or not isinstance(
@@ -123,7 +129,7 @@ def load_planner_authority(path: Path) -> PlannerAuthority:
         raise PlannerError("planner_authority must be a JSON object")
     auth = PlannerAuthority(
         authority_name=str(obj.get("authority_name", "planner")),
-        authority_version=str(obj.get("authority_version", "1.3.0")),
+        authority_version=str(obj.get("authority_version", "1.3.1")),
         enabled=_strict_bool(obj.get("enabled"), "enabled", default=False),
         require=_strict_bool(obj.get("require"), "require", default=False),
         output_relpath=str(obj.get("output_relpath", "07_planner")),
@@ -146,6 +152,7 @@ def load_planner_authority(path: Path) -> PlannerAuthority:
             obj.get("require_picard"), "require_picard", default=False
         ),
         max_picard_iterations=int(obj.get("max_picard_iterations", 2)),
+        picard_rel_tol=float(obj.get("picard_rel_tol", 1.0e-3)),
         enable_psi_bry=_strict_bool(obj.get("enable_psi_bry"), "enable_psi_bry", default=True),
         require_psi_bry=_strict_bool(
             obj.get("require_psi_bry"), "require_psi_bry", default=False
@@ -724,6 +731,8 @@ def run_planner_stage(
     picard_note = "enable_picard=false"
     picard_mode = None
     picard_history: List[Any] = []
+    picard_converged = False
+    picard_rel_tol_used = float(planner_auth.picard_rel_tol)
     if planner_auth.enable_picard:
         if not isoflux_used or isoflux_pack is None:
             picard_status = "skipped_no_isoflux"
@@ -763,11 +772,14 @@ def run_planner_stage(
                     isoflux_pack=isoflux_pack,
                     qp_kwargs=qp_kwargs,
                     max_picard_iterations=int(planner_auth.max_picard_iterations),
+                    picard_rel_tol=float(planner_auth.picard_rel_tol),
                 )
                 picard_status = str(pic.get("status") or "unknown")
                 picard_note = str(pic.get("note") or "")
                 picard_history = list(pic.get("history") or [])
                 picard_used = bool(pic.get("picard"))
+                picard_converged = bool(pic.get("converged"))
+                picard_rel_tol_used = float(pic.get("picard_rel_tol", planner_auth.picard_rel_tol))
                 if picard_used and pic.get("sol") is not None:
                     sol = pic["sol"]
                     I_plan = np.asarray(pic["I"], dtype=float)
@@ -989,7 +1001,14 @@ def run_planner_stage(
         "status": picard_status,
         "mode": picard_mode,
         "note": picard_note,
-        "n_outers": int(planner_auth.max_picard_iterations) if picard_used else 0,
+        "converged": bool(picard_converged) if picard_used else False,
+        "picard_rel_tol": float(picard_rel_tol_used),
+        "n_outers": (
+            int(picard_history[-1]["outer"]) + 1
+            if picard_used and picard_history
+            else 0
+        ),
+        "n_outers_max": int(planner_auth.max_picard_iterations) if picard_used else 0,
         "history": picard_history,
     }
     (out_dir / "picard.json").write_text(
@@ -1059,7 +1078,10 @@ def run_planner_stage(
             "status": picard_status,
             "mode": picard_mode,
             "note": picard_note,
+            "converged": picard_report["converged"],
+            "picard_rel_tol": picard_report["picard_rel_tol"],
             "n_outers": picard_report["n_outers"],
+            "n_outers_max": picard_report["n_outers_max"],
         },
         "plasma_scalars": {
             "inventory": plasma_inventory,

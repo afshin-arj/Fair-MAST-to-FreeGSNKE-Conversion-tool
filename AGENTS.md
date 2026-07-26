@@ -33,6 +33,7 @@ No interactive prompts for config paths, geometry paths, execute y/n, or metrics
 | 002 | FAIR-MAST EFIT++ archive compare (not live EFIT++) |
 | 003 | Reject Py-EFIT / efit-ai on Windows happy path |
 | 004 | Profile trajectory + Phase 2b Python GSPulse-method planner (isoflux/Picard/ψ_bry; no MATLAB; passives blocked) |
+| 005 | Classic-MAST passive ρ citation (Path B5 wiring; ρ awaiting) |
 
 ## Skills
 

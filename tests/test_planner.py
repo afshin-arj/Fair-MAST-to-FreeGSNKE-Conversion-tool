@@ -430,3 +430,47 @@ def test_run_planner_rejects_window_outside_pf_coverage(tmp_path: Path) -> None:
             shot=30201,
             circuit_dynamics=dyn,
         )
+
+
+def test_resolve_measured_peak_limits_mutuals_matrix(tmp_path: Path) -> None:
+    from mast_freegsnke.coil_limits import resolve_measured_peak_limits
+
+    inputs = tmp_path / "inputs"
+    inputs.mkdir()
+    t = np.linspace(0.1, 0.5, 21)
+    # Rising currents so L dI/dt is nonzero
+    cols_I = {"time": t}
+    cols_V = {"time": t}
+    for i, c in enumerate(ORDER):
+        cols_I[c] = 100.0 * (i + 1) * (1.0 + 0.5 * (t - t[0]) / (t[-1] - t[0]))
+        cols_V[c] = np.full_like(t, 1.0)  # tiny measured V so dynamics can win
+    pd.DataFrame(cols_I).to_csv(inputs / "pf_currents.csv", index=False)
+    pd.DataFrame(cols_V).to_csv(inputs / "pf_voltages.csv", index=False)
+    policy = load_coil_limits(REPO / "configs" / "coil_limits_authority.json")
+    R = {c: 0.01 for c in ORDER}
+    Ldiag = {c: 1e-4 for c in ORDER}
+    n = len(ORDER)
+    Lmat = np.diag([Ldiag[c] for c in ORDER]).astype(float)
+    Lmat[0, 1] = Lmat[1, 0] = 5e-5  # mutual
+    resolved = resolve_measured_peak_limits(
+        policy,
+        inputs_dir=inputs,
+        circuit_order=ORDER,
+        t_start=0.1,
+        t_end=0.5,
+        R_ohm_by_circuit=R,
+        L_henry_by_circuit=Ldiag,
+        L_henry_matrix=Lmat,
+        n_knots=21,
+    )
+    assert resolved.resolution["dynamics_L_model"] == "full_matrix"
+    # At least one circuit should cite mutuals dynamics source
+    sources = [resolved.resolution["peaks"][c]["V_peak_source"] for c in ORDER]
+    assert any("mutuals" in s for s in sources)
+
+
+def test_planner_authority_picard_rel_tol() -> None:
+    auth = load_planner_authority(REPO / "configs" / "planner_authority.json")
+    assert auth.picard_rel_tol == pytest.approx(1.0e-3)
+    assert auth.authority_version == "1.3.1"
+

@@ -337,6 +337,7 @@ def run_picard_outer_loop(
     isoflux_pack: Dict[str, Any],
     qp_kwargs: Dict[str, Any],
     max_picard_iterations: int = 2,
+    picard_rel_tol: float = 1.0e-3,
     solve_gs_fn: Optional[Callable[..., Dict[str, Any]]] = None,
     solve_qp_fn: Optional[Callable[..., Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
@@ -348,6 +349,8 @@ def run_picard_outer_loop(
             "ok": False,
             "status": "disabled",
             "picard": False,
+            "converged": False,
+            "picard_rel_tol": float(picard_rel_tol),
             "note": "max_picard_iterations < 1",
             "I": I_plan,
             "sol": None,
@@ -369,6 +372,8 @@ def run_picard_outer_loop(
             "ok": False,
             "status": "skipped_no_knots",
             "picard": False,
+            "converged": False,
+            "picard_rel_tol": float(picard_rel_tol),
             "note": "no overlapping planner/isoflux knots",
             "I": I,
             "sol": None,
@@ -383,8 +388,14 @@ def run_picard_outer_loop(
     eq = None
     any_gs = False
     sol: Optional[Dict[str, Any]] = None
+    converged = False
+    n_outers_done = 0
+    tol = float(picard_rel_tol)
+    if not np.isfinite(tol) or tol <= 0.0:
+        raise ValueError("picard_rel_tol must be finite and > 0")
 
     for outer in range(int(max_picard_iterations)):
+        I_prev = I.copy()
         n_ok = 0
         n_fail = 0
         profile_src = None
@@ -429,6 +440,8 @@ def run_picard_outer_loop(
                 "ok": False,
                 "status": "skipped_gs_failed",
                 "picard": False,
+                "converged": False,
+                "picard_rel_tol": tol,
                 "note": f"all GS solves failed on Picard outer={outer}",
                 "I": I,
                 "sol": None,
@@ -440,6 +453,13 @@ def run_picard_outer_loop(
         qp_call["isoflux_pack"] = pack
         sol = qp_fn(**qp_call)
         I = np.asarray(sol["I"], dtype=float)
+        n_outers_done = outer + 1
+        denom = float(np.linalg.norm(I_prev.ravel()))
+        if denom <= 0.0:
+            rel = float(np.linalg.norm((I - I_prev).ravel()))
+        else:
+            rel = float(np.linalg.norm((I - I_prev).ravel()) / denom)
+        converged = bool(np.isfinite(rel) and rel <= tol)
         history.append(
             {
                 "outer": outer,
@@ -448,21 +468,34 @@ def run_picard_outer_loop(
                 "profile_source": profile_src,
                 "n_voltage_violations_raw": sol.get("n_voltage_violations_raw"),
                 "cost_final": (sol.get("cost_history") or [None])[-1],
+                "I_rel_change": rel,
+                "converged": converged,
             }
         )
+        if converged:
+            break
 
     return {
         "ok": bool(any_gs),
         "status": "ok" if any_gs else "skipped",
         "picard": bool(any_gs),
+        "converged": bool(converged and any_gs),
+        "picard_rel_tol": tol,
         "picard_mode": "forward_gs_freeze_plasma_offsets",
-        "n_outers": int(max_picard_iterations),
+        "n_outers": int(n_outers_done),
+        "n_outers_max": int(max_picard_iterations),
         "note": (
             "Picard: FreeGSNKE forward GS → freeze plasma ψ/B offsets → re-QP "
             "(not upstream GSPulse MATLAB/MEQ)"
+            + (
+                f"; converged I_rel<={tol:g} after {n_outers_done} outer(s)"
+                if converged
+                else f"; not converged to I_rel<={tol:g} after {n_outers_done} outer(s)"
+            )
         ),
         "I": I,
         "sol": sol,
         "isoflux_pack": pack,
         "history": history,
     }
+

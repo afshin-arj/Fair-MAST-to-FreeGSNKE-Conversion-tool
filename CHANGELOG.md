@@ -1,3 +1,9 @@
+## 11.16.0 — Planner honesty hardening + Path B5 wiring + evolutive-from-plan
+
+- **P0 honesty:** certify warns on `planner_voltage_exceeds_measured_peak_margin`; coil-limits V peaks use full L mutuals when available; UI primary KPI is measured-only V RMS; Picard reports `picard_rel_tol` + `converged`.
+- **P1 Path B5:** ADR-005 citation draft; when `passive_resistivity` is cited, rebuild writes FreeGSNKE passives from FAIR-MAST `pf_passive` + cited ρ (never invent / never copy MAST-U).
+- **P2:** optional `execute_evolutive_from_plan` (default **false**) drives a second evolutive from `07_planner/planned_voltages.csv` into `03_reconstruction/evolutive_plan/`. Version **11.16.0**.
+
 ## 11.15.1 — Evolutive axis-drift soft-stop + curated eq plots + LCFS isoflux fix
 - Shot 30201 after Ip clamp: residual Ip~0 but Raxis drifted 0.77→1.13 (no passives / Alfvén-unstable) then hung on step 4 — `abort_when_axis_drift_m=0.12` soft-stops before the 180s kill.
 - Curated equilibrium plots (core + LCFS + honest primary/secondary X) for inverse/forward/evolutive — no freegs4e contour soup.

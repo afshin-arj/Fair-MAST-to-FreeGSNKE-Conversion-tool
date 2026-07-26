@@ -31,7 +31,15 @@ HERE = Path(__file__).resolve().parent
 MACHINE = Path(__MACHINE_DIR_REPR__)
 INPUTS = HERE / "inputs"
 DUMP = HERE / "inverse_dump.pkl"
-OUT = HERE / "evolutive"
+# Optional overrides for plan-driven A/B evolutive (pipeline sets env; default = measured V).
+import os as _os
+
+OUT = Path(
+    _os.environ.get("MAST_FREEGSNKE_EVOLUTIVE_OUT")
+    or str(HERE / "evolutive")
+)
+_VOLT_ENV = _os.environ.get("MAST_FREEGSNKE_EVOLUTIVE_VOLTAGES")
+VOLT_CSV = Path(_VOLT_ENV) if _VOLT_ENV else (INPUTS / "pf_voltages.csv")
 
 
 def _load_json(path: Path) -> dict:
@@ -356,14 +364,16 @@ def main() -> None:
     order = _load_voltage_order(vmap)
     ohmic = _ohmic_specs(vmap)
 
-    volt_path = INPUTS / "pf_voltages.csv"
+    volt_path = VOLT_CSV
     if not volt_path.exists():
         raise FileNotFoundError(
-            "Missing inputs/pf_voltages.csv — voltage_map must be applied before evolutive"
+            "Missing voltage CSV for evolutive: "
+            + str(volt_path)
+            + " — voltage_map must be applied (or set MAST_FREEGSNKE_EVOLUTIVE_VOLTAGES)"
         )
     volt_df = pd.read_csv(volt_path)
     if "time" not in volt_df.columns:
-        raise ValueError("pf_voltages.csv missing time column")
+        raise ValueError(str(volt_path.name) + " missing time column")
 
     currents_df = None
     need_currents = bool(ohmic) or ic_coil_src == "measured_pf"

@@ -232,6 +232,34 @@ def test_certify_yellow_for_incomplete_gspulse_python(tmp_path: Path) -> None:
     assert any("isoflux_not_wired" in w for w in report["warnings"])
 
 
+def test_certify_warns_voltage_exceeds_measured_peak_margin(tmp_path: Path) -> None:
+    from mast_freegsnke.certify import certify_run_dir
+
+    run_dir = tmp_path / "SHOT" / "10"
+    (run_dir / "07_planner").mkdir(parents=True)
+    (run_dir / "provenance").mkdir(parents=True)
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"status": "success", "blocking_errors": []}),
+        encoding="utf-8",
+    )
+    (run_dir / "07_planner" / "PLANNER.json").write_text(
+        json.dumps(
+            {
+                "method": "gspulse_python",
+                "method_version": "v1.3",
+                "picard": True,
+                "isoflux_cost": True,
+                "status": "voltage_exceeds_measured_peak_margin",
+                "shape_targets_available": {"present": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+    report = certify_run_dir(run_dir, skip_replay=True, skip_reviewer_pack=True)
+    assert any(
+        w == "planner_voltage_exceeds_measured_peak_margin" for w in report["warnings"]
+    )
+
 def test_relative_flux_and_qp_isoflux_pull() -> None:
     from mast_freegsnke.planner import solve_trajectory_qp
     from mast_freegsnke.planner_isoflux import IsofluxSensors, relative_flux_matrix
@@ -309,7 +337,7 @@ def test_isoflux_soft_skip_no_shape() -> None:
 
 def test_planner_authority_isoflux_fields() -> None:
     auth = load_planner_authority(REPO / "configs" / "planner_authority.json")
-    assert auth.authority_version == "1.3.0"
+    assert auth.authority_version == "1.3.1"
     assert auth.enable_isoflux is True
     assert auth.require_isoflux is False
     assert auth.weight_isoflux > 0

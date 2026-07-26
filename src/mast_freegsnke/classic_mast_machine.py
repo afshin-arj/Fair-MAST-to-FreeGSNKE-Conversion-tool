@@ -3,8 +3,10 @@
 FAIR-MAST publishes classic MAST (not MAST-U). Filament R/Z/width/height come
 from ``pf_active.zarr``. The limiter/wall contour comes from ``wall.zarr``
 ``limiter_r``/``limiter_z`` (EFIT limiter geometry published by FAIR-MAST —
-not surveyed CAD vessel). Passives stay empty: ``pf_passive.zarr`` has
-parallelogram geometry but no resistivity, and inventing ρ is forbidden.
+not surveyed CAD vessel). Passives stay empty while ``passive_resistivity`` is
+``awaiting_authority``: ``pf_passive.zarr`` has parallelogram geometry but no
+resistivity, and inventing ρ is forbidden (ADR-005). When components are cited,
+geometry + cited ρ are written into ``passive_coils.pickle`` (never copy MAST-U ρ).
 Active-coil resistivity uses the FreeGSNKE default copper value ``1.55e-8``
 declared in provenance (material constant), not invented coil geometry.
 """
@@ -15,7 +17,7 @@ import json
 import pickle
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -310,6 +312,182 @@ def build_limiter_from_magnetics_zarr(mag_zarr: Path) -> Tuple[List[Dict[str, fl
     return limiter_from_flux_loop_rz(_array(store, "flux_loop_r"), _array(store, "flux_loop_z"))
 
 
+def parallelogram_vertices(
+    r: float,
+    z: float,
+    width: float,
+    height: float,
+    shape_angle1_deg: float = 0.0,
+    shape_angle2_deg: float = 90.0,
+) -> Tuple[List[float], List[float]]:
+    """IMAS/FAIR-MAST parallelogram centre → four FreeGSNKE polygon vertices."""
+    w = abs(float(width))
+    h = abs(float(height))
+    a1 = np.deg2rad(float(shape_angle1_deg))
+    a2 = np.deg2rad(float(shape_angle2_deg))
+    dx1 = 0.5 * w * np.cos(a1)
+    dz1 = 0.5 * w * np.sin(a1)
+    dx2 = 0.5 * h * np.cos(a2)
+    dz2 = 0.5 * h * np.sin(a2)
+    rr = float(r)
+    zz = float(z)
+    R = [
+        rr - dx1 - dx2,
+        rr + dx1 - dx2,
+        rr + dx1 + dx2,
+        rr - dx1 + dx2,
+    ]
+    Z = [
+        zz - dz1 - dz2,
+        zz + dz1 - dz2,
+        zz + dz1 + dz2,
+        zz - dz1 + dz2,
+    ]
+    return [float(x) for x in R], [float(x) for x in Z]
+
+
+def _passive_component_stems(store: Any) -> List[str]:
+    try:
+        keys = list(store.keys())
+    except Exception:
+        keys = list(store)
+    stems = sorted({str(k)[:-2] for k in keys if str(k).endswith("_r")})
+    return [s for s in stems if s]
+
+
+def _resolve_passive_rho(
+    component: str,
+    components: Mapping[str, Any],
+) -> Optional[Tuple[float, str]]:
+    """Return (ρ, source) for a pf_passive stem, or None if not cited.
+
+    Exact stem match first; optional ``default`` / ``*`` applies to unmatched stems.
+    Never invents ρ.
+    """
+    if component in components:
+        entry = components[component]
+    elif "default" in components:
+        entry = components["default"]
+    elif "*" in components:
+        entry = components["*"]
+    else:
+        return None
+    if not isinstance(entry, dict):
+        raise ClassicMastMachineError(f"passive component {component!r} must be object")
+    rho = entry.get("resistivity_ohm_m")
+    src = entry.get("source")
+    if rho is None or not isinstance(rho, (int, float)) or float(rho) <= 0:
+        raise ClassicMastMachineError(
+            f"passive {component!r}: resistivity_ohm_m must be > 0 (got {rho!r})"
+        )
+    if not src or not str(src).strip():
+        raise ClassicMastMachineError(f"passive {component!r}: source citation required")
+    return float(rho), str(src).strip()
+
+
+def build_passive_coils_from_pf_passive(
+    shot_cache: Path,
+    *,
+    components: Mapping[str, Any],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Build FreeGSNKE passive list from FAIR-MAST pf_passive + cited ρ only."""
+    shot_cache = Path(shot_cache)
+    pp = shot_cache / "pf_passive.zarr"
+    note: Dict[str, Any] = {
+        "passives_written": [],
+        "pf_passive_zarr_present": pp.exists(),
+        "cited_components": sorted(str(k) for k in components.keys()),
+        "geometry_components_used": [],
+        "geometry_components_skipped_no_rho": [],
+        "reason": (
+            "Cited passive_resistivity components wired from FAIR-MAST pf_passive "
+            "geometry (ADR-005). Uncited stems stay omitted — never invent ρ; "
+            "never copy MAST-U resistivity onto classic MAST."
+        ),
+    }
+    if not components:
+        note["reason"] = (
+            "passive_resistivity components empty — FreeGSNKE passives stay empty"
+        )
+        return [], note
+    if not pp.exists():
+        raise ClassicMastMachineError(
+            "passive_resistivity cites components but pf_passive.zarr is missing "
+            f"under {shot_cache} — download optional group pf_passive first"
+        )
+    store = _open_zarr_group(pp)
+    stems = _passive_component_stems(store)
+    note["geometry_components"] = list(stems)
+    passives: List[Dict[str, Any]] = []
+    for stem in stems:
+        resolved = _resolve_passive_rho(stem, components)
+        if resolved is None:
+            note["geometry_components_skipped_no_rho"].append(stem)
+            continue
+        rho, src = resolved
+        r = np.asarray(_array(store, f"{stem}_r"), dtype=float).ravel()
+        z = np.asarray(_array(store, f"{stem}_z"), dtype=float).ravel()
+        w = np.asarray(_array(store, f"{stem}_width"), dtype=float).ravel()
+        h = np.asarray(_array(store, f"{stem}_height"), dtype=float).ravel()
+        if r.size == 0 or z.size != r.size or w.size != r.size or h.size != r.size:
+            raise ClassicMastMachineError(
+                f"pf_passive {stem}: r/z/width/height shape mismatch"
+            )
+        a1 = np.zeros(r.size, dtype=float)
+        a2 = np.full(r.size, 90.0, dtype=float)
+        if _has(store, f"{stem}_shapeAngle1"):
+            a1 = np.asarray(_array(store, f"{stem}_shapeAngle1"), dtype=float).ravel()
+            if a1.size == 1 and r.size > 1:
+                a1 = np.full(r.size, float(a1[0]), dtype=float)
+            elif a1.size != r.size:
+                raise ClassicMastMachineError(
+                    f"pf_passive {stem}: shapeAngle1 length mismatch"
+                )
+        if _has(store, f"{stem}_shapeAngle2"):
+            a2 = np.asarray(_array(store, f"{stem}_shapeAngle2"), dtype=float).ravel()
+            if a2.size == 1 and r.size > 1:
+                a2 = np.full(r.size, float(a2[0]), dtype=float)
+            elif a2.size != r.size:
+                raise ClassicMastMachineError(
+                    f"pf_passive {stem}: shapeAngle2 length mismatch"
+                )
+        note["geometry_components_used"].append(stem)
+        for i in range(r.size):
+            if not (
+                np.isfinite(r[i])
+                and np.isfinite(z[i])
+                and np.isfinite(w[i])
+                and np.isfinite(h[i])
+            ):
+                continue
+            R4, Z4 = parallelogram_vertices(
+                float(r[i]),
+                float(z[i]),
+                float(w[i]),
+                float(h[i]),
+                float(a1[i]) if np.isfinite(a1[i]) else 0.0,
+                float(a2[i]) if np.isfinite(a2[i]) else 90.0,
+            )
+            name = f"{stem}_{i + 1}"
+            passives.append(
+                {
+                    "R": R4,
+                    "Z": Z4,
+                    "resistivity": float(rho),
+                    "name": name,
+                    "element": stem,
+                    "source": src,
+                }
+            )
+            note["passives_written"].append(name)
+    if not passives:
+        raise ClassicMastMachineError(
+            "passive_resistivity cites components but none matched pf_passive stems "
+            f"{stems}; cite exact stem names (e.g. vertw, mid) or default/*"
+        )
+    return passives, note
+
+
 def pf_passive_omission_note(shot_cache: Path) -> Dict[str, Any]:
     """Record why FreeGSNKE passives are empty despite FAIR-MAST pf_passive geometry."""
     pp = Path(shot_cache) / "pf_passive.zarr"
@@ -319,7 +497,7 @@ def pf_passive_omission_note(shot_cache: Path) -> Dict[str, Any]:
             "FAIR-MAST Level-2 pf_passive publishes parallelogram geometry "
             "(r/z/width/height/shapeAngle1/shapeAngle2) but no resistivity; "
             "FreeGSNKE passive pickles require resistivity. Do not invent resistivity — "
-            "passive_coils.pickle stays empty."
+            "passive_coils.pickle stays empty (see ADR-005)."
         ),
         "pf_passive_zarr_present": pp.exists(),
     }
@@ -377,6 +555,7 @@ def write_classic_mast_machine(
     resistivity: float = FREEGSNKE_DEFAULT_COPPER_RESISTIVITY,
     validate_tokamak: bool = False,
     allow_flux_loop_limiter_fallback: bool = False,
+    passive_resistivity_components: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Write classic MAST FreeGSNKE pickles into ``out_dir`` (production machine_authority)."""
     shot_cache = Path(shot_cache)
@@ -406,8 +585,21 @@ def write_classic_mast_machine(
         )
 
     wall = list(limiter)  # FreeGSNKE wall; same EFIT limiter contour (not CAD)
-    passives: List[Any] = []
-    passive_note = pf_passive_omission_note(shot_cache)
+    comps = dict(passive_resistivity_components or {})
+    if comps:
+        passives, passive_note = build_passive_coils_from_pf_passive(
+            shot_cache, components=comps
+        )
+        honest_passive_line = (
+            f"FreeGSNKE passives: {len(passives)} element(s) from cited "
+            "passive_resistivity + FAIR-MAST pf_passive (ADR-005)"
+        )
+    else:
+        passives = []
+        passive_note = pf_passive_omission_note(shot_cache)
+        honest_passive_line = (
+            "No FreeGSNKE passives: pf_passive geometry exists but resistivity is unpublished"
+        )
 
     (out_dir / "active_coils.pickle").write_bytes(pickle.dumps(active, protocol=4))
     (out_dir / "limiter.pickle").write_bytes(pickle.dumps(limiter, protocol=4))
@@ -449,7 +641,7 @@ def write_classic_mast_machine(
         "passives": passive_note,
         "honest_limits": [
             "Limiter/wall = FAIR-MAST wall.zarr EFIT limiter != surveyed CAD vessel",
-            "No FreeGSNKE passives: pf_passive geometry exists but resistivity is unpublished",
+            honest_passive_line,
             "P3/P6: no usable measured FAIR-MAST PF voltage in public L1/L2 (see configs/l1_voltage_inventory_30201.json); evolutive uses I*R only",
             f"Active-coil resistivity = FreeGSNKE copper default {resistivity} (declared material constant)",
         ],

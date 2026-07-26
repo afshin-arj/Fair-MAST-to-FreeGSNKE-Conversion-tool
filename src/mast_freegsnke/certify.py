@@ -182,6 +182,10 @@ def certify_run_dir(
                     report["warnings"].append(
                         "planner_gspulse_python_incomplete:isoflux_not_wired"
                     )
+                if pl.get("status") == "voltage_exceeds_measured_peak_margin":
+                    report["warnings"].append(
+                        "planner_voltage_exceeds_measured_peak_margin"
+                    )
             report["checks"]["planner"]["picard_mode"] = pl.get("picard_mode")
             report["checks"]["planner"]["picard_status"] = pl.get("picard_status")
             if (pl.get("circuit_dynamics_mutuals") or "").startswith("neglected"):

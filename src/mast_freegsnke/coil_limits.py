@@ -235,8 +235,13 @@ def _dynamics_v_peak_planner_consistent(
     n_knots: int,
     R_ohm: Sequence[float],
     L_henry_diag: Sequence[float],
+    L_henry_matrix: Optional[Any] = None,
 ) -> Dict[str, float]:
-    """Peak |V| per circuit using the same linspace knots / dt as the planner QP."""
+    """Peak |V| per circuit using the same linspace knots / dt as the planner QP.
+
+    Prefer ``L_henry_matrix`` (full mutuals) when provided so the V envelope matches
+    the planner dynamics; otherwise use diagonal self-inductance only.
+    """
     from .planner import voltages_from_dynamics
 
     if not i_path.exists():
@@ -255,8 +260,16 @@ def _dynamics_v_peak_planner_consistent(
             raise CoilLimitsError(f"{i_path.name} missing circuit {name!r}")
         I[:, j] = np.interp(times, t_src, df[name].to_numpy(dtype=float))
     R = np.asarray(R_ohm, dtype=float).reshape(-1)
-    L = np.diag(np.asarray(L_henry_diag, dtype=float).reshape(-1))
-    if R.shape[0] != len(circuit_order) or L.shape[0] != len(circuit_order):
+    n = len(circuit_order)
+    if L_henry_matrix is not None:
+        L = np.asarray(L_henry_matrix, dtype=float)
+        if L.shape != (n, n):
+            raise CoilLimitsError(
+                f"L_henry_matrix shape {L.shape} != ({n},{n}) for dynamics V peak"
+            )
+    else:
+        L = np.diag(np.asarray(L_henry_diag, dtype=float).reshape(-1))
+    if R.shape[0] != n or L.shape[0] != n:
         raise CoilLimitsError("R/L length mismatch vs circuit_order for dynamics V peak")
     V = voltages_from_dynamics(I, R=R, L=L, dt=dt)
     out: Dict[str, float] = {}
@@ -264,7 +277,6 @@ def _dynamics_v_peak_planner_consistent(
         peak = float(np.max(np.abs(V[:, j])))
         if not np.isfinite(peak) or peak < 0.0:
             raise CoilLimitsError(f"{name}: invalid planner-consistent V peak={peak}")
-        # Allow zero only if truly flat; still usable as bound floor via other candidates
         out[str(name)] = peak
     return out
 
@@ -278,12 +290,14 @@ def resolve_measured_peak_limits(
     t_end: float,
     R_ohm_by_circuit: Optional[Mapping[str, float]] = None,
     L_henry_by_circuit: Optional[Mapping[str, float]] = None,
+    L_henry_matrix: Optional[Any] = None,
     n_knots: int = 21,
 ) -> CoilLimitsAuthority:
     """Materialize Imax/Vmax = margin_factor × peak|signal| in window (declared policy).
 
     Imax from peak |measured I|.
     Vmax from margin_factor × max(|V_meas|, ohmic |I|R, planner-consistent |RI+L dI/dt|).
+    When ``L_henry_matrix`` is provided, dynamics V peaks use full mutuals (same as QP).
     """
     auth.validate()
     if auth.limit_policy != "measured_peak_margin":
@@ -298,9 +312,21 @@ def resolve_measured_peak_limits(
     v_path = inputs_dir / "pf_voltages.csv"
     order = [str(c) for c in circuit_order]
     dyn_peaks: Dict[str, float] = {}
-    if R_ohm_by_circuit and L_henry_by_circuit and all(
-        c in R_ohm_by_circuit and c in L_henry_by_circuit for c in order
+    dyn_label = "dynamics_planner_knots"
+    if R_ohm_by_circuit and (
+        L_henry_matrix is not None
+        or (
+            L_henry_by_circuit
+            and all(c in R_ohm_by_circuit and c in L_henry_by_circuit for c in order)
+        )
     ):
+        L_diag = (
+            [float(L_henry_by_circuit[c]) for c in order]
+            if L_henry_by_circuit and all(c in L_henry_by_circuit for c in order)
+            else [0.0] * len(order)
+        )
+        if L_henry_matrix is not None:
+            dyn_label = "dynamics_planner_knots_mutuals"
         dyn_peaks = _dynamics_v_peak_planner_consistent(
             i_path,
             order,
@@ -308,7 +334,8 @@ def resolve_measured_peak_limits(
             t_end=t_end,
             n_knots=int(n_knots),
             R_ohm=[float(R_ohm_by_circuit[c]) for c in order],
-            L_henry_diag=[float(L_henry_by_circuit[c]) for c in order],
+            L_henry_diag=L_diag,
+            L_henry_matrix=L_henry_matrix,
         )
     circuits: Dict[str, CircuitLimit] = {}
     peaks: Dict[str, Any] = {}
@@ -327,7 +354,7 @@ def resolve_measured_peak_limits(
         if R is not None and R > 0:
             v_candidates.append(("ohmic_synthetic_IxR", float(i_peak) * R))
         if name in dyn_peaks:
-            v_candidates.append(("dynamics_planner_knots", float(dyn_peaks[name])))
+            v_candidates.append((dyn_label, float(dyn_peaks[name])))
         if not v_candidates:
             raise CoilLimitsError(
                 f"{name}: cannot resolve V peak — no finite pf_voltages and no cited R/L "
@@ -361,6 +388,9 @@ def resolve_measured_peak_limits(
         "n_knots": int(n_knots),
         "t_start": float(t_start),
         "t_end": float(t_end),
+        "dynamics_L_model": (
+            "full_matrix" if L_henry_matrix is not None else "diagonal_self_only"
+        ),
         "peaks": peaks,
     }
     out = CoilLimitsAuthority(
