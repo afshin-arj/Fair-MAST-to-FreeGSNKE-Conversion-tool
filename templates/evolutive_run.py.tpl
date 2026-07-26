@@ -287,6 +287,13 @@ def main() -> None:
     per_step_timeout_s = float(ea_evolv.get("per_step_timeout_s", 180.0))
     if not (per_step_timeout_s > 0.0):
         raise ValueError("evolutive_authority.per_step_timeout_s must be > 0")
+    abort_ip_frac = ea_evolv.get("abort_when_ip_below_measured_frac", 0.25)
+    if abort_ip_frac is not None:
+        abort_ip_frac = float(abort_ip_frac)
+        if not (0.0 < abort_ip_frac < 1.0):
+            raise ValueError(
+                "evolutive_authority.abort_when_ip_below_measured_frac must be in (0,1) or null"
+            )
     traj, interpolate_profile_at = _try_load_profile_trajectory()
     use_trajectory = traj is not None
     if use_trajectory and scale_paxis:
@@ -356,29 +363,45 @@ def main() -> None:
 
     ip_df = None
     ip_col = None
-    if scale_paxis:
+    # Measured Ip for scale_paxis and/or abort_when_ip_below_measured_frac.
+    if scale_paxis or abort_ip_frac is not None:
         ip_path = INPUTS / "ip.csv"
         if not ip_path.exists():
-            raise FileNotFoundError(
-                "scale_paxis_with_ip=true requires inputs/ip.csv (measured Ip)"
-            )
-        ip_df = pd.read_csv(ip_path)
-        if "time" not in ip_df.columns:
-            raise ValueError("ip.csv missing time column")
-        # Prefer column named Ip / ip / plasma_current
-        for cand in ("Ip", "ip", "plasma_current", "I_p"):
-            if cand in ip_df.columns:
-                ip_col = cand
-                break
-        if ip_col is None:
-            non_time = [c for c in ip_df.columns if c != "time"]
-            if len(non_time) == 1:
-                ip_col = non_time[0]
-            else:
-                raise ValueError(
-                    "ip.csv must have an Ip column for scale_paxis_with_ip "
-                    "(found: " + ", ".join(ip_df.columns) + ")"
+            if scale_paxis:
+                raise FileNotFoundError(
+                    "scale_paxis_with_ip=true requires inputs/ip.csv (measured Ip)"
                 )
+            print(
+                "[WARN] abort_when_ip_below_measured_frac set but inputs/ip.csv missing "
+                "— Ip-collapse soft-stop disabled for this run",
+                flush=True,
+            )
+            abort_ip_frac = None
+        else:
+            ip_df = pd.read_csv(ip_path)
+            if "time" not in ip_df.columns:
+                raise ValueError("ip.csv missing time column")
+            # Prefer column named Ip / ip / plasma_current
+            for cand in ("Ip", "ip", "plasma_current", "I_p"):
+                if cand in ip_df.columns:
+                    ip_col = cand
+                    break
+            if ip_col is None:
+                non_time = [c for c in ip_df.columns if c != "time"]
+                if len(non_time) == 1:
+                    ip_col = non_time[0]
+                elif scale_paxis:
+                    raise ValueError(
+                        "ip.csv must have an Ip column for scale_paxis_with_ip "
+                        "(found: " + ", ".join(ip_df.columns) + ")"
+                    )
+                else:
+                    print(
+                        "[WARN] ip.csv has no Ip column — Ip-collapse soft-stop disabled",
+                        flush=True,
+                    )
+                    abort_ip_frac = None
+                    ip_df = None
 
     win = _load_json(INPUTS / "window.json")
     t_start = float(win["t_start"])
@@ -532,6 +555,8 @@ def main() -> None:
     coil_names = list(order)
 
     t_rel = 0.0
+    early_stop = None
+    early_stop_detail = None
     for step in range(n_steps):
         t_abs = t_drive0 + t_rel
         if t_abs > t_end:
@@ -670,6 +695,42 @@ def main() -> None:
             except Exception as e:
                 print(f"[WARN] snapshot failed at step {step}: {e}", flush=True)
 
+        # Soft-stop before hung nlstepper: Ip collapsed vs measured (shot 30201 pattern).
+        if (
+            abort_ip_frac is not None
+            and ip_df is not None
+            and ip_col is not None
+            and math.isfinite(Ip)
+        ):
+            try:
+                t_ip = ip_df["time"].to_numpy(dtype=float)
+                y_ip = ip_df[ip_col].to_numpy(dtype=float)
+                ip_meas = float(_interp_series(t_abs, t_ip, y_ip, "Ip"))
+            except Exception as _ipe:
+                ip_meas = float("nan")
+                print(f"[WARN] measured Ip interp failed: {_ipe}", flush=True)
+            if math.isfinite(ip_meas) and abs(ip_meas) > 0.0:
+                frac = abs(Ip) / abs(ip_meas)
+                if frac < float(abort_ip_frac):
+                    early_stop = "ip_below_measured_frac"
+                    early_stop_detail = {
+                        "t_abs": float(t_abs),
+                        "step": int(step),
+                        "Ip_evolutive": float(Ip),
+                        "Ip_measured": float(ip_meas),
+                        "frac": float(frac),
+                        "threshold": float(abort_ip_frac),
+                    }
+                    print(
+                        f"[ABORT] evolutive Ip collapsed vs measured: "
+                        f"|Ip_evo|/|Ip_meas|={frac:.4f} < {abort_ip_frac} "
+                        f"at step {step} t={t_abs:.6f} "
+                        f"(Ip_evo={Ip:.4g} A, Ip_meas={ip_meas:.4g} A) — "
+                        f"stopping before hung nlstepper; partial history retained",
+                        flush=True,
+                    )
+                    break
+
     # Final CSV + meta (history already flushed incrementally)
     hist_df = pd.read_csv(OUT / "history.csv") if (OUT / "history.csv").exists() else pd.DataFrame()
     if hist_df.empty and history["t_abs"]:
@@ -698,6 +759,9 @@ def main() -> None:
         "plasma_resistivity_ohm_m": eta,
         "max_solving_iterations": max_iter,
         "per_step_timeout_s": per_step_timeout_s,
+        "abort_when_ip_below_measured_frac": abort_ip_frac,
+        "early_stop": early_stop,
+        "early_stop_detail": early_stop_detail,
         "active_circuit_order": coil_names,
         "coil_resist_ohm": resist_snapshot,
         "drive_policy": {
@@ -747,6 +811,11 @@ def main() -> None:
             ),
         ],
     }
+    if early_stop:
+        meta["limitations"].append(
+            f"early_stop={early_stop}: evolutive Ip diverged from measured "
+            f"(see early_stop_detail); remaining steps not run"
+        )
     (OUT / "evolutive_meta.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 
     # Quick plots

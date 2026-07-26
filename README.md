@@ -10,7 +10,7 @@ This toolkit downloads [FAIR-MAST](https://github.com/ukaea/fair-mast) Level-2 d
 | **Machine** | Classic MAST (not MAST-U) |
 | **Solver** | [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke) only |
 | **EFIT insight** | Compare to archived FAIR-MAST EFIT++ (not a live EFIT++ / Py-EFIT / efit-ai run) |
-| **Version** | **11.14.0** |
+| **Version** | **11.14.1** |
 
 ```mermaid
 flowchart LR

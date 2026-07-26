@@ -114,6 +114,31 @@ def test_runner_kills_script_on_timeout(tmp_path: Path) -> None:
     assert "TIMEOUT" in stderr
 
 
+def test_runner_evolutive_per_step_timeout_hint(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir(parents=True)
+    script = run_dir / "evolutive_run.py"
+    script.write_text(
+        "import os\n"
+        "print('[TIMEOUT] evolutive nlstepper step 10 exceeded "
+        "per_step_timeout_s=180.0 - process hard-killed')\n"
+        "os._exit(124)\n",
+        encoding="utf-8",
+    )
+    r = FreeGSNKERunner(timeout_s=30.0).run_script(script, run_dir=run_dir, label="evolutive")
+    assert r.ok is False
+    assert r.timed_out is False
+    assert r.returncode == 124
+    assert r.error_hint == "evolutive_per_step_timeout"
+
+
+def test_evolutive_template_has_ip_collapse_abort() -> None:
+    tpl = (REPO / "templates" / "evolutive_run.py.tpl").read_text(encoding="utf-8")
+    assert "abort_when_ip_below_measured_frac" in tpl
+    assert "[ABORT] evolutive Ip collapsed" in tpl
+    assert "early_stop" in tpl
+
+
 def test_runner_pins_blas_threads_by_default() -> None:
     r = FreeGSNKERunner(timeout_s=1.0)
     assert r.env.get("OMP_NUM_THREADS") == "1"

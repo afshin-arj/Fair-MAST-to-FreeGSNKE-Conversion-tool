@@ -1425,7 +1425,7 @@ class ShotPipeline:
                                     _stage(
                                         "evolutive_execute",
                                         False,
-                                        error_hint=er.error_hint or "freegsnke_script_timeout",
+                                        error_hint=er.error_hint or "evolutive_per_step_timeout",
                                         note="partial_timeout_with_history",
                                         n_steps_recorded=n_partial,
                                         duration_s=er.duration_s,
@@ -1436,7 +1436,30 @@ class ShotPipeline:
                                     )
                                     _stage("evolutive_execute", False, error_hint=er.error_hint)
                             else:
-                                _stage("evolutive_execute", True, duration_s=er.duration_s)
+                                n_partial = evolutive_partial_history_n(run_dir)
+                                evo_note = None
+                                evo_meta = (
+                                    run_dir
+                                    / "03_reconstruction"
+                                    / "evolutive"
+                                    / "evolutive_meta.json"
+                                )
+                                if not evo_meta.is_file():
+                                    evo_meta = run_dir / "evolutive" / "evolutive_meta.json"
+                                if evo_meta.is_file():
+                                    try:
+                                        _em = json.loads(evo_meta.read_text(encoding="utf-8"))
+                                        if _em.get("early_stop"):
+                                            evo_note = f"early_stop:{_em.get('early_stop')}"
+                                    except Exception:
+                                        pass
+                                _stage(
+                                    "evolutive_execute",
+                                    True,
+                                    duration_s=er.duration_s,
+                                    note=evo_note,
+                                    n_steps_recorded=n_partial if n_partial else None,
+                                )
                     else:
                         _stage("evolutive_execute", True, note="execute_evolutive=false")
 

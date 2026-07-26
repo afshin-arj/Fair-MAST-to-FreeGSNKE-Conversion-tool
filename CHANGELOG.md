@@ -1,3 +1,8 @@
+## 11.14.1 — Evolutive Ip-collapse soft-stop (shot 30201)
+- Shot 30201: evolutive completed steps 0–9 then hung on step 10 (`per_step_timeout_s=180`); measured Ip stayed ~890 kA while evolutive Ip collapsed 777→92 kA (linearization departed).
+- Soft-stop when `|Ip_evo|/|Ip_meas| < abort_when_ip_below_measured_frac` (default 0.25): write history/meta/GIF and exit 0 instead of a 180s hard-kill.
+- Honest `error_hint`: `evolutive_per_step_timeout` (not `freegsnke_script_timeout`) when the per-step watchdog fires. Version **11.14.1**.
+
 ## 11.14.0 — Archive X on LCFS (Inverse boundary + honest plots)
 - Run `shape_targets` before FreeGSNKE execute; remap Inverse `null_points` / isoflux from archived EFIT++ X + LCFS control points (soft-skip; never invent).
 - GIF / `inverse_equilibrium.png`: primary X (ψ=ψ_bndry) vs secondary nulls (ψ≠ψ_bndry) so divertor × off the red contour are not implied to lie on the LCFS.

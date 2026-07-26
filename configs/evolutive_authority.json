@@ -1,6 +1,6 @@
 {
   "authority_name": "freegsnke_evolutive_authority",
-  "authority_version": "11.6.2",
+  "authority_version": "11.14.1",
   "full_timestep_s": 0.01,
   "cover_window": true,
   "max_steps": 200,
@@ -12,6 +12,7 @@
   "min_dIy_dI": 0.01,
   "script_timeout_s": 2400.0,
   "per_step_timeout_s": 180.0,
+  "abort_when_ip_below_measured_frac": 0.25,
   "snapshot_equilibria_every_n": 1,
-  "notes": "Declared evolutive numerics for FreeGSNKE nl_solver/nlstepper on classic MAST (not MAST-U). cover_window=true sets n_steps=min(max_steps, ceil((t_end-t_start)/dt)); optional n_steps overrides. v11.12.3: full_timestep_s=0.01 and max_steps=200 for denser history/GIF/CSV (still snapshotted every step). linear_only=true for robust smoke; script_timeout_s + per_step_timeout_s + max_solving_iterations bound runtime (per_step hard-kills a hung nlstepper so one stall cannot burn the full script budget). snapshot_equilibria_every_n=1 writes eq PNGs for evolutive GIF (presentation). FAIR-MAST Level-2 measured voltages p1/p2/p4/p5 are primary drive; P3 and P6 use from_current_ohmic (I×R) — L1 inventory 30201 found no usable measured PF V (configs/l1_voltage_inventory_30201.json). No divertor circuits on classic machine. ADR-004: when inputs/profile_trajectory_authority/profile_trajectory.json status=ok, evolutive interpolates ConstrainPaxisIp knobs vs time (overrides scale_paxis_with_ip). Else alpha_m/alpha_n/fvac held from inverse IC; scale_paxis_with_ip=false by default."
+  "notes": "Declared evolutive numerics for FreeGSNKE nl_solver/nlstepper on classic MAST (not MAST-U). cover_window=true sets n_steps=min(max_steps, ceil((t_end-t_start)/dt)); optional n_steps overrides. v11.12.3: full_timestep_s=0.01 and max_steps=200 for denser history/GIF/CSV (still snapshotted every step). linear_only=true for robust smoke; script_timeout_s + per_step_timeout_s + max_solving_iterations bound runtime (per_step hard-kills a hung nlstepper so one stall cannot burn the full script budget). abort_when_ip_below_measured_frac=0.25 soft-stops when |Ip_evo|/|Ip_meas| collapses (shot 30201: evolutive Ip fell ~10x vs measured ~890 kA before nlstepper hung) — writes meta/GIF instead of a 180s hard-kill. snapshot_equilibria_every_n=1 writes eq PNGs for evolutive GIF (presentation). FAIR-MAST Level-2 measured voltages p1/p2/p4/p5 are primary drive; P3 and P6 use from_current_ohmic (I×R) — L1 inventory 30201 found no usable measured PF V (configs/l1_voltage_inventory_30201.json). No divertor circuits on classic machine. ADR-004: when inputs/profile_trajectory_authority/profile_trajectory.json status=ok, evolutive interpolates ConstrainPaxisIp knobs vs time (overrides scale_paxis_with_ip). Else alpha_m/alpha_n/fvac held from inverse IC; scale_paxis_with_ip=false by default."
 }

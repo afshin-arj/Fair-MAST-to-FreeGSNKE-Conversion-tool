@@ -97,6 +97,16 @@ def _detect_import_error(stderr_text: str) -> Optional[str]:
     return None
 
 
+def _detect_evolutive_timeout_hint(stdout_text: str, stderr_text: str) -> Optional[str]:
+    """Distinguish per-step nlstepper kill from global script wall-clock timeout."""
+    blob = f"{stdout_text or ''}\n{stderr_text or ''}"
+    if "per_step_timeout_s=" in blob and "[TIMEOUT] evolutive nlstepper" in blob:
+        return "evolutive_per_step_timeout"
+    if "[ABORT] evolutive Ip collapsed" in blob:
+        return "evolutive_ip_collapse_abort"
+    return None
+
+
 class FreeGSNKERunner:
     """Execute generated FreeGSNKE scripts in a controlled, audit-friendly way.
 
@@ -174,8 +184,15 @@ class FreeGSNKERunner:
         stderr_path.write_text(stderr_text)
 
         hint = _detect_import_error(stderr_text)
+        evo_hint = _detect_evolutive_timeout_hint(stdout_text, stderr_text)
         if timed_out:
             hint = "freegsnke_script_timeout"
+        elif evo_hint:
+            hint = evo_hint
+        elif int(returncode) == 124 and label == "evolutive":
+            # Child os._exit(124) from per-step watchdog without matching text
+            # (rare flush race) — still not the global script budget.
+            hint = "evolutive_per_step_timeout"
         ok = (returncode == 0) and (not timed_out)
 
         return ScriptRunResult(

@@ -42,6 +42,10 @@ class EvolutiveAuthority:
     min_dIy_dI: Optional[float] = None
     # Hard kill for a single hung nlstepper call (Windows FreeGSNKE native hangs).
     per_step_timeout_s: float = 180.0
+    # Soft-stop before hang: if |Ip_evo|/|Ip_meas| falls below this fraction,
+    # abort cleanly (write meta/GIF) instead of burning per_step_timeout_s.
+    # null disables. Declared gate — never invents Ip.
+    abort_when_ip_below_measured_frac: Optional[float] = 0.25
     notes: str = ""
 
     def validate(self) -> None:
@@ -87,6 +91,12 @@ class EvolutiveAuthority:
         )
         if self.min_dIy_dI is not None:
             _require(_is_number(self.min_dIy_dI) and float(self.min_dIy_dI) >= 0.0, "min_dIy_dI must be >= 0 or null")
+        if self.abort_when_ip_below_measured_frac is not None:
+            _require(
+                _is_number(self.abort_when_ip_below_measured_frac)
+                and 0.0 < float(self.abort_when_ip_below_measured_frac) < 1.0,
+                "abort_when_ip_below_measured_frac must be in (0,1) or null",
+            )
         _require(isinstance(self.notes, str), "notes must be str")
 
     def to_json_dict(self) -> Dict[str, Any]:
@@ -177,6 +187,11 @@ def load_evolutive_authority(path: Path) -> EvolutiveAuthority:
         snapshot_equilibria_every_n=int(obj.get("snapshot_equilibria_every_n", 1)),
         min_dIy_dI=(float(obj["min_dIy_dI"]) if obj.get("min_dIy_dI") is not None else None),
         per_step_timeout_s=float(obj.get("per_step_timeout_s", 180.0)),
+        abort_when_ip_below_measured_frac=(
+            None
+            if obj.get("abort_when_ip_below_measured_frac", 0.25) is None
+            else float(obj.get("abort_when_ip_below_measured_frac", 0.25))
+        ),
         notes=str(obj.get("notes", "")),
     )
     ea.validate()
