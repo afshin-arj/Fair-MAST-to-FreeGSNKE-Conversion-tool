@@ -85,6 +85,60 @@ def write_presentation_authority(inputs_dir: Path, auth: PresentationAuthority) 
     return out
 
 
+def overlay_honest_xpoints(ax: Any, eq: Any) -> None:
+    """Mark primary X (on drawn separatrix) vs secondary nulls (ψ≠ψ_bndry).
+
+    freegs4e draws *all* critical X as red × while the separatrix contour uses
+    only ``xpt[0]`` ψ. Secondary × therefore sit off the red LCFS and look like
+    a bug. Presentation must not imply every × lies on the LCFS.
+    """
+    try:
+        xpt = eq._profiles.xpt
+    except Exception:
+        return
+    if xpt is None:
+        return
+    try:
+        n = len(xpt)
+    except TypeError:
+        return
+    if n < 1:
+        return
+
+    # Primary: thick red × — this is the null whose ψ defines the separatrix.
+    try:
+        r0, z0 = float(xpt[0][0]), float(xpt[0][1])
+        ax.plot(
+            r0,
+            z0,
+            "rx",
+            markersize=11,
+            markeredgewidth=2.8,
+            zorder=6,
+            label="primary X (ψ=ψ_bndry)",
+        )
+    except Exception:
+        pass
+
+    # Secondary: faint gray × — critical points at different ψ, not on LCFS.
+    for i in range(1, n):
+        try:
+            r, z = float(xpt[i][0]), float(xpt[i][1])
+        except Exception:
+            continue
+        ax.plot(
+            r,
+            z,
+            "x",
+            color="0.45",
+            alpha=0.55,
+            markersize=7,
+            markeredgewidth=1.2,
+            zorder=5,
+            label="secondary null (ψ≠ψ_bndry)" if i == 1 else None,
+        )
+
+
 def save_equilibrium_png(
     *,
     tokamak: Any,
@@ -94,7 +148,11 @@ def save_equilibrium_png(
     dpi: int = 100,
     figsize: tuple[float, float] = (4.0, 8.0),
 ) -> Path:
-    """Save one equilibrium PNG frame (Agg-safe)."""
+    """Save one equilibrium PNG frame (Agg-safe).
+
+    Separatrix is drawn at primary-X ψ; X markers distinguish primary (on LCFS)
+    from secondary nulls that freegs4e still reports.
+    """
     import matplotlib
 
     matplotlib.use("Agg")
@@ -108,13 +166,26 @@ def save_equilibrium_png(
     except Exception:
         pass
     try:
-        eq.plot(axis=ax, show=False)
+        # Skip default all-red ×; we overlay honest primary vs secondary markers.
+        eq.plot(axis=ax, show=False, xpoints=False, opoints=True)
+    except TypeError:
+        # Older freegs4e without xpoints kw — fall back then restyle.
+        try:
+            eq.plot(axis=ax, show=False)
+        except Exception as e:
+            plt.close(fig)
+            raise PresentationError(f"eq.plot failed: {e}") from e
     except Exception as e:
         plt.close(fig)
         raise PresentationError(f"eq.plot failed: {e}") from e
+    overlay_honest_xpoints(ax, eq)
     ax.set_aspect("equal")
     ax.grid(alpha=0.3)
     ax.set_title(title)
+    try:
+        ax.legend(loc="upper right", fontsize=7, framealpha=0.85)
+    except Exception:
+        pass
     fig.tight_layout()
     fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)

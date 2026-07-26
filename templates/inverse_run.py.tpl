@@ -907,17 +907,27 @@ def main():
 
     fig, ax = plt.subplots(1,1, figsize=(6,10), dpi=140)
     tokamak.plot(axis=ax, show=False)
-    eq.plot(axis=ax, show=False)
-    # Plot primary null-point targets if available
+    # Separatrix uses primary-X ψ only; do not draw all critical × as if on LCFS.
+    try:
+        eq.plot(axis=ax, show=False, xpoints=False, opoints=True)
+    except TypeError:
+        eq.plot(axis=ax, show=False)
+    try:
+        from mast_freegsnke.equilibrium_presentation import overlay_honest_xpoints
+
+        overlay_honest_xpoints(ax, eq)
+    except Exception:
+        pass
+    # Overlay Inverse *targets* (archive-remapped when shape_targets present)
     try:
         Rx, Ro = float(null_points[0][0]), float(null_points[0][1])
         Zx, Zo = float(null_points[1][0]), float(null_points[1][1])
-        ax.plot(Rx, Zx, "rx", ms=10, label="X target")
-        ax.plot(Ro, Zo, "bo", ms=6, label="O target")
+        ax.plot(Rx, Zx, "r+", ms=14, mew=2.0, label="X target (Inverse)")
+        ax.plot(Ro, Zo, "bo", ms=6, label="O target (Inverse)")
     except Exception:
         pass
     ax.set_aspect("equal"); ax.grid(alpha=0.3)
-    ax.legend(loc="best")
+    ax.legend(loc="best", fontsize=8)
     fig.tight_layout()
     fig.savefig(HERE/"inverse_equilibrium.png", dpi=250, bbox_inches="tight")
     print("Saved inverse_equilibrium.png")

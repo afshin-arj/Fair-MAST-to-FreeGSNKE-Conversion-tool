@@ -1185,6 +1185,110 @@ class ShotPipeline:
             else:
                 _stage("experimental_data", True, note="enable_experimental_data=false")
 
+            # ADR-004 Path B1: EFIT++ → shape_targets BEFORE FreeGSNKE execute so
+            # Inverse boundary (X + LCFS isoflux) can be remapped from archive.
+            # (Late duplicate after efit_compare is skipped when this already ran.)
+            if self.cfg.build_shape_targets and final_tw is not None:
+                try:
+                    from .shape_targets import (
+                        load_shape_targets_authority,
+                        run_shape_targets_stage,
+                    )
+
+                    st_path = _resolve_config_path(
+                        self.cfg.shape_targets_authority_path, repo_root
+                    )
+                    if st_path is None or not st_path.exists():
+                        msg = (
+                            "shape_targets_authority_required: set "
+                            "shape_targets_authority_path when build_shape_targets=true"
+                        )
+                        blocking_errors.append(msg)
+                        _stage("shape_targets", False, note="missing_path")
+                    elif shot_cache is None:
+                        _st0 = load_shape_targets_authority(st_path)
+                        if _st0.require:
+                            blocking_errors.append(
+                                "shape_targets_required: no shot cache for equilibrium.zarr"
+                            )
+                            _stage("shape_targets", False, note="no_cache")
+                        else:
+                            _stage("shape_targets", True, note="no_cache_soft_skip")
+                    else:
+                        st_auth = load_shape_targets_authority(st_path)
+                        n_override = None
+                        pl_snap = (
+                            inputs_dir / "planner_authority" / "planner_authority.json"
+                        )
+                        if pl_snap.exists():
+                            try:
+                                from .planner import load_planner_authority as _lpa
+
+                                n_override = int(_lpa(pl_snap).n_knots)
+                            except Exception:
+                                n_override = None
+                        st_rep = run_shape_targets_stage(
+                            run_dir=run_dir,
+                            inputs_dir=inputs_dir,
+                            cache_dir=shot_cache,
+                            auth=st_auth,
+                            t_start=float(final_tw.t_start),
+                            t_end=float(final_tw.t_end),
+                            n_knots_override=n_override,
+                        )
+                        _stage(
+                            "shape_targets",
+                            bool(st_rep.get("ok")),
+                            status=st_rep.get("status"),
+                            present=st_rep.get("present"),
+                            path=st_rep.get("path"),
+                            timing="pre_freegsnke_execute",
+                        )
+                        if st_auth.require and not st_rep.get("ok"):
+                            blocking_errors.append(
+                                f"shape_targets_required: {st_rep.get('status')}"
+                            )
+                except Exception as e:
+                    from .shape_targets import ShapeTargetsError as _STE
+
+                    if isinstance(e, _STE):
+                        blocking_errors.append(f"shape_targets_failed: {e}")
+                        _stage("shape_targets", False, error=str(e))
+                    else:
+                        blocking_errors.append(
+                            f"shape_targets_failed: {type(e).__name__}: {e}"
+                        )
+                        _stage("shape_targets", False, error=str(e))
+            elif self.cfg.build_shape_targets:
+                _stage("shape_targets", True, note="no_window_soft_skip")
+            else:
+                _stage("shape_targets", True, note="build_shape_targets=false")
+
+            # Remap Inverse BoundarySpec from archive X + LCFS control points
+            # (soft-skip if shape_targets incomplete — never invent X/LCFS).
+            try:
+                from .boundary_from_shape import (
+                    apply_shape_targets_to_execution_boundary,
+                )
+
+                t_prefer = None
+                if final_tw is not None:
+                    t_prefer = 0.5 * (float(final_tw.t_start) + float(final_tw.t_end))
+                bnd_rep = apply_shape_targets_to_execution_boundary(
+                    inputs_dir, t_s=t_prefer
+                )
+                _stage(
+                    "boundary_from_shape_targets",
+                    bool(bnd_rep.get("ok"))
+                    or str(bnd_rep.get("status", "")).startswith("skipped"),
+                    status=bnd_rep.get("status"),
+                    path=bnd_rep.get("path"),
+                    provenance=bnd_rep.get("provenance"),
+                )
+            except Exception as e:
+                _stage("boundary_from_shape_targets", False, error=str(e))
+                # Soft: leave hardcoded execution_authority boundary in place.
+
             # Optional: execute FreeGSNKE scripts (inverse/forward) and compute residual metrics.
             exec_summary: Dict[str, Any] = {"enabled": bool(self.cfg.execute_freegsnke), "mode": self.cfg.freegsnke_run_mode}
             metrics_summary: Optional[Dict[str, Any]] = None
@@ -1490,8 +1594,14 @@ class ShotPipeline:
                     note="compare_efit_archive=false_or_no_cache",
                 )
 
-            # ADR-004 Path B1: EFIT++ → declared shape_targets (isoflux inventory for B2)
-            if self.cfg.build_shape_targets and final_tw is not None:
+            # ADR-004 Path B1: shape_targets already ran pre-execute (needed for
+            # Inverse boundary remap). Only run here as defensive fallback.
+            _st_early = inputs_dir / "shape_targets_authority" / "shape_targets.json"
+            if (
+                not _st_early.is_file()
+                and self.cfg.build_shape_targets
+                and final_tw is not None
+            ):
                 try:
                     from .shape_targets import (
                         load_shape_targets_authority,
@@ -1507,7 +1617,7 @@ class ShotPipeline:
                             "shape_targets_authority_path when build_shape_targets=true"
                         )
                         blocking_errors.append(msg)
-                        _stage("shape_targets", False, note="missing_path")
+                        _stage("shape_targets", False, note="missing_path_late")
                     elif shot_cache is None:
                         _st0 = load_shape_targets_authority(st_path)
                         if _st0.require:
@@ -1545,6 +1655,7 @@ class ShotPipeline:
                             status=st_rep.get("status"),
                             present=st_rep.get("present"),
                             path=st_rep.get("path"),
+                            timing="late_fallback",
                         )
                         if st_auth.require and not st_rep.get("ok"):
                             blocking_errors.append(
@@ -1561,10 +1672,6 @@ class ShotPipeline:
                             f"shape_targets_failed: {type(e).__name__}: {e}"
                         )
                         _stage("shape_targets", False, error=str(e))
-            elif self.cfg.build_shape_targets:
-                _stage("shape_targets", True, note="no_window_soft_skip")
-            else:
-                _stage("shape_targets", True, note="build_shape_targets=false")
 
             # ADR-004 Phase 2: optional GSPulse-style planner (default off)
             if self.cfg.execute_planner and final_tw is not None:

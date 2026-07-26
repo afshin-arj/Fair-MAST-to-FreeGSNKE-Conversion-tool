@@ -116,8 +116,21 @@ class BoundarySpec:
     isoflux_set: List[List[List[float]]]
 
     def validate(self) -> None:
-        _require(isinstance(self.null_points, list) and len(self.null_points) == 2, "BoundarySpec: null_points must be 2x2 list")
-        _require(all(isinstance(r, list) and len(r) == 2 for r in self.null_points), "BoundarySpec: null_points must be 2x2 list")
+        # FreeGSNKE Inverse_optimizer: null_points = [Rcoords, Zcoords] with
+        # at least one X and one O (convention: column 0 = X, column 1 = O).
+        # Allow N>=2 nulls for DN / multi-X when archive supplies them.
+        _require(
+            isinstance(self.null_points, list) and len(self.null_points) == 2,
+            "BoundarySpec: null_points must be [Rcoords, Zcoords]",
+        )
+        _require(
+            all(isinstance(r, list) and len(r) >= 2 for r in self.null_points),
+            "BoundarySpec: each of R/Z null_points must have >=2 entries (X+O)",
+        )
+        _require(
+            len(self.null_points[0]) == len(self.null_points[1]),
+            "BoundarySpec: R and Z null_points lengths must match",
+        )
         for r in self.null_points:
             _require(all(_is_number(v) for v in r), "BoundarySpec: null_points values must be numbers")
         _require(isinstance(self.isoflux_set, list) and len(self.isoflux_set) >= 1, "BoundarySpec: isoflux_set must be non-empty list")

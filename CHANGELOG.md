@@ -1,3 +1,8 @@
+## 11.14.0 — Archive X on LCFS (Inverse boundary + honest plots)
+- Run `shape_targets` before FreeGSNKE execute; remap Inverse `null_points` / isoflux from archived EFIT++ X + LCFS control points (soft-skip; never invent).
+- GIF / `inverse_equilibrium.png`: primary X (ψ=ψ_bndry) vs secondary nulls (ψ≠ψ_bndry) so divertor × off the red contour are not implied to lie on the LCFS.
+- `BoundarySpec` allows N≥2 nulls. Version **11.14.0**.
+
 ## 11.13.0 — EFIT forward_replay scorecard (matched drive)
 - ADR-002 v1.2: `compare_mode=both` prefers **forward_replay** — measured PF (`pf_active`/coil_map) + ADR-004 `profile_trajectory` → FreeGSNKE forward GS, scored vs archived EFIT++ shapes (Pentland-style matched drive).
 - Soft-skips to reconstruction_vs_archive when trajectory/FreeGSNKE unavailable (loud notes); UI chips for scorecard source + forward_replay ok.
