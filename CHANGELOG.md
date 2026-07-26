@@ -1,3 +1,8 @@
+## 11.15.0 — Evolutive Ip science: measured-PF IC + Ip clamp
+- Root cause (shot 30201): FreeGSNKE linear stepper has `forcing[-1]=0` (no Ip voltage drive); inverse Solenoid IC was ~7× measured so applied FAIR-MAST V unloaded coils and dragged Ip 777→92 kA while measured stayed ~890 kA.
+- Declared laws (no invented metrology): `ic_coil_currents=measured_pf` (start from `pf_currents.csv` so V≈IR) + `clamp_ip_to_measured=true` (pin Ip each step from `ip.csv`).
+- Passives still awaiting cited `passive_resistivity.json` (Alfvén-unstable risk remains). Soft-stop abort retained as safety net. Version **11.15.0**.
+
 ## 11.14.1 — Evolutive Ip-collapse soft-stop (shot 30201)
 - Shot 30201: evolutive completed steps 0–9 then hung on step 10 (`per_step_timeout_s=180`); measured Ip stayed ~890 kA while evolutive Ip collapsed 777→92 kA (linearization departed).
 - Soft-stop when `|Ip_evo|/|Ip_meas| < abort_when_ip_below_measured_frac` (default 0.25): write history/meta/GIF and exit 0 instead of a 180s hard-kill.

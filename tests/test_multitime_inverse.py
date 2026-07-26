@@ -137,6 +137,9 @@ def test_evolutive_template_has_ip_collapse_abort() -> None:
     assert "abort_when_ip_below_measured_frac" in tpl
     assert "[ABORT] evolutive Ip collapsed" in tpl
     assert "early_stop" in tpl
+    assert "clamp_ip_to_measured" in tpl
+    assert "ic_coil_currents=measured_pf" in tpl
+    assert 'profiles_parameters["Ip"]' in tpl or "profiles_parameters[\"Ip\"]" in tpl
 
 
 def test_runner_pins_blas_threads_by_default() -> None:

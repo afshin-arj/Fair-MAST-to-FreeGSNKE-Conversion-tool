@@ -294,6 +294,13 @@ def main() -> None:
             raise ValueError(
                 "evolutive_authority.abort_when_ip_below_measured_frac must be in (0,1) or null"
             )
+    ic_coil_src = str(ea_evolv.get("ic_coil_currents", "measured_pf")).strip().lower()
+    if ic_coil_src not in {"measured_pf", "inverse_dump"}:
+        raise ValueError(
+            "evolutive_authority.ic_coil_currents must be 'measured_pf' or 'inverse_dump' "
+            f"(got {ic_coil_src!r})"
+        )
+    clamp_ip = bool(ea_evolv.get("clamp_ip_to_measured", True))
     traj, interpolate_profile_at = _try_load_profile_trajectory()
     use_trajectory = traj is not None
     if use_trajectory and scale_paxis:
@@ -352,24 +359,33 @@ def main() -> None:
         raise ValueError("pf_voltages.csv missing time column")
 
     currents_df = None
-    if ohmic:
+    need_currents = bool(ohmic) or ic_coil_src == "measured_pf"
+    if need_currents:
         cur_path = INPUTS / "pf_currents.csv"
         if not cur_path.exists():
             raise FileNotFoundError(
-                "Missing inputs/pf_currents.csv required for from_current_ohmic circuits: "
-                + ", ".join(sorted(ohmic.keys()))
+                "Missing inputs/pf_currents.csv required for "
+                + (
+                    "from_current_ohmic / ic_coil_currents=measured_pf: "
+                    + ", ".join(sorted(ohmic.keys()))
+                    if ohmic
+                    else "ic_coil_currents=measured_pf"
+                )
             )
         currents_df = pd.read_csv(cur_path)
+        if "time" not in currents_df.columns:
+            raise ValueError("pf_currents.csv missing time column")
 
     ip_df = None
     ip_col = None
-    # Measured Ip for scale_paxis and/or abort_when_ip_below_measured_frac.
-    if scale_paxis or abort_ip_frac is not None:
+    # Measured Ip for scale_paxis, clamp_ip_to_measured, and/or abort gate.
+    if scale_paxis or clamp_ip or abort_ip_frac is not None:
         ip_path = INPUTS / "ip.csv"
         if not ip_path.exists():
-            if scale_paxis:
+            if scale_paxis or clamp_ip:
                 raise FileNotFoundError(
-                    "scale_paxis_with_ip=true requires inputs/ip.csv (measured Ip)"
+                    "scale_paxis_with_ip / clamp_ip_to_measured require inputs/ip.csv "
+                    "(measured Ip from FAIR-MAST)"
                 )
             print(
                 "[WARN] abort_when_ip_below_measured_frac set but inputs/ip.csv missing "
@@ -390,9 +406,9 @@ def main() -> None:
                 non_time = [c for c in ip_df.columns if c != "time"]
                 if len(non_time) == 1:
                     ip_col = non_time[0]
-                elif scale_paxis:
+                elif scale_paxis or clamp_ip:
                     raise ValueError(
-                        "ip.csv must have an Ip column for scale_paxis_with_ip "
+                        "ip.csv must have an Ip column for scale_paxis / clamp_ip "
                         "(found: " + ", ".join(ip_df.columns) + ")"
                     )
                 else:
@@ -442,7 +458,33 @@ def main() -> None:
             "Update configs/voltage_map.json to match active_coils.pickle (fail-closed)."
         )
 
-    _set_currents(tokamak, dump.get("coil_currents") or {})
+    # IC coil currents: measured_pf keeps V≈IR at t_drive0 (voltage-driven science).
+    # inverse_dump keeps shape-optimised currents (can disagree with measured PF).
+    ic_currents: dict = {}
+    if ic_coil_src == "measured_pf":
+        assert currents_df is not None
+        t_cur = currents_df["time"].to_numpy(dtype=float)
+        missing_cols = [c for c in order if c not in currents_df.columns]
+        if missing_cols:
+            raise RuntimeError(
+                "ic_coil_currents=measured_pf but pf_currents.csv missing circuits: "
+                + ", ".join(missing_cols)
+            )
+        for name in order:
+            y = currents_df[name].to_numpy(dtype=float)
+            ic_currents[name] = float(_interp_series(t_drive0, t_cur, y, name))
+        print(
+            f"[INFO] ic_coil_currents=measured_pf at t_drive0={t_drive0:.6f}: "
+            + str({k: round(v, 3) for k, v in ic_currents.items()}),
+            flush=True,
+        )
+    else:
+        ic_currents = dict(dump.get("coil_currents") or {})
+        print(
+            f"[INFO] ic_coil_currents=inverse_dump ({len(ic_currents)} circuits)",
+            flush=True,
+        )
+    _set_currents(tokamak, ic_currents)
 
     eq = equilibrium_update.Equilibrium(
         tokamak=tokamak,
@@ -459,6 +501,15 @@ def main() -> None:
     alpha_m0 = float(pk["alpha_m"])
     alpha_n0 = float(pk["alpha_n"])
     Ip0 = float(pk["Ip"])
+    # Prefer measured Ip at t_drive0 when clamp/measured-IC path is active.
+    if (clamp_ip or ic_coil_src == "measured_pf") and ip_df is not None and ip_col is not None:
+        try:
+            t_ip0 = ip_df["time"].to_numpy(dtype=float)
+            y_ip0 = ip_df[ip_col].to_numpy(dtype=float)
+            Ip0 = float(_interp_series(t_drive0, t_ip0, y_ip0, "Ip"))
+            print(f"[INFO] Ip0 from measured ip.csv at t_drive0: {Ip0:.6g} A", flush=True)
+        except Exception as _ipe0:
+            print(f"[WARN] measured Ip0 interp failed, using inverse dump Ip: {_ipe0}", flush=True)
     profiles = ConstrainPaxisIp(
         eq=eq,
         paxis=paxis0,
@@ -575,6 +626,7 @@ def main() -> None:
         alpha_m_step = alpha_m0
         alpha_n_step = alpha_n0
         fvac_step = float(dump["fvac"])
+        ip_clamp_t = None
         if use_trajectory:
             assert interpolate_profile_at is not None and traj is not None
             knobs = interpolate_profile_at(traj, t_abs)
@@ -606,9 +658,34 @@ def main() -> None:
                 "alpha_n": alpha_n0,
             }
 
+        # Declared replay law: pin Ip to measured before nlstepper.
+        # FreeGSNKE linear_solve.stepper sets forcing[-1]=0 (no Ip voltage drive).
+        if clamp_ip:
+            assert ip_df is not None and ip_col is not None
+            t_ip = ip_df["time"].to_numpy(dtype=float)
+            y_ip = ip_df[ip_col].to_numpy(dtype=float)
+            ip_clamp_t = float(_interp_series(t_abs, t_ip, y_ip, "Ip"))
+            if not math.isfinite(ip_clamp_t):
+                raise RuntimeError(f"clamp_ip_to_measured: non-finite Ip at t={t_abs}")
+            norm = float(stepping.plasma_norm_factor)
+            if not (abs(norm) > 0.0):
+                raise RuntimeError("clamp_ip_to_measured: plasma_norm_factor is zero")
+            stepping.currents_vec[-1] = ip_clamp_t / norm
+            try:
+                stepping.currents_vec_m1[-1] = ip_clamp_t / norm
+            except Exception:
+                pass
+            stepping.profiles1.Ip = ip_clamp_t
+            stepping.profiles2.Ip = ip_clamp_t
+            if profiles_parameters is None:
+                profiles_parameters = {}
+            profiles_parameters["Ip"] = ip_clamp_t
+
         print(
             f"Step {step}/{n_steps - 1}  t_abs={t_abs:.6f}  linear_only={linear_only} "
-            f"traj={use_trajectory} scale_paxis={scale_paxis} paxis={paxis_step:.6g}",
+            f"traj={use_trajectory} scale_paxis={scale_paxis} clamp_ip={clamp_ip} "
+            f"paxis={paxis_step:.6g}"
+            + (f" Ip_clamp={ip_clamp_t:.6g}" if ip_clamp_t is not None else ""),
             flush=True,
         )
         step_ok = True
@@ -643,6 +720,14 @@ def main() -> None:
             except Exception:
                 pass
 
+        # Re-pin Ip after the step so history / next IC match the declared law
+        # (nlstepper can still drift Ip via mutuals when forcing[-1]=0).
+        if clamp_ip and ip_clamp_t is not None and step_ok:
+            norm = float(stepping.plasma_norm_factor)
+            stepping.currents_vec[-1] = ip_clamp_t / norm
+            stepping.profiles1.Ip = ip_clamp_t
+            stepping.profiles2.Ip = ip_clamp_t
+
         t_rel += float(getattr(stepping, "dt_step", full_dt))
         # Record post-step state
         try:
@@ -659,7 +744,10 @@ def main() -> None:
         except Exception:
             tri = float("nan")
         try:
-            Ip = float(stepping.currents_vec[-1] * stepping.plasma_norm_factor)
+            if clamp_ip and ip_clamp_t is not None:
+                Ip = float(ip_clamp_t)
+            else:
+                Ip = float(stepping.currents_vec[-1] * stepping.plasma_norm_factor)
         except Exception:
             Ip = float("nan")
         try:
@@ -756,6 +844,8 @@ def main() -> None:
         "full_timestep_s": full_dt,
         "linear_only": linear_only,
         "scale_paxis_with_ip": scale_paxis,
+        "clamp_ip_to_measured": clamp_ip,
+        "ic_coil_currents": ic_coil_src,
         "plasma_resistivity_ohm_m": eta,
         "max_solving_iterations": max_iter,
         "per_step_timeout_s": per_step_timeout_s,
@@ -785,6 +875,8 @@ def main() -> None:
                 else "held_from_inverse_IC"
             ),
             "scale_paxis_with_ip": scale_paxis,
+            "clamp_ip_to_measured": clamp_ip,
+            "ic_coil_currents": ic_coil_src,
             "profile_trajectory": bool(use_trajectory),
             "profile_trajectory_fit_mode": (
                 traj.fit_mode_used if use_trajectory else None
@@ -809,6 +901,19 @@ def main() -> None:
                     else "Profile parameters held from IC (scale_paxis_with_ip=false)"
                 )
             ),
+            (
+                "IC coil currents from measured pf_currents.csv at t_drive0 "
+                "(ic_coil_currents=measured_pf) so applied V≈IR"
+                if ic_coil_src == "measured_pf"
+                else "IC coil currents from inverse_dump (shape-optimised; may disagree with measured PF)"
+            ),
+            (
+                "Ip clamped each step to FAIR-MAST ip.csv (clamp_ip_to_measured=true replay law; "
+                "FreeGSNKE linear stepper has no Ip voltage drive)"
+                if clamp_ip
+                else "Ip free under circuit mutuals (clamp_ip_to_measured=false)"
+            ),
+            "Passives empty until configs/passive_resistivity.json has cited resistivity (Alfven-unstable risk)",
         ],
     }
     if early_stop:

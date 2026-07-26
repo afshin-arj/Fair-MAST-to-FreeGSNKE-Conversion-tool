@@ -261,6 +261,8 @@ def test_evolutive_authority_cover_window() -> None:
     assert ea.per_step_timeout_s == 180.0
     assert ea.script_timeout_s == 2400.0
     assert ea.abort_when_ip_below_measured_frac == 0.25
+    assert ea.ic_coil_currents == "measured_pf"
+    assert ea.clamp_ip_to_measured is True
     # Shot 30201-like window ~0.177 s → ceil(0.1768/0.01)=18
     plan = resolve_n_steps(ea, t_start=0.2012, t_end=0.378)
     assert plan["mode"] == "cover_window"
@@ -305,6 +307,8 @@ def test_evolutive_template_present_and_renders(tmp_path: Path) -> None:
     assert "cover_window" in text
     assert "scale_paxis_with_ip" in text
     assert "abort_when_ip_below_measured_frac" in text
+    assert "clamp_ip_to_measured" in text
+    assert "ic_coil_currents" in text
     assert "coil_resist" in text
     gen = ScriptGenerator(templates_dir=REPO / "templates")
     gen.generate(run_dir=tmp_path, machine_dir=tmp_path / "machine", formed_frac=0.8)

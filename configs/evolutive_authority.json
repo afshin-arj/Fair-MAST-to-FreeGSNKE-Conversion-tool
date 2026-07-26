@@ -1,6 +1,6 @@
 {
   "authority_name": "freegsnke_evolutive_authority",
-  "authority_version": "11.14.1",
+  "authority_version": "11.15.0",
   "full_timestep_s": 0.01,
   "cover_window": true,
   "max_steps": 200,
@@ -9,10 +9,13 @@
   "plasma_resistivity_ohm_m": 1.0e-6,
   "max_solving_iterations": 50,
   "max_mode_frequency": 316.22776601683796,
-  "min_dIy_dI": 0.01,
   "script_timeout_s": 2400.0,
   "per_step_timeout_s": 180.0,
   "abort_when_ip_below_measured_frac": 0.25,
+  "ic_coil_currents": "measured_pf",
+  "clamp_ip_to_measured": true,
   "snapshot_equilibria_every_n": 1,
-  "notes": "Declared evolutive numerics for FreeGSNKE nl_solver/nlstepper on classic MAST (not MAST-U). cover_window=true sets n_steps=min(max_steps, ceil((t_end-t_start)/dt)); optional n_steps overrides. v11.12.3: full_timestep_s=0.01 and max_steps=200 for denser history/GIF/CSV (still snapshotted every step). linear_only=true for robust smoke; script_timeout_s + per_step_timeout_s + max_solving_iterations bound runtime (per_step hard-kills a hung nlstepper so one stall cannot burn the full script budget). abort_when_ip_below_measured_frac=0.25 soft-stops when |Ip_evo|/|Ip_meas| collapses (shot 30201: evolutive Ip fell ~10x vs measured ~890 kA before nlstepper hung) — writes meta/GIF instead of a 180s hard-kill. snapshot_equilibria_every_n=1 writes eq PNGs for evolutive GIF (presentation). FAIR-MAST Level-2 measured voltages p1/p2/p4/p5 are primary drive; P3 and P6 use from_current_ohmic (I×R) — L1 inventory 30201 found no usable measured PF V (configs/l1_voltage_inventory_30201.json). No divertor circuits on classic machine. ADR-004: when inputs/profile_trajectory_authority/profile_trajectory.json status=ok, evolutive interpolates ConstrainPaxisIp knobs vs time (overrides scale_paxis_with_ip). Else alpha_m/alpha_n/fvac held from inverse IC; scale_paxis_with_ip=false by default."
+  "min_dIy_dI": 0.01,
+  "n_steps": null,
+  "notes": "Declared evolutive numerics for FreeGSNKE nl_solver/nlstepper on classic MAST (not MAST-U). v11.15.0 SCIENCE: ic_coil_currents=measured_pf starts from FAIR-MAST pf_currents.csv at t_drive0 so applied V~IR (shot 30201: inverse Solenoid was ~7x measured then measured V unloaded coils and dragged Ip); clamp_ip_to_measured=true pins Ip each step to inputs/ip.csv because FreeGSNKE linear stepper has forcing[-1]=0 (no Ip voltage drive). Passives still awaiting cited resistivity (passive_resistivity.json). cover_window=true; linear_only=true; abort_when_ip_below_measured_frac=0.25 soft-stops residual collapse. FAIR-MAST Level-2 measured voltages p1/p2/p4/p5 primary; P3/P6 from_current_ohmic. ADR-004 profile_trajectory overrides scale_paxis_with_ip when present."
 }

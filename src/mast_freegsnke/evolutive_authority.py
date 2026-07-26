@@ -1,9 +1,12 @@
 """Evolutive (time-dependent) FreeGSNKE execution authority.
 
 Fail-closed: all numerics required for nl_solver / nlstepper must be declared.
-Profile shape parameters (alpha_m/alpha_n/fvac) are held from the inverse IC.
-Optional declared law ``scale_paxis_with_ip`` scales paxis with measured Ip(t)/Ip(t0)
-— never invents profile numbers from thin air.
+Profile shape parameters (alpha_m/alpha_n/fvac) are held from the inverse IC
+or ADR-004 profile_trajectory. Declared laws (never invent metrology):
+
+- ``scale_paxis_with_ip`` — scale paxis with measured Ip(t)/Ip(t0)
+- ``ic_coil_currents`` — measured_pf | inverse_dump for voltage-consistent IC
+- ``clamp_ip_to_measured`` — pin Ip to FAIR-MAST ip.csv each step (replay law)
 """
 
 from __future__ import annotations
@@ -13,6 +16,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
 import json
+
+IC_COIL_CURRENT_SOURCES = frozenset({"measured_pf", "inverse_dump"})
 
 
 def _is_number(x: Any) -> bool:
@@ -46,6 +51,14 @@ class EvolutiveAuthority:
     # abort cleanly (write meta/GIF) instead of burning per_step_timeout_s.
     # null disables. Declared gate — never invents Ip.
     abort_when_ip_below_measured_frac: Optional[float] = 0.25
+    # IC coil currents for voltage-driven evolution. measured_pf uses
+    # inputs/pf_currents.csv at t_drive0 so V≈IR at start (shot 30201: inverse
+    # Solenoid was ~7× measured, so measured V unloaded I_Sol and dragged Ip).
+    ic_coil_currents: str = "measured_pf"
+    # Replay law: pin currents_vec[-1] / profiles.Ip to measured ip.csv each step.
+    # FreeGSNKE linear stepper has forcing[-1]=0 (no Ip drive); without a clamp,
+    # Ip rides mutual inductance as coils unload under measured V.
+    clamp_ip_to_measured: bool = True
     notes: str = ""
 
     def validate(self) -> None:
@@ -97,6 +110,11 @@ class EvolutiveAuthority:
                 and 0.0 < float(self.abort_when_ip_below_measured_frac) < 1.0,
                 "abort_when_ip_below_measured_frac must be in (0,1) or null",
             )
+        _require(
+            isinstance(self.ic_coil_currents, str) and self.ic_coil_currents in IC_COIL_CURRENT_SOURCES,
+            f"ic_coil_currents must be one of {sorted(IC_COIL_CURRENT_SOURCES)}",
+        )
+        _require(isinstance(self.clamp_ip_to_measured, bool), "clamp_ip_to_measured must be bool")
         _require(isinstance(self.notes, str), "notes must be str")
 
     def to_json_dict(self) -> Dict[str, Any]:
@@ -109,11 +127,7 @@ def resolve_n_steps(
     t_start: float,
     t_end: float,
 ) -> Dict[str, Any]:
-    """Resolve step count from cover_window / max_steps / optional n_steps override.
-
-    When ``cover_window``: ``n = min(max_steps, max(1, ceil((t_end-t_start)/dt)))``
-    unless ``n_steps`` is set as an explicit override.
-    """
+    """Deterministic step count from authority + finalized window."""
     dt = float(authority.full_timestep_s)
     span = float(t_end) - float(t_start)
     n_from_window = max(1, int(math.ceil(span / dt))) if span > 0.0 else 1
@@ -137,17 +151,16 @@ def resolve_n_steps(
         "n_from_window": int(n_from_window),
         "max_steps": int(authority.max_steps),
         "cover_window": bool(authority.cover_window),
-        "n_steps_override": authority.n_steps,
     }
 
 
 def load_evolutive_authority(path: Path) -> EvolutiveAuthority:
     path = Path(path)
     if not path.exists():
-        raise FileNotFoundError(f"evolutive_authority not found: {path}")
+        raise ValueError(f"missing evolutive authority: {path}")
     obj = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(obj, dict):
-        raise ValueError("evolutive_authority must be a JSON object")
+        raise ValueError("evolutive authority root must be an object")
     required = [
         "authority_name",
         "authority_version",
@@ -160,13 +173,13 @@ def load_evolutive_authority(path: Path) -> EvolutiveAuthority:
     ]
     missing = [k for k in required if k not in obj]
     if missing:
-        raise ValueError(f"evolutive_authority missing required keys: {missing}")
+        raise ValueError(f"evolutive authority missing keys: {missing}")
 
     cover_window = bool(obj.get("cover_window", False))
     n_steps_raw = obj.get("n_steps", None)
-    if n_steps_raw is None and not cover_window:
+    if (not cover_window) and n_steps_raw is None:
         raise ValueError(
-            "evolutive_authority missing n_steps "
+            "n_steps required when cover_window is false "
             "(required when cover_window is false; omit only with cover_window=true)"
         )
     n_steps = int(n_steps_raw) if n_steps_raw is not None else None
@@ -192,6 +205,8 @@ def load_evolutive_authority(path: Path) -> EvolutiveAuthority:
             if obj.get("abort_when_ip_below_measured_frac", 0.25) is None
             else float(obj.get("abort_when_ip_below_measured_frac", 0.25))
         ),
+        ic_coil_currents=str(obj.get("ic_coil_currents", "measured_pf")),
+        clamp_ip_to_measured=bool(obj.get("clamp_ip_to_measured", True)),
         notes=str(obj.get("notes", "")),
     )
     ea.validate()
