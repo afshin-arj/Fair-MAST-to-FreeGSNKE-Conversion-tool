@@ -882,53 +882,23 @@ def run_planner_stage(
 
     plots_written: List[str] = []
     try:
-        import matplotlib
+        from .planner_plots import write_planner_iv_plots
 
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-
-        fig, axs = plt.subplots(2, 1, figsize=(9, 7), dpi=120, sharex=True)
-        for i, c in enumerate(order):
-            axs[0].plot(times, V_plan[:, i], label=f"{c} plan")
-            axs[0].plot(times, V_obs[:, i], "--", alpha=0.7, label=f"{c} obs")
-        axs[0].set_ylabel("V [V]")
-        axs[0].set_title("Planned vs observed voltages (honesty: see drive_labels)")
-        axs[0].grid(True, alpha=0.3)
-        axs[0].legend(fontsize=7, ncol=2, loc="best")
-        for i, c in enumerate(order):
-            axs[1].plot(times, V_plan[:, i] - V_obs[:, i], label=c)
-        axs[1].set_xlabel("t [s]")
-        axs[1].set_ylabel("ΔV plan−obs [V]")
-        axs[1].grid(True, alpha=0.3)
-        axs[1].legend(fontsize=7, ncol=4, loc="best")
-        fig.tight_layout()
-        plot_path = out_dir / "planning_voltage_residual.png"
-        fig.savefig(plot_path, bbox_inches="tight")
-        plt.close(fig)
-        plots_written.append(str(plot_path.name))
-
-        # Path B6-full: planned vs measured currents
-        fig2, axs2 = plt.subplots(2, 1, figsize=(9, 7), dpi=120, sharex=True)
-        for i, c in enumerate(order):
-            axs2[0].plot(times, I_plan[:, i], label=f"{c} plan")
-            axs2[0].plot(times, I_tgt[:, i], "--", alpha=0.7, label=f"{c} meas")
-        axs2[0].set_ylabel("I [A]")
-        axs2[0].set_title("Planned vs measured PF/CS currents")
-        axs2[0].grid(True, alpha=0.3)
-        axs2[0].legend(fontsize=7, ncol=2, loc="best")
-        for i, c in enumerate(order):
-            axs2[1].plot(times, I_plan[:, i] - I_tgt[:, i], label=c)
-        axs2[1].set_xlabel("t [s]")
-        axs2[1].set_ylabel("ΔI plan−meas [A]")
-        axs2[1].grid(True, alpha=0.3)
-        axs2[1].legend(fontsize=7, ncol=4, loc="best")
-        fig2.tight_layout()
-        plot_i = out_dir / "planning_current_residual.png"
-        fig2.savefig(plot_i, bbox_inches="tight")
-        plt.close(fig2)
-        plots_written.append(str(plot_i.name))
+        plots_written.extend(
+            write_planner_iv_plots(
+                out_dir,
+                times=times,
+                circuit_order=order,
+                I_plan=I_plan,
+                I_meas=I_tgt,
+                V_plan=V_plan,
+                V_obs=V_obs,
+                coil_limits=coil_limits,
+                drive_labels=drive_labels,
+            )
+        )
     except Exception as e:
-        plots_written.append(f"plot_skipped:{type(e).__name__}")
+        plots_written.append(f"plot_skipped:{type(e).__name__}: {e}")
 
     # Inventory EFIT shape targets (Path B1 authority + legacy efit_compare artifacts)
     shape_targets_available: Dict[str, Any] = {"present": False, "paths": []}

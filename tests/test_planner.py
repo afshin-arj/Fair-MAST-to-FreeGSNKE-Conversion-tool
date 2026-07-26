@@ -262,7 +262,10 @@ def test_run_planner_stage_with_synthetic_dynamics(tmp_path: Path) -> None:
     assert (out / "planning_residual_vs_measured_V.csv").exists()
     assert (out / "PLANNER.json").exists()
     assert (out / "planning_residual_timeseries.csv").exists()
-    assert (out / "planning_voltage_residual.png").exists()
+    assert (out / "planning_voltage_by_circuit.png").exists()
+    assert (out / "planning_current_by_circuit.png").exists()
+    assert (out / "planning_voltage_delta.png").exists()
+    assert (out / "planning_current_delta.png").exists()
     meta = json.loads((out / "PLANNER.json").read_text(encoding="utf-8"))
     assert meta["drive_labels"]["P3"] == "ohmic_synthetic_IxR"
     assert meta["drive_labels"]["Solenoid"] == "measured_fairmast_V"

@@ -842,7 +842,7 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
         shot,
         plot_paths,
         run_dir,
-        "No planner residual plots yet — re-run with execute_planner=true.",
+        "No planner I/V plots yet — re-run with execute_planner=true.",
     )
 
     rl_table: Any = html.P("No cited R/L snapshot.", className="text-muted small")
@@ -1762,7 +1762,10 @@ def auth_panel(shot: int, run_dir: Path) -> Any:
         ("07_planner/PLANNER.md", "PLANNER.md"),
         (pinfo.get("resid_rel"), "residual summary CSV"),
         ("07_planner/planning_residual_timeseries.csv", "residual timeseries"),
-        (pinfo.get("plot_rel"), "ΔV plot"),
+        (pinfo.get("plot_rel"), "V by circuit"),
+        (pinfo.get("plot_i_rel"), "I by circuit"),
+        (pinfo.get("plot_v_delta_rel"), "ΔV plot"),
+        (pinfo.get("plot_i_delta_rel"), "ΔI plot"),
         (pinfo.get("limits_rel"), "coil_limits"),
         (pinfo.get("dyn_rel"), "circuit R/L"),
         (pinfo.get("auth_rel"), "planner_authority"),
@@ -2275,7 +2278,12 @@ def _compare_planner_plot_paths(run_dir: Optional[Path], pinfo: Dict[str, Any]) 
     if run_dir is None:
         return []
     out: List[Path] = []
-    for rel in (pinfo.get("plot_i_rel"), pinfo.get("plot_rel")):
+    for rel in (
+        pinfo.get("plot_i_rel"),
+        pinfo.get("plot_i_delta_rel"),
+        pinfo.get("plot_rel"),
+        pinfo.get("plot_v_delta_rel"),
+    ):
         if not rel:
             continue
         resolved = art.safe_resolve_under(Path(run_dir), str(rel))

@@ -707,8 +707,24 @@ def load_planner_info(run_dir: Path) -> Dict[str, Any]:
     run_dir = Path(run_dir)
     plan_rel = "07_planner/PLANNER.json"
     resid_rel = "07_planner/planning_residual_vs_measured_V.csv"
-    plot_rel = "07_planner/planning_voltage_residual.png"
-    plot_i_rel = "07_planner/planning_current_residual.png"
+
+    def _first_plot(*candidates: str) -> Optional[str]:
+        for rel in candidates:
+            if (run_dir / rel).is_file():
+                return rel
+        return None
+
+    # Prefer small-multiples; fall back to legacy overlay residuals for older runs.
+    plot_rel = _first_plot(
+        "07_planner/planning_voltage_by_circuit.png",
+        "07_planner/planning_voltage_residual.png",
+    )
+    plot_i_rel = _first_plot(
+        "07_planner/planning_current_by_circuit.png",
+        "07_planner/planning_current_residual.png",
+    )
+    plot_v_delta_rel = _first_plot("07_planner/planning_voltage_delta.png")
+    plot_i_delta_rel = _first_plot("07_planner/planning_current_delta.png")
     limits_rel = "inputs/coil_limits_authority/coil_limits_authority.json"
     auth_rel = "inputs/planner_authority/planner_authority.json"
     dyn_rel = "inputs/circuit_dynamics_authority/circuit_dynamics_authority.json"
@@ -743,8 +759,10 @@ def load_planner_info(run_dir: Path) -> Dict[str, Any]:
         "rl_circuits": None,
         "plan_rel": plan_rel if (run_dir / plan_rel).is_file() else None,
         "resid_rel": resid_rel if (run_dir / resid_rel).is_file() else None,
-        "plot_rel": plot_rel if (run_dir / plot_rel).is_file() else None,
-        "plot_i_rel": plot_i_rel if (run_dir / plot_i_rel).is_file() else None,
+        "plot_rel": plot_rel,
+        "plot_i_rel": plot_i_rel,
+        "plot_v_delta_rel": plot_v_delta_rel,
+        "plot_i_delta_rel": plot_i_delta_rel,
         "limits_rel": limits_rel if (run_dir / limits_rel).is_file() else None,
         "auth_rel": auth_rel if (run_dir / auth_rel).is_file() else None,
         "dyn_rel": dyn_rel if (run_dir / dyn_rel).is_file() else None,
@@ -1181,6 +1199,10 @@ _PREFERRED_DOWNLOADS = (
     "07_planner/shape_targets.json",
     "07_planner/planning_residual_vs_measured_V.csv",
     "07_planner/planning_residual_timeseries.csv",
+    "07_planner/planning_voltage_by_circuit.png",
+    "07_planner/planning_current_by_circuit.png",
+    "07_planner/planning_voltage_delta.png",
+    "07_planner/planning_current_delta.png",
     "07_planner/planning_voltage_residual.png",
     "07_planner/planning_current_residual.png",
     "07_planner/isoflux_residual.json",

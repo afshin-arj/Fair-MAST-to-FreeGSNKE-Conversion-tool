@@ -1,3 +1,9 @@
+## 11.18.0 — Planner I/V small-multiples + cited limit bands
+
+- Static planner plots: per-circuit small-multiples for planned vs measured I and planned vs observed V, plus ΔI/ΔV panels; cited coil-limit bands and ohmic-drive tags (`ohmic_synthetic_IxR`).
+- New filenames under `07_planner/`; UI prefers them with legacy `*_residual.png` fallback for older runs.
+- Version **11.18.0**.
+
 ## 11.17.0 — Planner isoflux via FreeGSNKE python bridge
 
 - Run planner stage under ``freegsnke_python`` when configured so Path B2 isoflux Green’s and Path B3 Picard can ``import freegsnke`` (shot 30201 previously soft-failed with ModuleNotFoundError in host Python).
