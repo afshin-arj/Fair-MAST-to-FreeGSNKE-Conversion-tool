@@ -1,3 +1,9 @@
+## 11.17.0 — Planner isoflux via FreeGSNKE python bridge
+
+- Run planner stage under ``freegsnke_python`` when configured so Path B2 isoflux Green’s and Path B3 Picard can ``import freegsnke`` (shot 30201 previously soft-failed with ModuleNotFoundError in host Python).
+- UI: surface isoflux/Picard status + note on Planner tab; bridge fallback recorded in ``PLANNER.json``.
+- Soft-skip / certify YELLOW unchanged when FreeGSNKE env missing. Version **11.17.0**.
+
 ## 11.16.0 — Planner honesty hardening + Path B5 wiring + evolutive-from-plan
 
 - **P0 honesty:** certify warns on `planner_voltage_exceeds_measured_peak_margin`; coil-limits V peaks use full L mutuals when available; UI primary KPI is measured-only V RMS; Picard reports `picard_rel_tol` + `converged`.

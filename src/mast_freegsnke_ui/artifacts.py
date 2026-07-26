@@ -813,8 +813,17 @@ def load_planner_info(run_dir: Path) -> Dict[str, Any]:
         out["isoflux_cost"] = meta.get("isoflux_cost")
         out["isoflux_mode"] = meta.get("isoflux_mode")
         out["isoflux_status"] = meta.get("isoflux_status")
-        out["limitations"] = list(meta.get("limitations") or [])[:8]
         iso_res = meta.get("isoflux_residuals") if isinstance(meta.get("isoflux_residuals"), dict) else {}
+        out["isoflux_note"] = iso_res.get("note") or meta.get("isoflux_note")
+        pic_rep = meta.get("picard_report") if isinstance(meta.get("picard_report"), dict) else {}
+        if isinstance(picard_obj, dict) and not out.get("picard_status"):
+            out["picard_status"] = picard_obj.get("status")
+        out["picard_note"] = (
+            pic_rep.get("note")
+            or (picard_obj.get("note") if isinstance(picard_obj, dict) else None)
+        )
+        out["planner_bridge_fallback"] = meta.get("planner_bridge_fallback")
+        out["limitations"] = list(meta.get("limitations") or [])[:8]
         planned = iso_res.get("planned") if isinstance(iso_res.get("planned"), dict) else {}
         out["isoflux_rms_mean"] = planned.get("isoflux_rms_mean")
         out["xpoint_B_rms_mean"] = planned.get("xpoint_B_rms_mean")
@@ -831,7 +840,9 @@ def load_planner_info(run_dir: Path) -> Dict[str, Any]:
         out["detail"] = (
             f"method={out.get('method')} v{out.get('method_version') or '?'} "
             f"picard={out.get('picard')} mode={out.get('picard_mode')} "
+            f"status={out.get('picard_status')} "
             f"isoflux={out.get('isoflux_cost')} "
+            f"isoflux_status={out.get('isoflux_status')} "
             f"isoflux_mode={out.get('isoflux_mode')} "
             f"psi_bry={out.get('psi_bry_cost')} "
             f"psi_bry_mode={out.get('psi_bry_mode')} "

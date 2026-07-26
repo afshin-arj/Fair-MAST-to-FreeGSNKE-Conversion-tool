@@ -756,6 +756,7 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
             "yes" if isoflux is True else ("no" if isoflux is False else "—"),
             tone="ok" if isoflux is True else ("warn" if isoflux is False else ""),
         ),
+        chip("isoflux_st", pinfo.get("isoflux_status") or "—"),
         chip("isoflux_mode", pinfo.get("isoflux_mode") or "—"),
         chip(
             "psi_bry",
@@ -766,6 +767,34 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
         chip("knots", pinfo.get("n_knots")),
         chip("mutuals", pinfo.get("circuit_dynamics_mutuals") or "—"),
     ]
+    shape_fail_note = None
+    if pinfo.get("isoflux_cost") is False and (pinfo.get("isoflux_note") or pinfo.get("isoflux_status")):
+        shape_fail_note = html.P(
+            f"Isoflux: {pinfo.get('isoflux_status') or '—'} — "
+            f"{str(pinfo.get('isoflux_note') or '')[:220]}",
+            className="small text-warning mb-1",
+        )
+    if pinfo.get("picard") is False and (pinfo.get("picard_note") or pinfo.get("picard_status")):
+        shape_fail_note = html.Div(
+            [
+                shape_fail_note,
+                html.P(
+                    f"Picard: {pinfo.get('picard_status') or '—'} — "
+                    f"{str(pinfo.get('picard_note') or '')[:220]}",
+                    className="small text-warning mb-1",
+                ),
+            ]
+        )
+    if pinfo.get("planner_bridge_fallback"):
+        shape_fail_note = html.Div(
+            [
+                shape_fail_note,
+                html.P(
+                    f"FreeGSNKE bridge fallback: {str(pinfo.get('planner_bridge_fallback'))[:220]}",
+                    className="small text-warning mb-1",
+                ),
+            ]
+        )
 
     hashes = pinfo.get("authority_hashes") or {}
     hash_chips = [chip(k, v or "—") for k, v in hashes.items() if v or k in ("planner_authority", "coil_limits")]
@@ -890,6 +919,7 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
         chip("used", "yes" if pinfo.get("picard") else "no", tone="ok" if pinfo.get("picard") else "warn"),
         chip("mode", pinfo.get("picard_mode") or "—"),
         chip("status", pinfo.get("picard_status") or "—"),
+        chip("isoflux_st", pinfo.get("isoflux_status") or "—"),
     ]
 
     sections = [
@@ -899,6 +929,7 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
                 [
                     html.P("Certify YELLOW if Picard / isoflux / ψ_bry soft-skipped.", className="small text-muted"),
                     html.Div(honesty, className="compare-chip-row mb-2"),
+                    shape_fail_note,
                     html.P(pinfo.get("detail") or "—", className="small text-muted mb-0"),
                 ]
             ),

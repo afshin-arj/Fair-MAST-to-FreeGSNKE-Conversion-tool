@@ -206,7 +206,6 @@ def replan_shot(
     from .config import AppConfig
     from .planner import (
         load_planner_authority,
-        run_planner_stage,
         write_circuit_dynamics,
     )
     from .voltage_map import load_voltage_map
@@ -321,7 +320,9 @@ def replan_shot(
         cache = repo_root / cache
     cache_shot = cache / f"shot_{int(shot)}"
 
-    out = run_planner_stage(
+    from .planner_freegsnke_bridge import run_planner_stage_prefer_freegsnke
+
+    out = run_planner_stage_prefer_freegsnke(
         run_dir=run_dir,
         inputs_dir=inputs,
         machine_dir=ma,
@@ -330,10 +331,13 @@ def replan_shot(
         circuit_order=order,
         t_start=t0,
         t_end=t1,
+        freegsnke_python=getattr(cfg, "freegsnke_python", None),
+        repo_root=repo_root,
         shot=int(shot),
         circuit_dynamics=dyn,
         shape_targets=st if isinstance(st, dict) else None,
         cache_dir=cache_shot if cache_shot.is_dir() else cache,
+        timeout_s=getattr(cfg, "freegsnke_script_timeout_s", 1200.0),
     )
     return {
         "ok": True,

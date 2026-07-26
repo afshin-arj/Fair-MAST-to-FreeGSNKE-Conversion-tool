@@ -24,5 +24,5 @@
   "require_psi_bry": false,
   "weight_psi_bry": 1.0,
   "max_qp_iterations": 40,
-  "notes": "ADR-004 Phase 2b / Path B. Python GSPulse-method planner (no MATLAB). v1.3.1: current-tracking + L/R + vacuum isoflux + Picard plasma freeze (picard_rel_tol + converged) + optional ψ_bry. Soft-skip missing data. Certify YELLOW without successful isoflux+Picard; warn on voltage_exceeds_measured_peak_margin. Passives blocked on classic-MAST ρ. Never invents I/V limits or Rp."
+  "notes": "ADR-004 Phase 2b / Path B. Python GSPulse-method planner (no MATLAB). v1.3.1: current-tracking + L/R + vacuum isoflux + Picard (picard_rel_tol + converged) + optional ψ_bry. Pipeline runs planner under freegsnke_python when configured so isoflux/Picard can import FreeGSNKE. Soft-skip missing data. Certify YELLOW without successful isoflux+Picard; warn on voltage_exceeds_measured_peak_margin. Passives blocked on classic-MAST ρ. Never invents I/V limits or Rp."
 }

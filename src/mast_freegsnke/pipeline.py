@@ -1716,8 +1716,6 @@ class ShotPipeline:
             # ADR-004 Phase 2: optional GSPulse-style planner (default off)
             if self.cfg.execute_planner and final_tw is not None:
                 try:
-                    from .planner import run_planner_stage
-
                     pl_snap = inputs_dir / "planner_authority" / "planner_authority.json"
                     cl_snap = inputs_dir / "coil_limits_authority" / "coil_limits_authority.json"
                     if not pl_snap.exists() or not cl_snap.exists():
@@ -1890,7 +1888,9 @@ class ShotPipeline:
                             )
                             write_coil_limits(inputs_dir, cl_auth)
 
-                        prep = run_planner_stage(
+                        from .planner_freegsnke_bridge import run_planner_stage_prefer_freegsnke
+
+                        prep = run_planner_stage_prefer_freegsnke(
                             run_dir=run_dir,
                             inputs_dir=inputs_dir,
                             machine_dir=ma_for_plan,
@@ -1899,6 +1899,8 @@ class ShotPipeline:
                             circuit_order=order,
                             t_start=float(final_tw.t_start),
                             t_end=float(final_tw.t_end),
+                            freegsnke_python=self.cfg.freegsnke_python,
+                            repo_root=repo_root,
                             shot=int(shot),
                             circuit_dynamics=dyn,
                             shape_targets=(
@@ -1917,6 +1919,7 @@ class ShotPipeline:
                                 else None
                             ),
                             cache_dir=shot_cache,
+                            timeout_s=self.cfg.freegsnke_script_timeout_s,
                         )
                         _stage(
                             "planner",
