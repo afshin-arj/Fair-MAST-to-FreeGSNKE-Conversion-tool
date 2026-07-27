@@ -27,15 +27,24 @@ class CircuitLimit:
     notes: str = ""
 
     def validate(self, name: str) -> None:
-        if not isinstance(self.Imax_A, (int, float)) or float(self.Imax_A) <= 0:
-            raise CoilLimitsError(f"{name}: Imax_A must be > 0 (got {self.Imax_A!r})")
-        if not isinstance(self.Vmax_V, (int, float)) or float(self.Vmax_V) <= 0:
-            raise CoilLimitsError(f"{name}: Vmax_V must be > 0 (got {self.Vmax_V!r})")
-        imin = float(self.Imin_A) if self.Imin_A is not None else -float(self.Imax_A)
-        vmin = float(self.Vmin_V) if self.Vmin_V is not None else -float(self.Vmax_V)
-        if imin >= float(self.Imax_A):
+        if not isinstance(self.Imax_A, (int, float)) or float(self.Imax_A) < 0:
+            raise CoilLimitsError(f"{name}: Imax_A must be >= 0 (got {self.Imax_A!r})")
+        if not isinstance(self.Vmax_V, (int, float)) or float(self.Vmax_V) < 0:
+            raise CoilLimitsError(f"{name}: Vmax_V must be >= 0 (got {self.Vmax_V!r})")
+        imax = float(self.Imax_A)
+        vmax = float(self.Vmax_V)
+        imin = float(self.Imin_A) if self.Imin_A is not None else -imax
+        vmin = float(self.Vmin_V) if self.Vmin_V is not None else -vmax
+        # Idle measured circuit (peak|I|=0 → Imax=0) is an honest box at 0, not invent.
+        if imax == 0.0:
+            if imin != 0.0:
+                raise CoilLimitsError(f"{name}: idle circuit (Imax=0) requires Imin_A=0")
+        elif imin >= imax:
             raise CoilLimitsError(f"{name}: Imin_A must be < Imax_A")
-        if vmin >= float(self.Vmax_V):
+        if vmax == 0.0:
+            if vmin != 0.0:
+                raise CoilLimitsError(f"{name}: idle circuit (Vmax=0) requires Vmin_V=0")
+        elif vmin >= vmax:
             raise CoilLimitsError(f"{name}: Vmin_V must be < Vmax_V")
 
     def i_bounds(self) -> tuple[float, float]:
@@ -218,11 +227,12 @@ def _peak_abs_in_window(path: Path, circuit: str, t_start: float, t_end: float) 
             f"[{t_start:.6g},{t_end:.6g}]"
         )
     peak = float(np.max(np.abs(vals)))
-    if not np.isfinite(peak) or peak <= 0.0:
+    if not np.isfinite(peak) or peak < 0.0:
         raise CoilLimitsError(
-            f"{path.name}/{circuit}: non-positive peak |signal|={peak} in window "
+            f"{path.name}/{circuit}: invalid peak |signal|={peak} in window "
             "(cannot form margin limits)"
         )
+    # peak==0 is honest (idle circuit in window) → Imax/Vmax resolve to 0, not invent.
     return peak
 
 
@@ -372,6 +382,11 @@ def resolve_measured_peak_limits(
                 f"resolved measured_peak_margin: "
                 f"Imax={factor:g}*|{i_peak:.6g}|A, "
                 f"Vmax={factor:g}*|{v_peak:.6g}|V ({v_source})"
+                + (
+                    "; idle in window (peak|I|=0 → box at 0, not invented)"
+                    if i_peak == 0.0
+                    else ""
+                )
             ),
         )
         peaks[str(name)] = {

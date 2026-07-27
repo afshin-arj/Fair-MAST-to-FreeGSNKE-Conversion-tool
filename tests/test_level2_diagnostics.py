@@ -56,7 +56,35 @@ def _write_thomson_zarr(path: Path) -> None:
     ds.to_zarr(path, mode="w")
 
 
-def test_optional_groups_list_covers_mastapp_catalog() -> None:
+def test_plot_2d_handles_transposed_dims(tmp_path: Path) -> None:
+    """Thomson-like arrays with (R, time) dim order must not raise pcolormesh errors."""
+    from mast_freegsnke.level2_diagnostics import _plot_2d_da
+
+    time = np.linspace(0.0, 0.3, 80)
+    r = np.linspace(0.2, 1.0, 40)
+    # Deliberately transposed vs (time, R)
+    da = xr.DataArray(
+        np.random.default_rng(0).random((40, 80)),
+        dims=("major_radius", "time"),
+        coords={"major_radius": r, "time": time},
+        name="t_e",
+    )
+    report = ExperimentalDataReport()
+    out = tmp_path / "t_e.png"
+    _plot_2d_da(
+        da,
+        out,
+        shot=30201,
+        title="t_e",
+        y_coord="major_radius",
+        window=(0.05, 0.25),
+        report=report,
+        run_dir=tmp_path,
+    )
+    assert out.is_file()
+    assert out.stat().st_size > 1000
+    assert not any("diag_plot_2d_failed" in w for w in report.warnings)
+
     assert "soft_x_rays" in OPTIONAL_DIAGNOSTIC_GROUPS
     assert "thomson_scattering" in OPTIONAL_DIAGNOSTIC_GROUPS
     assert "charge_exchange" in OPTIONAL_DIAGNOSTIC_GROUPS

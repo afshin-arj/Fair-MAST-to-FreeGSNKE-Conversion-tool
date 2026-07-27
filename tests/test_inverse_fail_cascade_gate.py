@@ -26,3 +26,29 @@ def test_inverse_template_t0_uses_hard_kill_not_uncapped_solve() -> None:
     before_synth = main.split("write_synthetic_probe_csvs", 1)[0]
     # Direct t0 solve in main must go through _solve_one_sample (hard kill).
     assert before_synth.count("_solve_one_sample(") >= 1
+
+
+def test_inverse_template_normalises_profiles_before_pprime_dump() -> None:
+    """After hard-kill restore, fresh ConstrainPaxisIp lacks L/Beta0 until Jtor.
+
+    Without Jtor + guarded pprime, t0 forward_gs fallback aborts before
+    inverse_dump.pkl (shot 30202 regression under 11.19.2).
+    """
+    tpl = (REPO / "templates" / "inverse_run.py.tpl").read_text(encoding="utf-8")
+    dump_region = tpl.split("import pickle", 1)[1].split("with open(HERE/\"inverse_dump.pkl\"", 1)[0]
+    assert "profiles.Jtor(" in dump_region
+    assert "pprime/ffprime dump skipped" in dump_region
+    assert "pprime=_pprime" in dump_region
+    assert "eq._profiles = profiles" in dump_region
+
+
+def test_inverse_template_plot_failsoft_after_dump() -> None:
+    """Plot / optional TORAX must not abort after inverse_dump.pkl is written."""
+    tpl = (REPO / "templates" / "inverse_run.py.tpl").read_text(encoding="utf-8")
+    after_dump = tpl.split('print("Saved inverse_dump.pkl")', 1)[1]
+    assert "never abort after a successful dump" in after_dump or "inverse_equilibrium.png failed" in after_dump
+    assert "eq.plot failed" in after_dump
+    # Optional TORAX must warn, not re-raise.
+    torax = after_dump.split("ADR-001", 1)[1].split("write_synthetic_probe_csvs", 1)[0]
+    assert "raise" not in torax
+    assert "torax geometry export failed" in torax

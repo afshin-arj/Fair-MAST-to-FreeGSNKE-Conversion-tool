@@ -251,9 +251,24 @@ def _plot_2d_da(
         vals = da
         for d in [d for d in vals.dims if d not in (tname, y_coord)]:
             vals = vals.isel({d: 0})
-        t = np.asarray(vals[tname].values, dtype=float)
-        r = np.asarray(vals[y_coord].values, dtype=float)
+        # Always (time, y) regardless of DataArray dim order — avoids pcolormesh C/X/Y mismatch.
+        try:
+            vals = vals.transpose(tname, y_coord)
+        except Exception:
+            return
+        t = np.asarray(vals[tname].values, dtype=float).ravel()
+        r = np.asarray(vals[y_coord].values, dtype=float).ravel()
         z = np.asarray(vals.values, dtype=float)
+        if z.ndim != 2:
+            report.warnings.append(f"diag_plot_2d_skipped:{da.name}:expected_2d_got_{z.ndim}d")
+            return
+        if z.shape != (t.size, r.size):
+            # Last-resort align: refuse silent invent; warn honestly.
+            report.warnings.append(
+                f"diag_plot_2d_skipped:{da.name}:shape_mismatch "
+                f"z{z.shape} vs t({t.size})×r({r.size})"
+            )
+            return
         # Cap resolution for speed / file size
         if t.size > 400:
             step = int(np.ceil(t.size / 400))
@@ -264,7 +279,8 @@ def _plot_2d_da(
             r = r[::step]
             z = z[:, ::step]
         fig, ax = plt.subplots(figsize=(9.5, 4.8))
-        pcm = ax.pcolormesh(t, r, z.T, shading="auto", cmap="viridis")
+        # z.T → (r, t) for pcolormesh(X=t, Y=r); nearest avoids flat-cell size constraints.
+        pcm = ax.pcolormesh(t, r, z.T, shading="nearest", cmap="viridis")
         fig.colorbar(pcm, ax=ax, pad=0.02)
         if window:
             ax.axvline(window[0], color="w", ls="--", lw=0.8, alpha=0.7)

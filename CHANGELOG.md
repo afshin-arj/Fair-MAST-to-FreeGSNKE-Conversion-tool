@@ -1,3 +1,11 @@
+## 11.19.3 — Level-2 2D plots + t0 dump/plot + idle-coil limits
+
+- **Thomson/CXRS 2D plots:** transpose DataArrays to `(time, y)` before `pcolormesh` (`shading=nearest`); shape mismatch → honest skip warning (fixes `diag_plot_2d_failed:t_e:TypeError` on shot 30201).
+- **Inverse dump:** after hard-kill child restore, call `profiles.Jtor` + attach `eq._profiles` before `pprime`/`ffprime`; guard dump so t0 `forward_gs` fallback still writes `inverse_dump.pkl`.
+- **Inverse plot fail-soft:** curated/`eq.plot` failures after dump no longer abort the script (shot 30202: missing `_profiles` → `RuntimeError`); optional TORAX export warns without re-raise.
+- **Coil limits:** `measured_peak_margin` allows peak `|I|=0` (idle circuit → Imax/Vmax=0), fixing planner fail on shot 30203 P6.
+- Version **11.19.3**.
+
 ## 11.19.2 — t0 inverse hard-timeout + fail-cascade gate (shot 30202)
 
 - Root cause: uncapped t0 `solver.solve` hung in freegs4e jtor / residual-resize until the 1200s script kill; forward then `FileNotFoundError` on `inverse_dump.pkl`; contracts exploded into one `syn.csv not found` per channel.

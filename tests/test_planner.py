@@ -99,6 +99,34 @@ def test_resolve_measured_peak_limits(tmp_path: Path) -> None:
     assert resolved.resolution["margin_factor"] == 1.2
 
 
+def test_resolve_measured_peak_limits_idle_circuit_zero_peak(tmp_path: Path) -> None:
+    """Shot 30203 P6: measured |I|=0 in window must resolve to Imax=Vmax=0 (not invent)."""
+    from mast_freegsnke.coil_limits import resolve_measured_peak_limits
+
+    inputs = tmp_path / "inputs"
+    inputs.mkdir()
+    t = np.linspace(0.1, 0.5, 21)
+    I = {c: np.full_like(t, 100.0 * (i + 1)) for i, c in enumerate(ORDER)}
+    V = {c: np.full_like(t, 10.0 * (i + 1)) for i, c in enumerate(ORDER)}
+    I["P6"] = np.zeros_like(t)
+    V["P6"] = np.zeros_like(t)
+    pd.DataFrame({"time": t, **I}).to_csv(inputs / "pf_currents.csv", index=False)
+    pd.DataFrame({"time": t, **V}).to_csv(inputs / "pf_voltages.csv", index=False)
+    policy = load_coil_limits(REPO / "configs" / "coil_limits_authority.json")
+    resolved = resolve_measured_peak_limits(
+        policy,
+        inputs_dir=inputs,
+        circuit_order=ORDER,
+        t_start=0.1,
+        t_end=0.5,
+        R_ohm_by_circuit={c: 0.01 for c in ORDER},
+    )
+    assert resolved.circuits["P6"].Imax_A == pytest.approx(0.0)
+    assert resolved.circuits["P6"].Vmax_V == pytest.approx(0.0)
+    assert resolved.circuits["P6"].Imin_A == pytest.approx(0.0)
+    assert "idle" in (resolved.circuits["P6"].notes or "").lower()
+    assert resolved.circuits["Solenoid"].Imax_A == pytest.approx(120.0)
+
 def test_resolve_measured_peak_limits_ohmic_nan_fallback(tmp_path: Path) -> None:
     from mast_freegsnke.coil_limits import resolve_measured_peak_limits
 

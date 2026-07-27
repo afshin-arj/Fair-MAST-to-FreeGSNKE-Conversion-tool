@@ -934,11 +934,32 @@ def main():
             print("[WARN] FreeGSNKE LCFS extract returned None after inverse")
     except Exception as _lcfs_e:
         print(f"[WARN] FreeGSNKE LCFS extract failed: {_lcfs_e}")
+    # Fresh ConstrainPaxisIp after hard-kill child restore has no L/Beta0 until Jtor.
+    # Without this, pprime/ffprime raise and abort the run even when t0 forward_gs ok
+    # (shot 30202: t0 inverse timeout → forward_gs → ValueError on dump).
+    try:
+        _psi_for_jtor = eq.psi() if callable(getattr(eq, "psi", None)) else getattr(eq, "psi", None)
+        if _psi_for_jtor is None:
+            raise RuntimeError("eq.psi unavailable for Jtor normalise")
+        profiles.Jtor(eq.R, eq.Z, np.asarray(_psi_for_jtor, dtype=float))
+        # freegs4e plot / curated presentation require eq._profiles after child restore
+        try:
+            eq._profiles = profiles
+        except Exception:
+            pass
+    except Exception as _jtor_e:
+        print(f"[WARN] profile Jtor normalise failed: {_jtor_e}", flush=True)
+    _pprime = _ffprime = None
+    try:
+        _pprime = np.array([profiles.pprime(x) for x in pn], dtype=float)
+        _ffprime = np.array([profiles.ffprime(x) for x in pn], dtype=float)
+    except Exception as _pp_e:
+        print(f"[WARN] pprime/ffprime dump skipped: {_pp_e}", flush=True)
     dump = dict(
         execution_authority_bundle=ea,
         pn=pn,
-        pprime=np.array([profiles.pprime(x) for x in pn], dtype=float),
-        ffprime=np.array([profiles.ffprime(x) for x in pn], dtype=float),
+        pprime=_pprime,
+        ffprime=_ffprime,
         fvac=float(fvac_val),
         profile_kwargs=dict(paxis=float(profiles.paxis), Ip=float(profiles.Ip), alpha_m=float(profiles.alpha_m), alpha_n=float(profiles.alpha_n)),
         plasma_psi=np.array(eq.plasma_psi, dtype=float),
@@ -981,36 +1002,61 @@ def main():
         pickle.dump(dump, f)
     print("Saved inverse_dump.pkl")
 
-    fig, ax = plt.subplots(1,1, figsize=(6,10), dpi=140)
+    # Plot is best-effort — never abort after a successful dump (shot 30202:
+    # hard-kill restore leaves eq without _profiles; freegs4e.plot raises).
     try:
-        from mast_freegsnke.equilibrium_presentation import plot_equilibrium_curated
-
-        plot_equilibrium_curated(ax, eq, tokamak)
-    except Exception:
-        tokamak.plot(axis=ax, show=False)
+        fig, ax = plt.subplots(1,1, figsize=(6,10), dpi=140)
+        _plot_ok = False
         try:
-            eq.plot(axis=ax, show=False, xpoints=False, opoints=True)
-        except TypeError:
-            eq.plot(axis=ax, show=False)
-        try:
-            from mast_freegsnke.equilibrium_presentation import overlay_honest_xpoints
+            from mast_freegsnke.equilibrium_presentation import plot_equilibrium_curated
 
-            overlay_honest_xpoints(ax, eq)
+            plot_equilibrium_curated(ax, eq, tokamak)
+            _plot_ok = True
+        except Exception as _cur_e:
+            print(f"[WARN] curated equilibrium plot failed: {_cur_e}", flush=True)
+            try:
+                tokamak.plot(axis=ax, show=False)
+            except Exception:
+                pass
+            try:
+                eq.plot(axis=ax, show=False, xpoints=False, opoints=True)
+                _plot_ok = True
+            except TypeError:
+                try:
+                    eq.plot(axis=ax, show=False)
+                    _plot_ok = True
+                except Exception as _eqp_e:
+                    print(f"[WARN] eq.plot failed: {_eqp_e}", flush=True)
+            except Exception as _eqp_e:
+                print(f"[WARN] eq.plot failed: {_eqp_e}", flush=True)
+            try:
+                from mast_freegsnke.equilibrium_presentation import overlay_honest_xpoints
+
+                overlay_honest_xpoints(ax, eq)
+            except Exception:
+                pass
+        # Overlay Inverse *targets* (archive-remapped when shape_targets present)
+        try:
+            Rx, Ro = float(null_points[0][0]), float(null_points[0][1])
+            Zx, Zo = float(null_points[1][0]), float(null_points[1][1])
+            ax.plot(Rx, Zx, "r+", ms=14, mew=2.0, label="X target (Inverse)")
+            ax.plot(Ro, Zo, "bo", ms=6, label="O target (Inverse)")
         except Exception:
             pass
-    # Overlay Inverse *targets* (archive-remapped when shape_targets present)
-    try:
-        Rx, Ro = float(null_points[0][0]), float(null_points[0][1])
-        Zx, Zo = float(null_points[1][0]), float(null_points[1][1])
-        ax.plot(Rx, Zx, "r+", ms=14, mew=2.0, label="X target (Inverse)")
-        ax.plot(Ro, Zo, "bo", ms=6, label="O target (Inverse)")
-    except Exception:
-        pass
-    ax.set_aspect("equal"); ax.grid(alpha=0.3)
-    ax.legend(loc="best", fontsize=8)
-    fig.tight_layout()
-    fig.savefig(HERE/"inverse_equilibrium.png", dpi=250, bbox_inches="tight")
-    print("Saved inverse_equilibrium.png")
+        ax.set_aspect("equal"); ax.grid(alpha=0.3)
+        try:
+            ax.legend(loc="best", fontsize=8)
+        except Exception:
+            pass
+        fig.tight_layout()
+        fig.savefig(HERE/"inverse_equilibrium.png", dpi=250, bbox_inches="tight")
+        print("Saved inverse_equilibrium.png" + ("" if _plot_ok else " (machine/targets only)"))
+        try:
+            plt.close(fig)
+        except Exception:
+            pass
+    except Exception as _fig_e:
+        print(f"[WARN] inverse_equilibrium.png failed: {_fig_e}", flush=True)
 
     # ADR-001 optional TORAX GEQDSK export (authority-gated; default off)
     try:
@@ -1033,7 +1079,6 @@ def main():
             )
     except Exception as _tge:
         print(f"[WARN] torax geometry export failed: {_tge}", flush=True)
-        raise
 
     # Multi-time synthetic probe diagnostics (contract metrics input, v10.5.0).
     # Runs LAST in child processes so the t0 inverse dump/plots stay pristine.
