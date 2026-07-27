@@ -193,6 +193,8 @@ class CircuitDynamics:
     L_henry: np.ndarray  # (n, n) mutual inductance (coil_self_ind active block)
     source: str
     notes: str = ""
+    # Structured provenance from circuit_dynamics_authority fill (preferred over note substrings).
+    fill_notes: Optional[Dict[str, Any]] = None
 
     def validate(self) -> None:
         n = len(self.circuit_order)
@@ -214,13 +216,55 @@ class CircuitDynamics:
 
     def to_json_dict(self) -> Dict[str, Any]:
         self.validate()
-        return {
+        out: Dict[str, Any] = {
             "circuit_order": list(self.circuit_order),
             "R_ohm": np.asarray(self.R_ohm, dtype=float).tolist(),
             "L_henry": np.asarray(self.L_henry, dtype=float).tolist(),
             "source": self.source,
             "notes": self.notes,
         }
+        if self.fill_notes is not None:
+            out["fill_notes"] = dict(self.fill_notes)
+        return out
+
+
+def mutuals_honesty_label(
+    *,
+    source: str = "",
+    notes: str = "",
+    fill_notes: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Prefer structured fill_notes['mutuals'] / exact mutuals= token over substring match."""
+    import re
+
+    if isinstance(fill_notes, dict):
+        m = fill_notes.get("mutuals")
+        if isinstance(m, str) and m.strip() and m.strip() != "unknown":
+            return m.strip()
+    # Prefer the last exact mutuals=<token> (authority fill appends the declared value last).
+    tokens = re.findall(r"(?:^|[|\s;])mutuals=([^\s|;]+)", str(notes or ""))
+    if tokens:
+        return tokens[-1]
+    src_l = str(source or "").lower()
+    if "mutuals_neglected" in src_l:
+        return "neglected_diagonal_self_only_declared"
+    if "prefer_freegsnke_mutuals" in src_l or "freegsnke_offdiag" in src_l:
+        return "freegsnke_offdiag_retained_cited_Lii_overlay"
+    if "freegsnke" in src_l:
+        return "freegsnke_active_block"
+    return "unknown"
+
+
+def residual_compare_class(drive_label: str) -> str:
+    """Tag residual rows so deferred ohmic V is not read as a failed measured-V fit."""
+    lab = str(drive_label or "")
+    if lab == "measured_fairmast_V":
+        return "measured_V"
+    if lab == "ohmic_synthetic_IxR":
+        return "deferred_ohmic_synthetic"
+    if lab in ("unknown", ""):
+        return "unknown"
+    return f"other:{lab}"
 
 
 def load_circuit_dynamics(path: Path) -> CircuitDynamics:
@@ -228,12 +272,14 @@ def load_circuit_dynamics(path: Path) -> CircuitDynamics:
     if not path.exists():
         raise PlannerError(f"circuit_dynamics snapshot not found: {path}")
     obj = json.loads(path.read_text(encoding="utf-8"))
+    fill = obj.get("fill_notes")
     dyn = CircuitDynamics(
         circuit_order=[str(x) for x in obj["circuit_order"]],
         R_ohm=np.asarray(obj["R_ohm"], dtype=float),
         L_henry=np.asarray(obj["L_henry"], dtype=float),
         source=str(obj.get("source", "")),
         notes=str(obj.get("notes", "")),
+        fill_notes=dict(fill) if isinstance(fill, dict) else None,
     )
     dyn.validate()
     return dyn
@@ -1049,10 +1095,12 @@ def run_planner_stage(
     resid_rows = []
     for i, c in enumerate(order):
         dV = V_plan[:, i] - V_obs[:, i]
+        dlab = drive_labels[c]
         resid_rows.append(
             {
                 "circuit": c,
-                "drive_label": drive_labels[c],
+                "drive_label": dlab,
+                "residual_compare_class": residual_compare_class(dlab),
                 "rms_V": float(np.sqrt(np.mean(dV**2))),
                 "mae_V": float(np.mean(np.abs(dV))),
                 "max_abs_V": float(np.max(np.abs(dV))),
@@ -1066,11 +1114,13 @@ def run_planner_stage(
     ts_rows: List[Dict[str, Any]] = []
     for k, t in enumerate(times):
         for i, c in enumerate(order):
+            dlab = drive_labels[c]
             ts_rows.append(
                 {
                     "time": float(t),
                     "circuit": c,
-                    "drive_label": drive_labels[c],
+                    "drive_label": dlab,
+                    "residual_compare_class": residual_compare_class(dlab),
                     "V_plan_V": float(V_plan[k, i]),
                     "V_obs_V": float(V_obs[k, i]),
                     "dV_V": float(V_plan[k, i] - V_obs[k, i]),
@@ -1200,22 +1250,35 @@ def run_planner_stage(
         json.dumps(picard_report, indent=2) + "\n", encoding="utf-8"
     )
 
-    # Mutual inductance honesty from dynamics notes/source
-    mutuals_note = "unknown"
-    src_l = str(circuit_dynamics.source or "")
-    notes_l = str(circuit_dynamics.notes or "")
-    if "mutuals_neglected" in src_l or "mutuals=neglected" in notes_l:
-        mutuals_note = "neglected_diagonal_self_only_declared"
-    elif "prefer_freegsnke_mutuals" in src_l or "freegsnke_offdiag" in notes_l:
-        mutuals_note = "freegsnke_offdiag_retained_cited_Lii_overlay"
-    elif "freegsnke" in src_l.lower():
-        mutuals_note = "freegsnke_active_block"
+    # Mutual inductance honesty: prefer structured fill_notes / exact tokens
+    mutuals_note = mutuals_honesty_label(
+        source=str(circuit_dynamics.source or ""),
+        notes=str(circuit_dynamics.notes or ""),
+        fill_notes=circuit_dynamics.fill_notes,
+    )
 
-    mean_rms = float(np.mean([r["rms_V"] for r in resid_rows])) if resid_rows else None
     measured_rms = [
-        r["rms_V"] for r in resid_rows if r["drive_label"] == "measured_fairmast_V"
+        r["rms_V"]
+        for r in resid_rows
+        if r["residual_compare_class"] == "measured_V"
+        and r["rms_V"] is not None
+        and np.isfinite(r["rms_V"])
     ]
     mean_rms_measured = float(np.mean(measured_rms)) if measured_rms else None
+    deferred_rms = [
+        r["rms_V"]
+        for r in resid_rows
+        if r["residual_compare_class"] == "deferred_ohmic_synthetic"
+        and r["rms_V"] is not None
+        and np.isfinite(r["rms_V"])
+    ]
+    mean_rms_deferred_ohmic = float(np.mean(deferred_rms)) if deferred_rms else None
+    finite_all = [
+        r["rms_V"]
+        for r in resid_rows
+        if r["rms_V"] is not None and np.isfinite(r["rms_V"])
+    ]
+    mean_rms = float(np.mean(finite_all)) if finite_all else None
 
     meta = {
         "shot": shot,
@@ -1252,6 +1315,13 @@ def run_planner_stage(
         "residual_rms_by_circuit": {r["circuit"]: r["rms_V"] for r in resid_rows},
         "residual_rms_mean_V": mean_rms,
         "residual_rms_mean_measured_V": mean_rms_measured,
+        "residual_rms_mean_deferred_ohmic_V": mean_rms_deferred_ohmic,
+        "voltage_plan_model": "circuit_dynamics_RI_plus_L_dIdt",
+        "voltage_residual_honesty": (
+            "Planned V = R I + L dI/dt from cited R/L (and FreeGSNKE mutuals when retained). "
+            "QP objective is I-tracking (weight_V ≪ weight_track_I); large ΔV with good I is expected. "
+            "deferred_ohmic_synthetic circuits (e.g. P3/P6 from_current_ohmic) are not measured-V fits."
+        ),
         "plots_written": plots_written,
         "shape_targets_available": shape_targets_available,
         "isoflux_residuals": {
@@ -1311,7 +1381,8 @@ def run_planner_stage(
                 else f"psi_bry_cost=false status={psi_bry_status} — {psi_bry_note}"
             ),
             "Passives excluded while passive_resistivity awaiting_authority",
-            "P3/P6 measured voltages may be ohmic_synthetic_IxR — residuals labeled honestly",
+            "P3/P6 may be deferred_ohmic_synthetic (from_current_ohmic) — not measured-V fits",
+            "Planned V is circuit-dynamics RI+L dI/dt; weight_V≪weight_I so large ΔV≠failed I-plan",
             "Never invents coil I/V limits — citation required",
             "Voltage box limits are fail-closed: over-limit plans raise PlannerError",
             "Ejima ψ_bry requires cited R_p + L_I (never invent / never silent li→L_I)",
@@ -1324,6 +1395,11 @@ def run_planner_stage(
         f"# Planner report (shot {shot})",
         "",
         "ADR-004 Phase 2 — Python GSPulse-style feedforward planner (no MATLAB).",
+        "",
+        "**Voltage honesty:** planned V = `R I + L dI/dt` (circuit dynamics). "
+        "The QP tracks currents (`weight_track_I`); `weight_V` is tiny — large ΔV with good I is expected "
+        "while passives ρ await (ADR-005) and R/L are cited tables. "
+        "Circuits tagged `deferred_ohmic_synthetic` (P3/P6 ohmic I×R) are not measured-V residuals.",
         "",
         f"- status: **{status}**",
         f"- method: `gspulse_python` v1.4 (solver={planner_auth.qp_solver}, "
@@ -1339,6 +1415,7 @@ def run_planner_stage(
         f"- voltage-limit violations (raw dynamics V): {n_v_viol}",
         f"- mean residual RMS (all circuits): {mean_rms}",
         f"- mean residual RMS (measured V only): {mean_rms_measured}",
+        f"- mean residual RMS (deferred ohmic only): {mean_rms_deferred_ohmic}",
         f"- isoflux status: {isoflux_status} — {isoflux_note}",
         "",
         "## Planning residual vs voltages (RMS)",
@@ -1346,7 +1423,8 @@ def run_planner_stage(
     ]
     for r in resid_rows:
         md.append(
-            f"- **{r['circuit']}** ({r['drive_label']}): rms={r['rms_V']:.6g} V"
+            f"- **{r['circuit']}** ({r['drive_label']} / {r['residual_compare_class']}): "
+            f"rms={r['rms_V']:.6g} V"
         )
     md.append("")
     md.append("## Artifacts")

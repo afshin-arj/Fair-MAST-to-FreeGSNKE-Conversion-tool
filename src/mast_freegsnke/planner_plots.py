@@ -152,7 +152,19 @@ def write_planner_iv_plots(
             d = y_plan[:, i] - y_ref[:, i]
             ax.axhline(0.0, color="0.5", lw=0.8)
             ax.plot(t, d, color="C0", lw=1.2)
-            ax.set_title(name, fontsize=9)
+            title_name = name
+            if drive_labels.get(name) == "ohmic_synthetic_IxR":
+                title_name = f"{name} (deferred ohmic)"
+                ax.text(
+                    0.02,
+                    0.95,
+                    "not measured V",
+                    transform=ax.transAxes,
+                    fontsize=7,
+                    va="top",
+                    color="C3",
+                )
+            ax.set_title(title_name, fontsize=9)
             ax.grid(True, alpha=0.3)
             ax.tick_params(labelsize=7)
         for j in range(n, len(flat)):
@@ -194,7 +206,10 @@ def write_planner_iv_plots(
         y_plan=Vp,
         y_ref=Vo,
         ylabel="ΔV plan−obs [V]",
-        title="Planner: voltage residual ΔV (per circuit)",
+        title=(
+            "Planner: voltage residual ΔV (per circuit)\n"
+            "plan=RI+L dI/dt; ohmic panels ≠ measured-V fit (weight_V≪weight_I)"
+        ),
         filename="planning_voltage_delta.png",
     )
     return written

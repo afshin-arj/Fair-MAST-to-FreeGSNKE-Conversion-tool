@@ -4,7 +4,7 @@
   "enabled": true,
   "require": false,
   "output_relpath": "07_planner",
-  "n_knots": 21,
+  "n_knots": 41,
   "knot_policy": "linspace_window_inclusive",
   "weight_track_I": 1.0,
   "weight_V": 1.0e-6,

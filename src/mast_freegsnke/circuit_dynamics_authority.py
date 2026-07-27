@@ -243,6 +243,7 @@ def build_circuit_dynamics_from_authority(
             f"{auth.notes} | fill={fill_notes['filled_from_freegsnke']} | "
             f"L_model={auth.L_model} | mutuals={fill_notes['mutuals']}"
         ),
+        fill_notes=dict(fill_notes),
     )
     dyn.validate()
     return dyn, fill_notes

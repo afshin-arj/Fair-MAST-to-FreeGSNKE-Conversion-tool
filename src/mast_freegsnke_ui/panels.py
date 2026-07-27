@@ -710,6 +710,24 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
         "Planned vs measured I/V, isoflux/ψ_bry RMS, Picard, authority hashes. "
         "Edit cited R/L or passive ρ below and re-run planner only. Never invents Imax/Vmax/ρ.",
     )
+    v_honesty = dbc.Alert(
+        [
+            html.Strong("Voltage honesty: "),
+            "Planned V is circuit-dynamics ",
+            html.Code("R I + L dI/dt"),
+            ", not a fit to measured plant voltage. "
+            "The QP tracks currents (",
+            html.Code("weight_track_I"),
+            "); ",
+            html.Code("weight_V"),
+            " is tiny — large ΔV with good I is expected while passives ρ await (ADR-005). "
+            "Circuits tagged deferred ohmic (P3/P6 ",
+            html.Code("from_current_ohmic"),
+            ") are not measured-V residuals.",
+        ],
+        color="info",
+        className="py-2 small mb-2",
+    )
     rl = pinfo.get("rl_circuits") or {}
     if not rl:
         rl = _planner_rl_from_authority(repo_root)
@@ -724,6 +742,7 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
         return html.Div(
             [
                 banner,
+                v_honesty,
                 empty_state(
                     "No planner products",
                     pinfo.get("detail")
@@ -1087,7 +1106,7 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
             )
         )
 
-    return html.Div([banner, accordion(sections, always_open=True)], className="planner-panel")
+    return html.Div([banner, v_honesty, accordion(sections, always_open=True)], className="planner-panel")
 def residuals_panel(shot: int, run_dir: Path) -> Any:
     html, dcc, dbc = _require()
     metrics = art.load_metrics(run_dir)
@@ -1393,9 +1412,12 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
                         html.Div(
                             [
                                 html.P(
-                                    "Left: FreeGSNKE LCFS (+ total ψ when dumped) · "
+                                    "Left: FreeGSNKE LCFS (+ total ψ when dumped) with Inverse "
+                                    "X/O targets (+/o) when shape_targets remapped the boundary. "
+                                    "Solved primary × sits on ψ_bndry; secondary gray × are off-LCFS. "
                                     "Right: FAIR-MAST EFIT++ archive ψ/LCFS. "
-                                    "LCFS overlay is the geometry compare; ψ color scales are independent.",
+                                    "SN: LCFS through one divertor tip; DN: both upper+lower tips. "
+                                    "ψ color scales are independent.",
                                     className="small text-muted",
                                 ),
                                 media_gallery(

@@ -35,7 +35,7 @@
   "psi_var": "psi",
   "time_policy": "nearest_to_window_midpoint",
   "write_side_by_side_gif": true,
-  "side_by_side_n_frames": 16,
+  "side_by_side_n_frames": 24,
   "side_by_side_fps": 2.0,
   "notes": "ADR-002/v1.2. Primary scorecard prefers forward_replay when ADR-004 profile_trajectory is ok: measured PF (pf_active/coil_map) + EFIT-fitted ConstrainPaxisIp → FreeGSNKE forward GS, scored vs archived EFIT++ shapes. Falls back to reconstruction_vs_archive if forward_replay soft-skips. Not a live EFIT++ / efit-ai solve."
 }

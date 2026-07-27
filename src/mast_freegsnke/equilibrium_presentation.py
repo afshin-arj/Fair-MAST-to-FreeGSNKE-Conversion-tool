@@ -119,24 +119,119 @@ def overlay_honest_xpoints(ax: Any, eq: Any) -> None:
         )
     except Exception:
         pass
-
     # Secondary: faint gray × — critical points at different ψ, not on LCFS.
     for i in range(1, n):
         try:
-            r, z = float(xpt[i][0]), float(xpt[i][1])
+            ri, zi = float(xpt[i][0]), float(xpt[i][1])
+            ax.plot(
+                ri,
+                zi,
+                "x",
+                color="0.55",
+                markersize=8,
+                markeredgewidth=1.4,
+                zorder=5,
+                label="secondary null (≠LCFS)" if i == 1 else None,
+            )
         except Exception:
             continue
-        ax.plot(
-            r,
-            z,
-            "x",
-            color="0.45",
-            alpha=0.55,
-            markersize=7,
-            markeredgewidth=1.2,
-            zorder=5,
-            label="secondary null (ψ≠ψ_bndry)" if i == 1 else None,
-        )
+
+
+def load_inverse_null_targets(run_dir: Path) -> Optional[Dict[str, Any]]:
+    """Load Inverse X/O targets from execution_authority boundary (archive-remapped)."""
+    run_dir = Path(run_dir)
+    for rel in (
+        "inputs/execution_authority/boundary_from_shape_targets.json",
+        "inputs/execution_authority/boundary_spec.json",
+        "inputs/execution_authority/execution_authority_bundle.json",
+    ):
+        p = run_dir / rel
+        if not p.is_file():
+            continue
+        try:
+            obj = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        # Prefer provenance with explicit null_points dict
+        np_prov = obj.get("null_points")
+        if isinstance(np_prov, dict) and np_prov.get("o_point"):
+            out: Dict[str, Any] = {
+                "source": rel,
+                "null_topology": obj.get("null_topology"),
+                "o_point": np_prov.get("o_point"),
+            }
+            if np_prov.get("x_point"):
+                out["x_points"] = [np_prov["x_point"]]
+            else:
+                xs = []
+                for key in ("x_point_lower", "x_point_upper", "x_point_primary_archive"):
+                    if np_prov.get(key):
+                        xs.append(np_prov[key])
+                if xs:
+                    out["x_points"] = xs
+            tips = obj.get("divertor_tips")
+            if isinstance(tips, list) and tips:
+                out["divertor_tips"] = tips
+            return out
+        # Raw BoundarySpec: null_points = [[R...],[Z...]]
+        raw = obj.get("null_points") or (obj.get("boundary") or {}).get("null_points")
+        if isinstance(raw, list) and len(raw) >= 2:
+            try:
+                rr = [float(v) for v in raw[0]]
+                zz = [float(v) for v in raw[1]]
+            except (TypeError, ValueError):
+                continue
+            if len(rr) >= 2 and len(rr) == len(zz):
+                # Convention: first = primary X, second = O, optional further X
+                xs = [[rr[0], zz[0]]]
+                for i in range(2, len(rr)):
+                    xs.append([rr[i], zz[i]])
+                return {
+                    "source": rel,
+                    "x_points": xs,
+                    "o_point": [rr[1], zz[1]],
+                    "null_topology": "double_null" if len(xs) >= 2 else "single_null",
+                }
+    return None
+
+
+def overlay_inverse_targets(
+    ax: Any,
+    targets: Optional[Dict[str, Any]],
+) -> None:
+    """Overlay Inverse constraint targets (archive X/O) — distinct from solved ×."""
+    if not targets:
+        return
+    labeled_x = False
+    for xp in targets.get("x_points") or []:
+        try:
+            ax.plot(
+                float(xp[0]),
+                float(xp[1]),
+                "r+",
+                ms=14,
+                mew=2.0,
+                zorder=7,
+                label="X target (Inverse)" if not labeled_x else None,
+            )
+            labeled_x = True
+        except Exception:
+            continue
+    op = targets.get("o_point")
+    if op is not None:
+        try:
+            ax.plot(
+                float(op[0]),
+                float(op[1]),
+                "bo",
+                ms=6,
+                zorder=7,
+                label="O target (Inverse)",
+            )
+        except Exception:
+            pass
 
 
 def plot_equilibrium_curated(
@@ -147,11 +242,13 @@ def plot_equilibrium_curated(
     n_core_contours: int = 10,
     show_open_field: bool = False,
     n_open_contours: int = 4,
+    inverse_targets: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Curated ψ plot: wall + nested core surfaces + LCFS + honest X/O.
 
     Avoids freegs4e default (35 global levels + all-red ×) which looks noisy
     near coils and implies secondary nulls lie on the separatrix.
+    Optional ``inverse_targets`` overlays archive Inverse X/O (+/o).
     """
     import numpy as np
     from numpy import amax, amin, linspace
@@ -249,6 +346,7 @@ def plot_equilibrium_curated(
         pass
 
     overlay_honest_xpoints(ax, eq)
+    overlay_inverse_targets(ax, inverse_targets)
     ax.set_aspect("equal")
     ax.grid(alpha=0.25)
     ax.set_xlabel("Major radius [m]")
@@ -264,23 +362,29 @@ def save_equilibrium_png(
     dpi: int = 100,
     figsize: tuple[float, float] = (4.0, 8.0),
     curated: bool = True,
+    inverse_targets: Optional[Dict[str, Any]] = None,
+    run_dir: Optional[Path] = None,
 ) -> Path:
     """Save one equilibrium PNG frame (Agg-safe).
 
     Default ``curated=True``: core surfaces + LCFS + honest X/O (not freegs4e's
     dense global contour soup). Separatrix is primary-X ψ only.
+    When ``run_dir`` is set, archive Inverse X/O targets are overlaid if present.
     """
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
+    if inverse_targets is None and run_dir is not None:
+        inverse_targets = load_inverse_null_targets(Path(run_dir))
+
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(1, 1, figsize=figsize, dpi=dpi)
     if curated:
         try:
-            plot_equilibrium_curated(ax, eq, tokamak)
+            plot_equilibrium_curated(ax, eq, tokamak, inverse_targets=inverse_targets)
         except Exception as e:
             plt.close(fig)
             raise PresentationError(f"curated plot failed: {e}") from e
@@ -301,6 +405,7 @@ def save_equilibrium_png(
             plt.close(fig)
             raise PresentationError(f"eq.plot failed: {e}") from e
         overlay_honest_xpoints(ax, eq)
+        overlay_inverse_targets(ax, inverse_targets)
         ax.set_aspect("equal")
         ax.grid(alpha=0.3)
     ax.set_title(title)

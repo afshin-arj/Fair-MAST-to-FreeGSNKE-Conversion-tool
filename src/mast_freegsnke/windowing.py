@@ -162,3 +162,123 @@ def infer_time_window(inputs_dir: Path, formed_frac: float) -> TimeWindow:
     tcol = _find_time_column(list(df.columns))
     t = df[tcol].astype(float).to_list()
     return TimeWindow(t_start=float(min(t)), t_end=float(max(t)), source=label, signal_column=None, threshold=None, note="fallback_first_file")
+
+
+def _load_ip_series(inputs_dir: Path) -> Optional[Tuple[List[float], List[float], str, str]]:
+    """Load (t, Ip, source_label, column) for window-end policies. Prefer dedicated ip.csv."""
+    _require_pandas()
+    candidates = [
+        (inputs_dir / "ip.csv", "ip.csv"),
+        (inputs_dir / "magnetics_timeseries.csv", "magnetics_timeseries.csv"),
+        (inputs_dir / "magnetics_raw.csv", "magnetics_raw.csv"),
+        (inputs_dir / "magnetics.csv", "magnetics.csv"),
+    ]
+    for path, label in candidates:
+        if not path.exists():
+            continue
+        df = pd.read_csv(path)
+        if df.shape[0] < 3 or df.shape[1] < 2:
+            continue
+        tcol = _find_time_column(list(df.columns))
+        cols = [c for c in df.columns if c != tcol]
+        ipcol = _pick_ip_column(cols) if _is_ip_source(label) else None
+        if ipcol is None and label == "ip.csv" and cols:
+            # Dedicated export: first non-time column if name is nonstandard
+            ipcol = cols[0]
+        if ipcol is None:
+            continue
+        t = df[tcol].astype(float).to_list()
+        y = df[ipcol].astype(float).to_list()
+        return t, y, label, ipcol
+    return None
+
+
+def apply_window_end_policy(
+    window: TimeWindow,
+    inputs_dir: Path,
+    *,
+    policy: str,
+    end_ip_frac: float,
+) -> TimeWindow:
+    """Refine ``t_end`` under an explicit declared policy (does not invent physics).
+
+    ``ip_peak_then_floor``: keep ``t_start``; set ``t_end`` to the first sample *after*
+    the |Ip| peak where ``|Ip| < end_ip_frac * Ip_peak``, clamped to the prior ``t_end``.
+    If no post-peak floor crossing exists, keep the prior ``t_end``.
+    """
+    pol = str(policy or "none").strip().lower()
+    if pol in ("", "none", "threshold_end", "formed_threshold"):
+        return window
+    if pol != "ip_peak_then_floor":
+        raise ValueError(
+            f"Unknown window_end_policy={policy!r} "
+            "(supported: none|threshold_end|ip_peak_then_floor)"
+        )
+    frac = float(end_ip_frac)
+    if not (0.0 < frac <= 1.0):
+        raise ValueError(f"window_end_ip_frac must be in (0, 1] (got {end_ip_frac})")
+
+    loaded = _load_ip_series(Path(inputs_dir))
+    if loaded is None:
+        note = (window.note or "") + "|window_end_policy=ip_peak_then_floor:no_ip_series"
+        return TimeWindow(
+            t_start=window.t_start,
+            t_end=window.t_end,
+            source=window.source,
+            signal_column=window.signal_column,
+            threshold=window.threshold,
+            note=note.lstrip("|"),
+        )
+
+    t, y, ip_label, ip_col = loaded
+    pairs = [
+        (float(ti), float(yi))
+        for ti, yi in zip(t, y)
+        if yi is not None and not (isinstance(yi, float) and math.isnan(yi))
+    ]
+    if not pairs:
+        note = (window.note or "") + "|window_end_policy=ip_peak_then_floor:empty_ip"
+        return TimeWindow(
+            t_start=window.t_start,
+            t_end=window.t_end,
+            source=window.source,
+            signal_column=window.signal_column,
+            threshold=window.threshold,
+            note=note.lstrip("|"),
+        )
+
+    # Peak |Ip| (global; then require peak time within/near the formed window)
+    i_peak = max(range(len(pairs)), key=lambda i: abs(pairs[i][1]))
+    t_peak, y_peak = pairs[i_peak]
+    ip_peak = abs(y_peak)
+    floor = frac * ip_peak
+    t_end_new = float(window.t_end)
+    cut = False
+    for ti, yi in pairs:
+        if ti <= t_peak:
+            continue
+        if abs(yi) < floor:
+            t_end_new = float(ti)
+            cut = True
+            break
+    # Never extend past the formed-threshold end; never before t_start
+    t_end_new = min(float(window.t_end), max(float(window.t_start), t_end_new))
+    prov = (
+        f"window_end_policy=ip_peak_then_floor"
+        f";window_end_ip_frac={frac:g}"
+        f";ip_peak_t={t_peak:.6g}"
+        f";ip_peak_abs={ip_peak:.6g}"
+        f";floor={floor:.6g}"
+        f";cut={'yes' if cut else 'no'}"
+        f";ip_source={ip_label}:{ip_col}"
+    )
+    note = (window.note or "")
+    note = f"{note}|{prov}" if note else prov
+    return TimeWindow(
+        t_start=float(window.t_start),
+        t_end=float(t_end_new),
+        source=window.source,
+        signal_column=window.signal_column,
+        threshold=window.threshold,
+        note=note,
+    )

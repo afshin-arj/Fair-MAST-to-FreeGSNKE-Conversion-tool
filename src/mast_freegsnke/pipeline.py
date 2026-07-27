@@ -22,7 +22,7 @@ from .extract import Extractor
 from .generate import ScriptGenerator
 from .mastapp import MastAppClient
 from .util import ensure_dir, write_json
-from .windowing import TimeWindow, infer_time_window
+from .windowing import TimeWindow, apply_window_end_policy, infer_time_window
 from .window_quality import WindowDiagnostics, evaluate_time_window, format_diagnostics
 from .window_consensus import ConsensusWindow, infer_consensus_window
 from .probe_geometry import build_geometry_from_machine_dir, write_geometry_json, write_geometry_pickle, write_geometry_pickle_internal
@@ -1023,6 +1023,26 @@ class ShotPipeline:
                 except Exception as e:
                     blocking_errors.append(f"window_finalize_failed: {e}")
                     _stage("window_finalize", False, error=str(e))
+
+            if final_tw is not None and window_override is None:
+                try:
+                    final_tw = apply_window_end_policy(
+                        final_tw,
+                        inputs_dir,
+                        policy=self.cfg.window_end_policy,
+                        end_ip_frac=self.cfg.window_end_ip_frac,
+                    )
+                    _stage(
+                        "window_end_policy",
+                        True,
+                        policy=self.cfg.window_end_policy,
+                        window_end_ip_frac=self.cfg.window_end_ip_frac,
+                        t_end=final_tw.t_end,
+                        note=final_tw.note,
+                    )
+                except Exception as e:
+                    blocking_errors.append(f"window_end_policy_failed: {e}")
+                    _stage("window_end_policy", False, error=str(e))
 
             if final_tw is not None:
                 write_json(inputs_dir / "window.json", final_tw.__dict__)

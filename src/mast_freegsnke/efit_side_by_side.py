@@ -255,13 +255,18 @@ def write_freegsnke_efit_side_by_side_gif(
     independent relative scales — never presented as amplitude-matched.
     """
     from .efit_compare import _extract_lcfs_at, _extract_psi_at, _nearest_index, _rel
-    from .equilibrium_presentation import write_gif_from_pngs
+    from .equilibrium_presentation import (
+        load_inverse_null_targets,
+        overlay_inverse_targets,
+        write_gif_from_pngs,
+    )
     from .freegsnke_lcfs import load_inverse_dump, psi_pack_from_dump
 
     run_dir = Path(run_dir)
     out_dir = Path(out_dir)
     frames_dir = out_dir / "side_by_side_frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
+    inv_targets = load_inverse_null_targets(run_dir)
     report: Dict[str, Any] = {
         "ok": False,
         "n_frames_requested": int(n_frames),
@@ -380,6 +385,7 @@ def write_freegsnke_efit_side_by_side_gif(
                 transform=ax_l.transAxes,
                 color="0.5",
             )
+        overlay_inverse_targets(ax_l, inv_targets)
         if fg_psi_pack is not None and not draw_fg_psi and fg is not None:
             ax_l.text(
                 0.5,

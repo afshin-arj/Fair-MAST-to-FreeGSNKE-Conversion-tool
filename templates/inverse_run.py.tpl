@@ -644,6 +644,7 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
                         out_path=_frames_dir / f"{_tag}.png",
                         title=f"Inverse {mode_used}  t={t_i:.4f}s  Ip={ip_i/1e6:.3f}MA",
                         dpi=int(_pres.gif_dpi),
+                        run_dir=HERE,
                     )
                     entry["frame_png"] = str(_png.relative_to(HERE)).replace("\\", "/")
             except Exception as _pe:
@@ -1008,9 +1009,14 @@ def main():
         fig, ax = plt.subplots(1,1, figsize=(6,10), dpi=140)
         _plot_ok = False
         try:
-            from mast_freegsnke.equilibrium_presentation import plot_equilibrium_curated
+            from mast_freegsnke.equilibrium_presentation import (
+                load_inverse_null_targets,
+                plot_equilibrium_curated,
+            )
 
-            plot_equilibrium_curated(ax, eq, tokamak)
+            plot_equilibrium_curated(
+                ax, eq, tokamak, inverse_targets=load_inverse_null_targets(HERE)
+            )
             _plot_ok = True
         except Exception as _cur_e:
             print(f"[WARN] curated equilibrium plot failed: {_cur_e}", flush=True)

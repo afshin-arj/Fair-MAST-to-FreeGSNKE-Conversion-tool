@@ -1,3 +1,12 @@
+## 11.20.0 — LCFS SN/DN isoflux, window end before disruption, denser times, Planner V honesty
+
+- **SN/DN boundary:** archive-LCFS divertor tips prepended to Inverse isoflux; provenance `null_topology` / tip sources (never invent coordinates).
+- **Presentation:** Inverse X/O targets (`+/o`) on curated GIF frames and EFIT side-by-side FreeGSNKE panel; captions clarify solved × vs targets.
+- **Window end:** `window_end_policy=ip_peak_then_floor` with `window_end_ip_frac=0.90` cuts `t_end` after Ip peak (declared in `window.json`); start still uses `formed_plasma_frac=0.8`.
+- **Density:** `metrics_n_times` / planner `n_knots` **21→41**; EFIT SBS frames **16→24** (~2× inverse wall-clock; hard per-time timeout unchanged).
+- **Planner V honesty:** UI/PLANNER.md note that planned V is `RI+L dI/dt` with `weight_V≪weight_I`; residual CSV tags `deferred_ohmic_synthetic`; mutuals label prefers `fill_notes["mutuals"]` / exact tokens (no silent `weight_V` raise).
+- Version **11.20.0**.
+
 ## 11.19.3 — Level-2 2D plots + t0 dump/plot + idle-coil limits
 
 - **Thomson/CXRS 2D plots:** transpose DataArrays to `(time, y)` before `pcolormesh` (`shading=nearest`); shape mismatch → honest skip warning (fixes `diag_plot_2d_failed:t_e:TypeError` on shot 30201).

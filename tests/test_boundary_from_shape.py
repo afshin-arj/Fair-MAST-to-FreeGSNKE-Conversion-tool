@@ -38,11 +38,62 @@ def test_boundary_from_shape_knot_prepends_archive_x() -> None:
     assert spec.null_points[0][0] == 1.10
     assert spec.null_points[1][0] == -1.25
     assert spec.null_points[0][1] == 0.95
-    # Archive X is first isoflux point so ψ_bndry is forced through divertor null
-    assert spec.isoflux_set[0][0][0] == 1.10
-    assert spec.isoflux_set[0][1][0] == -1.25
-    assert prov["isoflux_source"] == "lcfs_control_points_with_archive_x"
+    # Divertor tip(s) prepended so ψ_bndry is forced through SN/DN nulls
+    assert abs(spec.isoflux_set[0][0][0] - 1.10) < 1e-6 or abs(spec.isoflux_set[0][1][0] + 1.25) < 1e-6
+    assert "divertor_tips" in prov
+    assert prov["isoflux_source"] == "lcfs_control_points_with_divertor_tips"
 
+
+def test_boundary_sn_lower_only() -> None:
+    fallback = default_execution_authority_bundle().boundary
+    # Lower divertor tip near archive X; upper lobe at large R (not near xr) → SN
+    knot = {
+        "t_s": 0.2,
+        "scalars": {
+            "x_point_r": 0.55,
+            "x_point_z": -1.15,
+            "magnetic_axis_r": 0.95,
+            "magnetic_axis_z": 0.0,
+        },
+        "control_points": {
+            "r_m": [0.55, 0.9, 1.35, 0.9, 0.55],
+            "z_m": [-1.15, 0.05, 0.0, 0.9, -0.2],
+        },
+    }
+    spec, prov = boundary_from_shape_knot(knot, fallback=fallback)
+    assert spec is not None
+    assert prov["null_topology"] == "single_null"
+    tips = prov["divertor_tips"]
+    assert any(abs(float(t["z"]) + 1.15) < 0.05 for t in tips)
+    # Archive/lower tip on isoflux
+    assert any(
+        abs(float(r) - 0.55) < 0.05 and float(z) < -0.5
+        for r, z in zip(spec.isoflux_set[0][0], spec.isoflux_set[0][1])
+    )
+
+
+def test_boundary_dn_both_tips_on_isoflux() -> None:
+    fallback = default_execution_authority_bundle().boundary
+    knot = {
+        "t_s": 0.2,
+        "scalars": {
+            "x_point_r": 0.55,
+            "x_point_z": -1.20,
+            "magnetic_axis_r": 0.95,
+            "magnetic_axis_z": 0.0,
+        },
+        "control_points": {
+            "r_m": [0.55, 0.95, 1.35, 0.95, 0.56, 0.95],
+            "z_m": [-1.20, 0.0, 0.0, 0.0, 1.18, 0.0],
+        },
+    }
+    spec, prov = boundary_from_shape_knot(knot, fallback=fallback)
+    assert spec is not None
+    assert prov["null_topology"] == "double_null"
+    assert len(spec.null_points[0]) == 3  # X_lo, O, X_up
+    zs = [float(z) for z in spec.isoflux_set[0][1][:4]]
+    assert any(z < -1.0 for z in zs)
+    assert any(z > 1.0 for z in zs)
 
 def test_boundary_from_shape_skips_missing_x() -> None:
     fallback = default_execution_authority_bundle().boundary

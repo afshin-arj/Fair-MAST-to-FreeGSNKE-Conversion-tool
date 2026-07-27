@@ -444,6 +444,7 @@ def main():
                             out_path=frames_dir / f"{tag}.png",
                             title=f"Forward GS  t={float(t_i):.4f}s  Ip={ip_i/1e6:.3f}MA",
                             dpi=int(pres.gif_dpi),
+                            run_dir=HERE,
                         )
                         entry["frame_png"] = str(png.relative_to(HERE)).replace("\\", "/")
                     print(

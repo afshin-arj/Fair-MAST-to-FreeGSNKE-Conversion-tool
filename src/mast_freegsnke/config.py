@@ -78,9 +78,13 @@ class AppConfig:
     batch_abort_on_failure: bool
     # Gate shots before download/execute: MastApp + required L2 availability (or cache).
     enable_shot_suitability_gate: bool
+    # Declared window-end refine after formed-plasma start (none | ip_peak_then_floor).
+    window_end_policy: str = "ip_peak_then_floor"
+    # For ip_peak_then_floor: cut t_end at first post-peak |Ip| < frac×Ip_peak.
+    window_end_ip_frac: float = 0.90
     # Number of deterministic window sample times for multi-time synthetic
     # diagnostics / residual scoring (rule: linspace_window_inclusive).
-    metrics_n_times: int = 21
+    metrics_n_times: int = 41
     # PNG frames + animated GIFs across the formed-plasma window (inverse/forward)
     # and evolutive steps (presentation only; no new interactive prompts).
     write_equilibrium_gifs: bool = True
@@ -139,6 +143,18 @@ class AppConfig:
         runs_dir = Path(obj.get("runs_dir", "SHOT"))
         cache_dir = Path(obj.get("cache_dir", "data_cache"))
         formed_plasma_frac = float(obj.get("formed_plasma_frac", 0.80))
+        window_end_policy = str(obj.get("window_end_policy", "ip_peak_then_floor")).strip()
+        window_end_ip_frac = float(obj.get("window_end_ip_frac", 0.90))
+        if not (0.0 < window_end_ip_frac <= 1.0):
+            raise ValueError(
+                f"window_end_ip_frac must be in (0, 1] (got {window_end_ip_frac})"
+            )
+        _wep = window_end_policy.lower()
+        if _wep not in ("none", "threshold_end", "formed_threshold", "ip_peak_then_floor"):
+            raise ValueError(
+                f"window_end_policy must be none|threshold_end|ip_peak_then_floor "
+                f"(got {window_end_policy!r})"
+            )
         allow_missing_geometry = bool(obj.get("allow_missing_geometry", False))
 
         execute_freegsnke = bool(obj.get("execute_freegsnke", False))
@@ -200,7 +216,7 @@ class AppConfig:
         allow_cache_reuse = bool(obj.get("allow_cache_reuse", True))
         batch_abort_on_failure = bool(obj.get("batch_abort_on_failure", False))
         enable_shot_suitability_gate = bool(obj.get("enable_shot_suitability_gate", True))
-        metrics_n_times = int(obj.get("metrics_n_times", 21))
+        metrics_n_times = int(obj.get("metrics_n_times", 41))
         if metrics_n_times < 1 or metrics_n_times > 101:
             raise ValueError(
                 f"metrics_n_times must be in [1, 101] (got {metrics_n_times})"
@@ -329,6 +345,8 @@ class AppConfig:
             allow_cache_reuse=allow_cache_reuse,
             batch_abort_on_failure=batch_abort_on_failure,
             enable_shot_suitability_gate=enable_shot_suitability_gate,
+            window_end_policy=window_end_policy,
+            window_end_ip_frac=window_end_ip_frac,
             metrics_n_times=metrics_n_times,
             write_equilibrium_gifs=write_equilibrium_gifs,
             write_eq_frames=write_eq_frames,
