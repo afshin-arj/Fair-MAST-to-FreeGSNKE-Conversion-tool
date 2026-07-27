@@ -1,3 +1,10 @@
+## 11.19.2 — t0 inverse hard-timeout + fail-cascade gate (shot 30202)
+
+- Root cause: uncapped t0 `solver.solve` hung in freegs4e jtor / residual-resize until the 1200s script kill; forward then `FileNotFoundError` on `inverse_dump.pkl`; contracts exploded into one `syn.csv not found` per channel.
+- **t0** now uses the same spawn hard-kill + `max_solving_iterations` as multitime, with declared `fallback_mode=forward_gs` when inverse times out; dump records `t0_solve_mode`.
+- Pipeline: skip forward + contract metrics when inverse fails (`skipped_inverse_not_ok`) — keep one primary `freegsnke_inverse_failed`, not a wall of cascading blockers.
+- Version **11.19.2**.
+
 ## 11.19.1 — Smoother Compare / Planner / EFIT tab switches
 
 - Cache rendered tab bodies (fingerprint + refresh keyed) so switching back is instant.

@@ -1332,6 +1332,7 @@ class ShotPipeline:
                         repo_root=repo_root,
                     )
                     results: List[Dict[str, Any]] = []
+                    inv_ok = False
                     if mode in {"inverse", "both"}:
                         inv = run_dir / "inverse_run.py"
                         if not inv.exists():
@@ -1340,23 +1341,47 @@ class ShotPipeline:
                         else:
                             r = runner.run_script(inv, run_dir=run_dir, label="inverse")
                             results.append(r.__dict__)
+                            inv_ok = bool(r.ok)
                             if not r.ok:
-                                blocking_errors.append(f"freegsnke_inverse_failed (see {r.stderr_path})")
+                                hint = getattr(r, "error_hint", None) or "freegsnke_inverse_failed"
+                                blocking_errors.append(
+                                    f"freegsnke_inverse_failed (see {r.stderr_path}"
+                                    + (f"; hint={hint}" if hint else "")
+                                    + ")"
+                                )
 
                     if mode in {"forward", "both"}:
-                        fwd = run_dir / "forward_run.py"
-                        if not fwd.exists():
-                            blocking_errors.append("missing_forward_run.py")
-                            results.append({"script": "forward_run.py", "ok": False, "error": "missing"})
+                        # mode=both requires inverse_dump.pkl IC — do not cascade a
+                        # FileNotFoundError when inverse timed out / failed (shot 30202).
+                        if mode == "both" and not inv_ok:
+                            results.append(
+                                {
+                                    "script": "forward_run.py",
+                                    "ok": False,
+                                    "skipped": True,
+                                    "error": "skipped_inverse_not_ok",
+                                    "error_hint": "skipped_inverse_not_ok",
+                                }
+                            )
+                            _stage(
+                                "freegsnke_forward",
+                                False,
+                                note="skipped_inverse_not_ok",
+                            )
                         else:
-                            r = runner.run_script(fwd, run_dir=run_dir, label="forward")
-                            results.append(r.__dict__)
-                            if not r.ok:
-                                blocking_errors.append(f"freegsnke_forward_failed (see {r.stderr_path})")
+                            fwd = run_dir / "forward_run.py"
+                            if not fwd.exists():
+                                blocking_errors.append("missing_forward_run.py")
+                                results.append({"script": "forward_run.py", "ok": False, "error": "missing"})
+                            else:
+                                r = runner.run_script(fwd, run_dir=run_dir, label="forward")
+                                results.append(r.__dict__)
+                                if not r.ok:
+                                    blocking_errors.append(f"freegsnke_forward_failed (see {r.stderr_path})")
 
                     exec_summary.update({"results": results})
                     write_execution_report(run_dir, exec_summary)
-                    _stage("freegsnke_execute", all(bool(x.get("ok")) for x in results) if results else False, n_scripts=len(results))
+                    _stage("freegsnke_execute", all(bool(x.get("ok")) for x in results if not x.get("skipped")) if results else False, n_scripts=len(results))
 
                     if self.cfg.export_torax_geometry and mode in {"inverse", "both"}:
                         tg_auth_snap = (
@@ -1394,10 +1419,6 @@ class ShotPipeline:
                     # Evolutive forward (FAIR-MAST voltages) after successful inverse IC
                     if self.cfg.execute_evolutive:
                         evo_script = run_dir / "evolutive_run.py"
-                        inv_ok = any(
-                            str(x.get("script")) == "inverse_run.py" and bool(x.get("ok"))
-                            for x in results
-                        )
                         if not evo_script.exists():
                             blocking_errors.append("missing_evolutive_run.py")
                             _stage("evolutive_execute", False, error="missing_script")
@@ -1482,65 +1503,79 @@ class ShotPipeline:
 
                     # Contract-driven extraction + residual metrics (deterministic authority)
                     if self.cfg.enable_contract_metrics and self.cfg.diagnostic_contracts_path:
-                        try:
-                            cpath = _resolve_config_path(self.cfg.diagnostic_contracts_path, repo_root)
-                            if cpath is None or not cpath.exists():
-                                raise FileNotFoundError(
-                                    f"diagnostic_contracts_path not found: {self.cfg.diagnostic_contracts_path}"
-                                )
-                            # Merge synthesizable calibration contracts (omit until authority present)
-                            contracts_path_for_run = cpath
-                            cal_path_m = _resolve_config_path(self.cfg.diagnostic_calibration_path, repo_root)
-                            if cal_path_m is not None and cal_path_m.exists():
-                                cal_m = load_diagnostic_calibration(cal_path_m)
-                                if cal_m.n_synthesizable > 0:
-                                    merged_path = run_dir / "contracts" / "diagnostic_contracts.merged.json"
-                                    merge_calibration_contracts(cpath, cal_m, out_path=merged_path)
-                                    contracts_path_for_run = merged_path
-                            contracts = resolve_contracts_for_run(contracts_path_for_run, run_dir)
-                            # Require files when metrics enabled (fail-closed).
-                            contracts_report = validate_contracts(contracts, require_files=True)
-                            write_resolved_contracts(run_dir, contracts)
-                            if not contracts_report.get("ok", False):
-                                blocking_errors.append(
-                                    "contracts_invalid: " + "; ".join(contracts_report.get("errors", []))
-                                )
-                                _stage("contracts", False, errors=contracts_report.get("errors"))
-                            else:
-                                syn_res = extract_synthetic_by_contracts(run_dir, contracts)
-                                _stage(
-                                    "synthetic_extract",
-                                    syn_res.ok,
-                                    n_written=len(syn_res.written),
-                                    errors=syn_res.errors,
-                                )
-                                if not syn_res.ok:
-                                    blocking_errors.append(
-                                        "synthetic_extract_failed: " + "; ".join(syn_res.errors)
+                        if mode in {"inverse", "both"} and not inv_ok:
+                            # Inverse failure ⇒ no synthetic_*.csv. Do not explode into
+                            # one contracts_invalid line per channel (shot 30202 UX).
+                            _stage(
+                                "contracts",
+                                False,
+                                note="skipped_inverse_not_ok",
+                            )
+                            _stage(
+                                "contract_metrics",
+                                False,
+                                note="skipped_inverse_not_ok",
+                            )
+                        else:
+                            try:
+                                cpath = _resolve_config_path(self.cfg.diagnostic_contracts_path, repo_root)
+                                if cpath is None or not cpath.exists():
+                                    raise FileNotFoundError(
+                                        f"diagnostic_contracts_path not found: {self.cfg.diagnostic_contracts_path}"
                                     )
-                                metrics_summary = compare_from_contracts(run_dir, contracts)
-                                metrics_ok = bool(metrics_summary.get("ok", False)) and int(
-                                    metrics_summary.get("n_scored", 0)
-                                ) > 0
-                                _stage(
-                                    "residual_metrics_contracts",
-                                    metrics_ok,
-                                    n_scored=metrics_summary.get("n_scored"),
-                                    n_skipped_all_nan=metrics_summary.get("n_skipped_all_nan"),
-                                    errors=metrics_summary.get("errors"),
-                                )
-                                if not metrics_ok:
+                                # Merge synthesizable calibration contracts (omit until authority present)
+                                contracts_path_for_run = cpath
+                                cal_path_m = _resolve_config_path(self.cfg.diagnostic_calibration_path, repo_root)
+                                if cal_path_m is not None and cal_path_m.exists():
+                                    cal_m = load_diagnostic_calibration(cal_path_m)
+                                    if cal_m.n_synthesizable > 0:
+                                        merged_path = run_dir / "contracts" / "diagnostic_contracts.merged.json"
+                                        merge_calibration_contracts(cpath, cal_m, out_path=merged_path)
+                                        contracts_path_for_run = merged_path
+                                contracts = resolve_contracts_for_run(contracts_path_for_run, run_dir)
+                                # Require files when metrics enabled (fail-closed).
+                                contracts_report = validate_contracts(contracts, require_files=True)
+                                write_resolved_contracts(run_dir, contracts)
+                                if not contracts_report.get("ok", False):
                                     blocking_errors.append(
-                                        "residual_metrics_failed: "
-                                        + (
-                                            "; ".join(metrics_summary.get("errors", []))
-                                            or f"n_scored={metrics_summary.get('n_scored')}"
+                                        "contracts_invalid: " + "; ".join(contracts_report.get("errors", []))
+                                    )
+                                    _stage("contracts", False, errors=contracts_report.get("errors"))
+                                else:
+                                    syn_res = extract_synthetic_by_contracts(run_dir, contracts)
+                                    _stage(
+                                        "synthetic_extract",
+                                        syn_res.ok,
+                                        n_written=len(syn_res.written),
+                                        errors=syn_res.errors,
+                                    )
+                                    if not syn_res.ok:
+                                        blocking_errors.append(
+                                            "synthetic_extract_failed: " + "; ".join(syn_res.errors)
                                         )
+                                    metrics_summary = compare_from_contracts(run_dir, contracts)
+                                    metrics_ok = bool(metrics_summary.get("ok", False)) and int(
+                                        metrics_summary.get("n_scored", 0)
+                                    ) > 0
+                                    _stage(
+                                        "residual_metrics_contracts",
+                                        metrics_ok,
+                                        n_scored=metrics_summary.get("n_scored"),
+                                        n_skipped_all_nan=metrics_summary.get("n_skipped_all_nan"),
+                                        errors=metrics_summary.get("errors"),
                                     )
-                        except Exception as e:
-                            # Contract system errors are blocking when explicitly enabled.
-                            blocking_errors.append(f"contracts_failed: {type(e).__name__}: {e}")
-                            _stage("contracts", False, error=str(e))
+                                    if not metrics_ok:
+                                        blocking_errors.append(
+                                            "residual_metrics_failed: "
+                                            + (
+                                                "; ".join(metrics_summary.get("errors", []))
+                                                or f"n_scored={metrics_summary.get('n_scored')}"
+                                            )
+                                        )
+                            except Exception as e:
+                                # Contract system errors are blocking when explicitly enabled.
+                                blocking_errors.append(f"contracts_failed: {type(e).__name__}: {e}")
+                                _stage("contracts", False, error=str(e))
                     else:
                         _stage("contracts", True, note="contract_metrics_disabled_or_no_contracts_path")
 

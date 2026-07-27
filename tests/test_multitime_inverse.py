@@ -86,6 +86,11 @@ def test_inverse_template_uses_full_inverse_multitime_path() -> None:
     assert "multiprocessing" in tpl
     assert "proc.terminate()" in tpl or "terminate()" in tpl
     assert "_solve_one_sample(" in tpl
+    # t0 inverse must use hard kill + max_iter (shot 30202 uncapped hang).
+    assert "[..] t0" in tpl
+    assert "restore_optimized_currents" in tpl
+    assert "t0_solve_mode" in tpl
+    assert "SystemExit(2)" in tpl
 
 
 def test_rendered_inverse_script_keeps_multitime_tokens(tmp_path: Path) -> None:

@@ -356,6 +356,14 @@ def _multitime_solve_worker(payload: dict) -> None:
     )
     if result.get("ok"):
         np.save(payload["plasma_psi_out"], np.asarray(eq.plasma_psi, dtype=float))
+        coils_out = payload.get("coil_currents_json")
+        if coils_out:
+            coil_currents = {
+                str(cname): float(coil.current)
+                for cname, coil in getattr(eq.tokamak, "coils", [])
+                if hasattr(coil, "current")
+            }
+            Path(coils_out).write_text(json.dumps(coil_currents) + "\n", encoding="utf-8")
     Path(payload["result_json"]).write_text(json.dumps(result) + "\n", encoding="utf-8")
 
 
@@ -375,12 +383,17 @@ def _solve_one_sample(
     mode: str,
     l2_reg,
     tokamak_pickle: Path,
+    restore_optimized_currents: bool = False,
 ):
     """Solve one window sample with a hard wall-clock kill (multiprocessing).
 
     FreeGSNKE 3.0.1 can hang forever inside an uncapped residual-resize loop;
     soft post-hoc timing cannot escape that. A spawn child is terminated when
     ``per_time_timeout_s`` elapses so fallback_mode can still run.
+
+    When ``restore_optimized_currents`` is True (t0 inverse IC), parent tokamak
+    currents are restored from the child solution so ``inverse_dump.pkl`` keeps
+    optimised PF currents. Multi-time synthetic keeps measured PF (default).
     """
     import pickle as _pickle
 
@@ -393,7 +406,8 @@ def _solve_one_sample(
     psi_in = work / f"{tag}_psi_in.npy"
     psi_out = work / f"{tag}_psi_out.npy"
     result_json = work / f"{tag}_result.json"
-    for pth in (psi_out, result_json):
+    coils_json = work / f"{tag}_coils.json"
+    for pth in (psi_out, result_json, coils_json):
         if pth.exists():
             pth.unlink()
     np.save(psi_in, np.asarray(eq.plasma_psi, dtype=float))
@@ -413,6 +427,7 @@ def _solve_one_sample(
         "plasma_psi_in": str(psi_in),
         "plasma_psi_out": str(psi_out),
         "result_json": str(result_json),
+        "coil_currents_json": str(coils_json),
     }
 
     ctx = _mp.get_context("spawn")
@@ -453,7 +468,10 @@ def _solve_one_sample(
     if result.get("ok") and psi_out.exists():
         eq.plasma_psi = np.load(psi_out)
         eq.solved = True
-        set_machine_currents(tokamak, pf_i)
+        if restore_optimized_currents and coils_json.exists():
+            set_machine_currents(tokamak, json.loads(coils_json.read_text(encoding="utf-8")))
+        else:
+            set_machine_currents(tokamak, pf_i)
     return result
 
 
@@ -815,16 +833,69 @@ def main():
         if cname in control_names:
             l2_reg[control_names.index(cname)] = float(val)
 
-    solver.solve(
-        eq=eq,
-        profiles=profiles,
-        constrain=constrain,
-        target_relative_tolerance=float(solv["inverse_target_relative_tolerance"]),
-        target_relative_psit_update=float(solv["inverse_target_relative_psit_update"]),
-        verbose=True,
-        l2_reg=l2_reg,
+    # t0 solve must use the same hard per-time kill + max_solving_iterations as
+    # multitime. Uncapped in-process solver.solve can hang forever inside
+    # freegs4e residual-resize / jtor (shot 30202: 1200s script timeout).
+    mt_spec = _load_multitime_spec(solv)
+    profiles_kwargs = dict(
+        paxis=float(prof["paxis_Pa"]),
+        fvac=float(prof["fvac"]),
+        alpha_m=float(prof["alpha_m"]),
+        alpha_n=float(prof["alpha_n"]),
     )
-
+    modes_to_try = [mt_spec["preferred_mode"]]
+    if mt_spec["fallback_mode"] == "forward_gs" and mt_spec["preferred_mode"] != "forward_gs":
+        modes_to_try.append("forward_gs")
+    t0_result = None
+    t0_mode_used = None
+    for mode in modes_to_try:
+        print(
+            f"[..] t0 {mode}: timeout={mt_spec['per_time_timeout_s']}s "
+            f"max_iter={mt_spec['max_solving_iterations']}",
+            flush=True,
+        )
+        t0_result = _solve_one_sample(
+            eq=eq,
+            solver=solver,
+            tokamak=tokamak,
+            profiles_kwargs=profiles_kwargs,
+            solv=solv,
+            mt_spec=mt_spec,
+            bnd=bnd,
+            grid=ea["grid"],
+            t_i=float(t0),
+            ip_i=float(ip0),
+            pf_i=pf_init,
+            mode=mode,
+            l2_reg=l2_reg,
+            tokamak_pickle=HERE / ".multitime_work" / "tokamak.pkl",
+            restore_optimized_currents=(mode == "full_inverse"),
+        )
+        if t0_result.get("ok"):
+            t0_mode_used = mode
+            print(
+                f"[OK] t0 {mode}: status={t0_result.get('status')} "
+                f"iters={t0_result.get('iterations')} "
+                f"rel_change={t0_result.get('rel_change')} "
+                f"duration_s={t0_result.get('duration_s')}",
+                flush=True,
+            )
+            break
+        print(
+            f"[WARN] t0 {mode} failed: status={t0_result.get('status')} "
+            f"error={t0_result.get('error')}",
+            flush=True,
+        )
+    if t0_result is None or not t0_result.get("ok"):
+        err = None if t0_result is None else t0_result.get("error")
+        print(
+            f"[FAIL] t0 inverse failed after declared modes {modes_to_try}: {err}",
+            flush=True,
+        )
+        raise SystemExit(2)
+    # Refresh profiles / solver against the solved eq (child restored psi ± currents).
+    profiles = ConstrainPaxisIp(eq=eq, Ip=float(ip0), **profiles_kwargs)
+    solver = GSstaticsolver.NKGSsolver(eq)
 
     if _INTROSPECT_AVAILABLE:
         try:
@@ -877,6 +948,11 @@ def main():
         Ip=float(ip0),
         lcfs_R=_lcfs_R,
         lcfs_Z=_lcfs_Z,
+        t0_solve_mode=str(t0_mode_used),
+        t0_solve_status=str(t0_result.get("status") or ""),
+        t0_solve_duration_s=t0_result.get("duration_s"),
+        t0_solve_iterations=t0_result.get("iterations"),
+        t0_rel_change=t0_result.get("rel_change"),
     )
     # Total ψ (plasma + coils) for honest EFIT side-by-side coloring (not plasma_psi alone)
     try:
