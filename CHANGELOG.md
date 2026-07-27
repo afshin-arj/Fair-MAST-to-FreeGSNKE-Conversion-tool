@@ -1,3 +1,10 @@
+## 11.19.1 — Smoother Compare / Planner / EFIT tab switches
+
+- Cache rendered tab bodies (fingerprint + refresh keyed) so switching back is instant.
+- Cache shot-library dropdown options; prefer existing `ip_residual.csv` on Planner A/B.
+- Faster EFIT plot discovery (flat curated first, capped SBS frames); lazy image decode.
+- No layout/UI changes. Version **11.19.1**.
+
 ## 11.19.0 — Planner hardening: evolutive A/B, require isoflux/Picard, SLSQP, Plotly, ψ_bry UI
 
 - **Evolutive-from-plan A/B:** `execute_evolutive_from_plan` default **true**; measured-V vs plan-V Ip RMS compare + GIF gallery on Planner tab; `evolutive_plan/` catalogued.

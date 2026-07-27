@@ -1400,7 +1400,7 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
                                 ),
                                 media_gallery(
                                     shot,
-                                    sbs,
+                                    sbs[:_MAX_GALLERY],
                                     run_dir,
                                     "No side-by-side GIF yet — re-run with compare_efit_archive=true.",
                                 ),

@@ -5,6 +5,7 @@ import hashlib
 import threading
 import time
 import webbrowser
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -24,6 +25,44 @@ _ALL = None
 _no_update = None
 
 _POLL_IDLE_MS = 4000
+_TAB_BODY_CACHE_MAX = 32
+_tab_body_cache: OrderedDict[str, Any] = OrderedDict()
+_tab_body_lock = threading.Lock()
+_lib_opts_cache: dict = {"fp": None, "opts": None}
+
+
+def _tab_body_cache_get(key: str) -> Any:
+    with _tab_body_lock:
+        if key not in _tab_body_cache:
+            return None
+        _tab_body_cache.move_to_end(key)
+        return _tab_body_cache[key]
+
+
+def _tab_body_cache_put(key: str, value: Any) -> None:
+    with _tab_body_lock:
+        _tab_body_cache[key] = value
+        _tab_body_cache.move_to_end(key)
+        while len(_tab_body_cache) > _TAB_BODY_CACHE_MAX:
+            _tab_body_cache.popitem(last=False)
+
+
+def _cached_shot_library_options(
+    runs_dir: Path,
+    *,
+    cache_dir: Optional[Path],
+    required_groups: Optional[List[str]],
+    library_fp: str,
+) -> List[dict]:
+    """Reuse shot-library dropdown options while the library fingerprint is unchanged."""
+    if _lib_opts_cache.get("fp") == library_fp and _lib_opts_cache.get("opts") is not None:
+        return list(_lib_opts_cache["opts"])
+    opts = _shot_library_options(
+        runs_dir, cache_dir=cache_dir, required_groups=required_groups
+    )
+    _lib_opts_cache["fp"] = library_fp
+    _lib_opts_cache["opts"] = list(opts)
+    return opts
 
 
 def _require_dash() -> None:
@@ -935,7 +974,12 @@ def create_app(
             except OSError:
                 new_lib_fp = library_fp
             if new_lib_fp != library_fp:
-                out_opts = _shot_library_options(runs_dir, cache_dir=cache_dir, required_groups=required_groups)
+                out_opts = _cached_shot_library_options(
+                    runs_dir,
+                    cache_dir=cache_dir,
+                    required_groups=required_groups,
+                    library_fp=new_lib_fp,
+                )
             lib_check = 0
         else:
             lib_check = int(cache.get("lib_check") or 0) + 1
@@ -1031,21 +1075,39 @@ def create_app(
                 if candidate.is_dir():
                     run_dir = candidate
         heading = panels.results_heading(shot_i, tid)
+
+        # Cache heavy tab bodies (Compare / Planner / EFIT) so switching back is instant.
+        # Key includes results fingerprint + refresh token so rebuilds stay honest.
+        refresh_sig = str(_refresh_token or "")
         if tid == "compare":
-            lib_opts = _shot_library_options(
-                runs_dir, cache_dir=cache_dir, required_groups=required_groups
-            )
+            lib_fp_now = _library_fingerprint(runs_dir, cache_dir=cache_dir)
+            try:
+                shot_a = int(cmp_a) if cmp_a is not None else None
+            except (TypeError, ValueError):
+                shot_a = None
+            try:
+                shot_b = int(cmp_b) if cmp_b is not None else None
+            except (TypeError, ValueError):
+                shot_b = None
+            fam = str(cmp_fam or "plasma")
             lib_shots = art.list_shot_dirs(runs_dir)
             def_a, def_b = panels.default_compare_pair(shot_i, lib_shots)
-            try:
-                shot_a = int(cmp_a) if cmp_a is not None else def_a
-            except (TypeError, ValueError):
+            if shot_a is None:
                 shot_a = def_a
-            try:
-                shot_b = int(cmp_b) if cmp_b is not None else def_b
-            except (TypeError, ValueError):
+            if shot_b is None:
                 shot_b = def_b
-            fam = str(cmp_fam or "plasma")
+            fp_a = art.results_fingerprint(art.run_dir_for(runs_dir, shot_a)) if shot_a else ""
+            fp_b = art.results_fingerprint(art.run_dir_for(runs_dir, shot_b)) if shot_b else ""
+            cache_key = f"compare|{shot_a}|{shot_b}|{fam}|{fp_a}|{fp_b}|{lib_fp_now}|{refresh_sig}"
+            cached = _tab_body_cache_get(cache_key)
+            if cached is not None:
+                return heading, cached
+            lib_opts = _cached_shot_library_options(
+                runs_dir,
+                cache_dir=cache_dir,
+                required_groups=required_groups,
+                library_fp=lib_fp_now,
+            )
             body = panels.compare_panel(
                 runs_dir,
                 library_options=lib_opts,
@@ -1053,8 +1115,18 @@ def create_app(
                 shot_b=shot_b,
                 family=fam,
             )
+            _tab_body_cache_put(cache_key, body)
         else:
+            fp = art.results_fingerprint(run_dir) if run_dir else ""
+            cache_key = f"{tid}|{shot_i}|{fp}|{refresh_sig}"
+            # Cache heavy tabs; Overview is cheap but still cached for snappy return.
+            if tid in {"planner", "efit", "compare", "gifs", "residuals", "auth", "level2", "overview", "files"}:
+                cached = _tab_body_cache_get(cache_key)
+                if cached is not None:
+                    return heading, cached
             body = panels.fill_one_tab(tid, shot_i, run_dir, repo_root=repo_root)
+            if tid in {"planner", "efit", "gifs", "residuals", "auth", "level2", "overview", "files"}:
+                _tab_body_cache_put(cache_key, body)
         return heading, body
 
     @app.callback(

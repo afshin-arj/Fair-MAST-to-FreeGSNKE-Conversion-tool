@@ -244,15 +244,22 @@ def residual_plot_paths(run_dir: Path) -> List[Path]:
 
 
 def efit_plot_paths(run_dir: Path) -> List[Path]:
-    """EFIT compare plots including nested side_by_side_frames/ (not flat-only)."""
+    """EFIT compare plots — prefer flat curated files before nested SBS frames."""
     run_dir = Path(run_dir)
     out: List[Path] = []
     for rel in ("04_efit_compare/plots", "efit_compare/plots"):
         root = run_dir / rel
-        # Depth 2 so freegsnke_efit_side_by_side.gif and side_by_side_frames/sbs_*.png both appear
-        found = _collect_images(root, ("*.png", "*.gif"), max_depth=2, limit=48)
-        if found:
-            out.extend(found)
+        if not root.is_dir():
+            continue
+        # Flat first (GIF, LCFS, psi) — cheap and what the UI ranks highest.
+        flat = _list_images_flat(root, exts={".png", ".gif"}, limit=24)
+        out.extend(flat)
+        # Nested side_by_side_frames: cap tightly (gallery shows ≤8 anyway).
+        frames = root / "side_by_side_frames"
+        if frames.is_dir():
+            nested = _list_images_flat(frames, exts={".png", ".gif"}, limit=8)
+            out.extend(nested)
+        if out:
             break
     seen: set[str] = set()
     uniq: List[Path] = []
@@ -1362,7 +1369,18 @@ def results_fingerprint(run_dir: Optional[Path]) -> str:
         return ""
     run_dir = Path(run_dir)
     parts: List[str] = [run_dir.name]
-    for rel in ("progress.json", "manifest.json", "01_summary/SUMMARY.json", "01_summary/SUMMARY.md"):
+    for rel in (
+        "progress.json",
+        "manifest.json",
+        "01_summary/SUMMARY.json",
+        "01_summary/SUMMARY.md",
+        "07_planner/PLANNER.json",
+        "04_efit_compare/COMPARE.json",
+        "04_efit_compare/shape_scorecard.json",
+        "03_reconstruction/metrics/reconstruction_metrics.json",
+        "03_reconstruction/evolutive/evolutive_meta.json",
+        "03_reconstruction/evolutive_plan/evolutive_from_plan_meta.json",
+    ):
         p = run_dir / rel
         try:
             if p.is_file():

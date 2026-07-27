@@ -160,6 +160,41 @@ def score_evolutive_ip_at(
         "rms_rel": None,
         "errors": [],
     }
+    out_csv = run_dir / evolutive_relpath / "ip_residual.csv"
+    # Prefer already-written residual CSV (UI tab switches) — avoid re-scoring every open.
+    if out_csv.is_file():
+        try:
+            import pandas as pd
+            import numpy as np
+
+            rdf = pd.read_csv(out_csv)
+            if "residual_A" in rdf.columns and "Ip_measured" in rdf.columns:
+                resid = rdf["residual_A"].to_numpy(dtype=float)
+                ip_meas = rdf["Ip_measured"].to_numpy(dtype=float)
+                mask = np.isfinite(resid) & np.isfinite(ip_meas)
+                resid, ip_meas = resid[mask], ip_meas[mask]
+                if resid.size >= 2:
+                    rms = float(np.sqrt(np.mean(resid**2)))
+                    mae = float(np.mean(np.abs(resid)))
+                    max_abs = float(np.max(np.abs(resid)))
+                    scale = float(np.mean(np.abs(ip_meas)))
+                    rms_rel = float(rms / scale) if scale > 0.0 else None
+                    report.update(
+                        {
+                            "ok": True,
+                            "n": int(resid.size),
+                            "rms_A": rms,
+                            "mae_A": mae,
+                            "max_abs_A": max_abs,
+                            "rms_rel": rms_rel,
+                            "residual_csv": f"{evolutive_relpath}/ip_residual.csv",
+                            "from_cached_csv": True,
+                        }
+                    )
+                    return report
+        except Exception:
+            pass
+
     hist = run_dir / evolutive_relpath / "history.csv"
     ip_path = run_dir / "inputs" / "ip.csv"
     if not hist.is_file():
@@ -208,7 +243,6 @@ def score_evolutive_ip_at(
     max_abs = float(np.max(np.abs(resid)))
     scale = float(np.mean(np.abs(ip_meas)))
     rms_rel = float(rms / scale) if scale > 0.0 else None
-    out_csv = run_dir / evolutive_relpath / "ip_residual.csv"
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
         {
