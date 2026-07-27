@@ -150,6 +150,9 @@ def test_planner_honesty_labels_in_meta(tmp_path: Path) -> None:
     pd.DataFrame({"time": t, **V}).to_csv(inputs / "pf_voltages.csv", index=False)
 
     pl_auth = load_planner_authority(REPO / "configs" / "planner_authority.json")
+    from dataclasses import replace
+
+    pl_auth = replace(pl_auth, require_isoflux=False, require_picard=False, enable_picard=False)
     cl = resolve_measured_peak_limits(
         load_coil_limits(REPO / "configs" / "coil_limits_authority.json"),
         inputs_dir=inputs,
@@ -337,13 +340,13 @@ def test_isoflux_soft_skip_no_shape() -> None:
 
 def test_planner_authority_isoflux_fields() -> None:
     auth = load_planner_authority(REPO / "configs" / "planner_authority.json")
-    assert auth.authority_version == "1.3.1"
+    assert auth.authority_version == "1.4.0"
     assert auth.enable_isoflux is True
-    assert auth.require_isoflux is False
+    assert auth.require_isoflux is True
     assert auth.weight_isoflux > 0
     assert auth.isoflux_ref_policy == "max_R"
     assert auth.enable_picard is True
-    assert auth.require_picard is False
+    assert auth.require_picard is True
     assert auth.max_picard_iterations >= 1
     assert auth.enable_psi_bry is True
     assert auth.weight_psi_bry > 0

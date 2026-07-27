@@ -24,6 +24,19 @@ REPO = Path(__file__).resolve().parents[1]
 ORDER = ["Solenoid", "P2_inner", "P2_outer", "P3", "P4", "P5", "P6"]
 
 
+def _planner_auth_relaxed():
+    """Unit-test planner auth without require_isoflux/picard (no shape_targets fixture)."""
+    from dataclasses import replace
+
+    auth = load_planner_authority(REPO / "configs" / "planner_authority.json")
+    return replace(
+        auth,
+        require_isoflux=False,
+        require_picard=False,
+        enable_picard=False,
+    )
+
+
 def test_default_planner_on() -> None:
     cfg = AppConfig.load(REPO / "configs" / "default.json")
     assert cfg.execute_planner is True
@@ -223,8 +236,7 @@ def test_run_planner_stage_with_synthetic_dynamics(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     cl = load_coil_limits(limits_path)
-    pl = load_planner_authority(REPO / "configs" / "planner_authority.json")
-
+    pl = _planner_auth_relaxed()
     (run_dir / "contracts").mkdir(parents=True)
     (run_dir / "contracts" / "voltage_map.resolved.json").write_text(
         json.dumps(
@@ -358,7 +370,7 @@ def test_run_planner_stage_fails_closed_on_V_limits(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     cl = load_coil_limits(limits_path)
-    pl = load_planner_authority(REPO / "configs" / "planner_authority.json")
+    pl = _planner_auth_relaxed()
 
     with pytest.raises(PlannerError, match="voltage box constraints"):
         run_planner_stage(
@@ -418,7 +430,7 @@ def test_run_planner_rejects_window_outside_pf_coverage(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     cl = load_coil_limits(limits_path)
-    pl = load_planner_authority(REPO / "configs" / "planner_authority.json")
+    pl = _planner_auth_relaxed()
 
     with pytest.raises(PlannerError, match="not covered"):
         run_planner_stage(
@@ -475,5 +487,5 @@ def test_resolve_measured_peak_limits_mutuals_matrix(tmp_path: Path) -> None:
 def test_planner_authority_picard_rel_tol() -> None:
     auth = load_planner_authority(REPO / "configs" / "planner_authority.json")
     assert auth.picard_rel_tol == pytest.approx(1.0e-3)
-    assert auth.authority_version == "1.3.1"
+    assert auth.authority_version == "1.4.0"
 

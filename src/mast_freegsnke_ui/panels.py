@@ -703,6 +703,7 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
     """Path B6-full+: GSPulse-method planner — collapsible decks, media gallery, R/L edit."""
     html, dcc, dbc = _require()
     pinfo = art.load_planner_info(run_dir)
+    evo_ab = art.load_evolutive_ab_compare(run_dir)
     banner = tab_banner(
         "Feedforward planner",
         "Python GSPulse-method trajectory (Path B) — not upstream MATLAB/MEQ. "
@@ -758,6 +759,8 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
         ),
         chip("isoflux_st", pinfo.get("isoflux_status") or "—"),
         chip("isoflux_mode", pinfo.get("isoflux_mode") or "—"),
+        chip("qp_solver", pinfo.get("qp_solver") or "—"),
+        chip("ejima", pinfo.get("ejima_status") or "—"),
         chip(
             "psi_bry",
             "yes" if pinfo.get("psi_bry_cost") else ("no" if pinfo.get("psi_bry_cost") is False else "—"),
@@ -844,6 +847,54 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
         run_dir,
         "No planner I/V plots yet — re-run with execute_planner=true.",
     )
+    plotly_link: Any = html.P("No interactive Plotly export.", className="text-muted small mb-0")
+    if pinfo.get("plotly_rel") and art.safe_resolve_under(run_dir, str(pinfo["plotly_rel"])):
+        plotly_link = html.A(
+            "Open interactive I/V (Plotly HTML)",
+            href=art.file_url(shot, str(pinfo["plotly_rel"])),
+            target="_blank",
+            className="compare-file-chip",
+        )
+
+    evo_ab_body: Any = html.P(evo_ab.get("detail") or "—", className="small text-muted mb-0")
+    meas_e = evo_ab.get("measured_voltages") or {}
+    plan_e = evo_ab.get("planned_voltages") or {}
+    if meas_e.get("ok") or plan_e.get("ok"):
+        evo_ab_body = html.Div(
+            [
+                html.Div(
+                    [
+                        chip("meas_V rms", meas_e.get("rms_A")),
+                        chip("plan_V rms", plan_e.get("rms_A")),
+                        chip("Δrms", evo_ab.get("delta_rms_A")),
+                        chip("plan_ok", evo_ab.get("plan_script_ok")),
+                    ],
+                    className="compare-chip-row mb-2",
+                ),
+                html.P(str(evo_ab.get("detail") or ""), className="small text-muted mb-2"),
+                media_gallery(
+                    shot,
+                    art.evolutive_ab_gif_paths(run_dir),
+                    run_dir,
+                    "No evolutive A/B GIFs — both measured-V and plan-V runs needed.",
+                ),
+            ]
+        )
+
+    psi_attempts = pinfo.get("psi_bry_attempts") or []
+    psi_attempts_body: Any = html.P("No ψ_bry mode attempts recorded.", className="text-muted small mb-0")
+    if psi_attempts:
+        psi_attempts_body = html.Ul(
+            [
+                html.Li(
+                    f"{a.get('mode', a.get('source', '?'))}: {a.get('status', '—')}",
+                    className="small",
+                )
+                for a in psi_attempts[:8]
+                if isinstance(a, dict)
+            ],
+            className="mb-0",
+        )
 
     rl_table: Any = html.P("No cited R/L snapshot.", className="text-muted small")
     if rl:
@@ -965,6 +1016,21 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
                         className="small text-muted",
                     ),
                     plots_body,
+                    html.Div(plotly_link, className="mt-2"),
+                ]
+            ),
+            True,
+        ),
+        (
+            "Evolutive A/B (measured V vs plan V)",
+            html.Div(
+                [
+                    html.P(
+                        "Optional second evolutive from 07_planner/planned_voltages.csv "
+                        "(execute_evolutive_from_plan). Diagnostic — does not replace measured-V evolutive.",
+                        className="small text-muted",
+                    ),
+                    evo_ab_body,
                 ]
             ),
             True,
@@ -985,14 +1051,16 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
             True,
         ),
         (
-            "Shape / isoflux / Picard",
+            "Shape / isoflux / Picard / ψ_bry",
             html.Div(
                 [
                     html.Div(st_chips, className="compare-chip-row mb-2"),
                     html.Div(pic_chips, className="compare-chip-row mb-2"),
+                    html.P("ψ_bry mode attempts (Ejima blocked until cited Rp+L_I):", className="small text-muted mb-1"),
+                    psi_attempts_body,
                     html.P(
                         "Isoflux uses vacuum-coil Green’s; Picard freezes plasma offsets when GS succeeds.",
-                        className="small text-muted mb-0",
+                        className="small text-muted mb-0 mt-2",
                     ),
                 ]
             ),

@@ -49,9 +49,9 @@ def test_prepare_plan_voltages_aligns_columns(tmp_path: Path) -> None:
     assert float(df["D1"].iloc[0]) == pytest.approx(99.0)
 
 
-def test_execute_evolutive_from_plan_default_off() -> None:
+def test_execute_evolutive_from_plan_default_on() -> None:
     cfg = AppConfig.load(REPO / "configs" / "default.json")
-    assert cfg.execute_evolutive_from_plan is False
+    assert cfg.execute_evolutive_from_plan is True
 
 
 def test_execute_evolutive_from_plan_requires_planner(tmp_path: Path) -> None:

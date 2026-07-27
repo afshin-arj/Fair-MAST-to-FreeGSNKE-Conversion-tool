@@ -1,6 +1,6 @@
 {
   "authority_name": "planner",
-  "authority_version": "1.3.1",
+  "authority_version": "1.4.0",
   "enabled": true,
   "require": false,
   "output_relpath": "07_planner",
@@ -11,18 +11,20 @@
   "weight_dI": 1.0e-2,
   "weight_d2I": 1.0e-3,
   "enable_isoflux": true,
-  "require_isoflux": false,
+  "require_isoflux": true,
   "weight_isoflux": 10.0,
   "weight_xpoint_B": 1.0,
   "isoflux_ref_policy": "max_R",
   "isoflux_max_control_points": 32,
   "enable_picard": true,
-  "require_picard": false,
+  "require_picard": true,
   "max_picard_iterations": 2,
   "picard_rel_tol": 1.0e-3,
   "enable_psi_bry": true,
   "require_psi_bry": false,
   "weight_psi_bry": 1.0,
+  "qp_solver": "projected_iter",
+  "qp_rel_tol": 1.0e-9,
   "max_qp_iterations": 40,
-  "notes": "ADR-004 Phase 2b / Path B. Python GSPulse-method planner (no MATLAB). v1.3.1: current-tracking + L/R + vacuum isoflux + Picard (picard_rel_tol + converged) + optional ψ_bry. Pipeline runs planner under freegsnke_python when configured so isoflux/Picard can import FreeGSNKE. Soft-skip missing data. Certify YELLOW without successful isoflux+Picard; warn on voltage_exceeds_measured_peak_margin. Passives blocked on classic-MAST ρ. Never invents I/V limits or Rp."
+  "notes": "ADR-004 Phase 2b / Path B v1.4.0: require_isoflux + require_picard (fail-closed after FreeGSNKE bridge). qp_solver=projected_iter (default) or slsqp. Interactive Plotly I/V HTML alongside static PNGs. Passives blocked on classic-MAST ρ."
 }

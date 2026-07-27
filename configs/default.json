@@ -25,7 +25,7 @@
   "execute_freegsnke": true,
   "freegsnke_run_mode": "both",
   "execute_evolutive": true,
-  "execute_evolutive_from_plan": false,
+  "execute_evolutive_from_plan": true,
   "freegsnke_python": ".venv-freegsnke/Scripts/python.exe",
   "diagnostics_compare": [],
   "diagnostic_contracts_path": "configs/diagnostic_contracts.json",

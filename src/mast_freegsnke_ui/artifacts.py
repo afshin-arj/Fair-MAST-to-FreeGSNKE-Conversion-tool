@@ -294,6 +294,7 @@ def gif_paths(run_dir: Path) -> List[Path]:
     for rel in (
         "03_reconstruction/presentation",
         "03_reconstruction/evolutive",
+        "03_reconstruction/evolutive_plan",
         "04_efit_compare/plots",
         "efit_compare/plots",
         "07_planner",
@@ -640,6 +641,25 @@ def load_evolutive_meta(run_dir: Path) -> Optional[Dict[str, Any]]:
     return None
 
 
+def load_evolutive_ab_compare(run_dir: Path) -> Dict[str, Any]:
+    """Measured-V vs plan-V evolutive comparison within one shot (UI read-only)."""
+    from mast_freegsnke.evolutive_from_plan import load_evolutive_ab_compare as _cmp
+
+    return _cmp(Path(run_dir))
+
+
+def evolutive_ab_gif_paths(run_dir: Path) -> List[Path]:
+    """GIFs for measured-V and plan-V evolutive in planner A/B deck."""
+    run_dir = Path(run_dir)
+    out: List[Path] = []
+    for rel in (
+        "03_reconstruction/evolutive",
+        "03_reconstruction/evolutive_plan",
+    ):
+        out.extend(_first_images([run_dir / rel], exts={".gif"}, limit=4))
+    return out[:8]
+
+
 def load_profile_trajectory_info(run_dir: Path) -> Dict[str, Any]:
     """ADR-004 profile trajectory snapshot summary for UI (read-only).
 
@@ -725,6 +745,7 @@ def load_planner_info(run_dir: Path) -> Dict[str, Any]:
     )
     plot_v_delta_rel = _first_plot("07_planner/planning_voltage_delta.png")
     plot_i_delta_rel = _first_plot("07_planner/planning_current_delta.png")
+    plotly_rel = _first_plot("07_planner/planning_iv_interactive.html")
     limits_rel = "inputs/coil_limits_authority/coil_limits_authority.json"
     auth_rel = "inputs/planner_authority/planner_authority.json"
     dyn_rel = "inputs/circuit_dynamics_authority/circuit_dynamics_authority.json"
@@ -763,6 +784,7 @@ def load_planner_info(run_dir: Path) -> Dict[str, Any]:
         "plot_i_rel": plot_i_rel,
         "plot_v_delta_rel": plot_v_delta_rel,
         "plot_i_delta_rel": plot_i_delta_rel,
+        "plotly_rel": plotly_rel,
         "limits_rel": limits_rel if (run_dir / limits_rel).is_file() else None,
         "auth_rel": auth_rel if (run_dir / auth_rel).is_file() else None,
         "dyn_rel": dyn_rel if (run_dir / dyn_rel).is_file() else None,
@@ -798,6 +820,8 @@ def load_planner_info(run_dir: Path) -> Dict[str, Any]:
             out["psi_bry_cost"] = pb.get("used")
             out["psi_bry_mode"] = pb.get("mode")
             out["psi_bry_status"] = pb.get("status")
+            out["psi_bry_attempts"] = pb.get("attempts") or []
+            out["ejima_status"] = pb.get("ejima_status") or inv.get("ejima_status")
     if isinstance(picard_obj, dict):
         out["picard_history"] = list(picard_obj.get("history") or [])[:12]
         out["picard_note_file"] = picard_obj.get("note")
@@ -846,6 +870,9 @@ def load_planner_info(run_dir: Path) -> Dict[str, Any]:
         out["isoflux_rms_mean"] = planned.get("isoflux_rms_mean")
         out["xpoint_B_rms_mean"] = planned.get("xpoint_B_rms_mean")
         out["psi_bry_rms_mean"] = planned.get("psi_bry_rms_mean")
+        out["qp_solver"] = meta.get("qp_solver")
+        out["require_isoflux"] = meta.get("require_isoflux")
+        out["require_picard"] = meta.get("require_picard")
         out["circuit_dynamics_mutuals"] = meta.get("circuit_dynamics_mutuals")
         out["gspulse_reference"] = meta.get("gspulse_reference")
         st_av = meta.get("shape_targets_available") if isinstance(meta.get("shape_targets_available"), dict) else {}
@@ -1194,6 +1221,7 @@ _PREFERRED_DOWNLOADS = (
     "inputs/profile_trajectory_authority/profile_trajectory.json",
     "inputs/profile_trajectory_authority/profile_trajectory_authority.json",
     "03_reconstruction/evolutive/evolutive_meta.json",
+    "03_reconstruction/evolutive_plan/evolutive_from_plan_meta.json",
     "07_planner/PLANNER.json",
     "07_planner/PLANNER.md",
     "07_planner/shape_targets.json",
@@ -1210,6 +1238,7 @@ _PREFERRED_DOWNLOADS = (
     "07_planner/plasma_scalars.json",
     "07_planner/planned_currents.csv",
     "07_planner/planned_voltages.csv",
+    "07_planner/planning_iv_interactive.html",
     "04_efit_compare/plots/freegsnke_efit_side_by_side.gif",
     "04_efit_compare/plots/side_by_side_meta.json",
     "inputs/shape_targets_authority/shape_targets.json",

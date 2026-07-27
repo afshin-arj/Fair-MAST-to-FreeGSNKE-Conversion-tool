@@ -1,3 +1,11 @@
+## 11.19.0 — Planner hardening: evolutive A/B, require isoflux/Picard, SLSQP, Plotly, ψ_bry UI
+
+- **Evolutive-from-plan A/B:** `execute_evolutive_from_plan` default **true**; measured-V vs plan-V Ip RMS compare + GIF gallery on Planner tab; `evolutive_plan/` catalogued.
+- **Require flags:** `require_isoflux` + `require_picard` **true** in planner authority v1.4.0 (fail-closed after FreeGSNKE bridge); certify blocks when unmet.
+- **QP knobs:** `qp_solver` (`projected_iter` | `slsqp`) + `qp_rel_tol`; optional scipy SLSQP path.
+- **Plotly:** `07_planner/planning_iv_interactive.html` alongside static PNGs.
+- **ψ_bry:** mode attempt inventory + Ejima status on Planner tab when archive modes fail. Version **11.19.0**.
+
 ## 11.18.0 — Planner I/V small-multiples + cited limit bands
 
 - Static planner plots: per-circuit small-multiples for planned vs measured I and planned vs observed V, plus ΔI/ΔV panels; cited coil-limit bands and ohmic-drive tags (`ohmic_synthetic_IxR`).

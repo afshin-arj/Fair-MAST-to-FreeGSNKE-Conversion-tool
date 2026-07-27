@@ -174,14 +174,28 @@ def certify_run_dir(
                 "circuit_dynamics_mutuals": pl.get("circuit_dynamics_mutuals"),
             }
             if pl.get("method") == "gspulse_python":
-                if pl.get("picard") is False:
+                auth_pl: Optional[Dict[str, Any]] = None
+                auth_path = run_dir / "inputs" / "planner_authority" / "planner_authority.json"
+                if auth_path.is_file():
+                    try:
+                        obj = json.loads(auth_path.read_text(encoding="utf-8"))
+                        auth_pl = obj if isinstance(obj, dict) else None
+                    except Exception:
+                        auth_pl = None
+                req_iso = bool((auth_pl or {}).get("require_isoflux") or pl.get("require_isoflux"))
+                req_pic = bool((auth_pl or {}).get("require_picard") or pl.get("require_picard"))
+                if pl.get("picard") is False and not req_pic:
                     report["warnings"].append(
                         "planner_gspulse_python_incomplete:picard_not_wired"
                     )
-                if pl.get("isoflux_cost") is False:
+                elif pl.get("picard") is False and req_pic:
+                    report["blocking"].append("planner_require_picard_unmet")
+                if pl.get("isoflux_cost") is False and not req_iso:
                     report["warnings"].append(
                         "planner_gspulse_python_incomplete:isoflux_not_wired"
                     )
+                elif pl.get("isoflux_cost") is False and req_iso:
+                    report["blocking"].append("planner_require_isoflux_unmet")
                 if pl.get("status") == "voltage_exceeds_measured_peak_margin":
                     report["warnings"].append(
                         "planner_voltage_exceeds_measured_peak_margin"

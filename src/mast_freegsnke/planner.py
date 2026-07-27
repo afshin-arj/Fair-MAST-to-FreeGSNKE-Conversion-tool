@@ -38,7 +38,7 @@ def _strict_bool(value: Any, name: str, *, default: Optional[bool] = None) -> bo
 @dataclass(frozen=True)
 class PlannerAuthority:
     authority_name: str = "planner"
-    authority_version: str = "1.3.1"
+    authority_version: str = "1.4.0"
     enabled: bool = False
     require: bool = False
     output_relpath: str = "07_planner"
@@ -64,6 +64,8 @@ class PlannerAuthority:
     enable_psi_bry: bool = True
     require_psi_bry: bool = False
     weight_psi_bry: float = 1.0
+    qp_solver: str = "projected_iter"
+    qp_rel_tol: float = 1.0e-9
     max_qp_iterations: int = 40
     notes: str = ""
 
@@ -92,6 +94,13 @@ class PlannerAuthority:
             raise PlannerError("isoflux_max_control_points must be in [2, 512]")
         if not (1 <= int(self.max_qp_iterations) <= 500):
             raise PlannerError("max_qp_iterations must be in [1, 500]")
+        if self.qp_solver not in {"projected_iter", "slsqp"}:
+            raise PlannerError("qp_solver must be projected_iter or slsqp")
+        if (
+            not isinstance(self.qp_rel_tol, (int, float))
+            or not (float(self.qp_rel_tol) > 0.0)
+        ):
+            raise PlannerError("qp_rel_tol must be > 0")
         if not (0 <= int(self.max_picard_iterations) <= 20):
             raise PlannerError("max_picard_iterations must be in [0, 20]")
         if (
@@ -129,7 +138,7 @@ def load_planner_authority(path: Path) -> PlannerAuthority:
         raise PlannerError("planner_authority must be a JSON object")
     auth = PlannerAuthority(
         authority_name=str(obj.get("authority_name", "planner")),
-        authority_version=str(obj.get("authority_version", "1.3.1")),
+        authority_version=str(obj.get("authority_version", "1.4.0")),
         enabled=_strict_bool(obj.get("enabled"), "enabled", default=False),
         require=_strict_bool(obj.get("require"), "require", default=False),
         output_relpath=str(obj.get("output_relpath", "07_planner")),
@@ -158,6 +167,8 @@ def load_planner_authority(path: Path) -> PlannerAuthority:
             obj.get("require_psi_bry"), "require_psi_bry", default=False
         ),
         weight_psi_bry=float(obj.get("weight_psi_bry", 1.0)),
+        qp_solver=str(obj.get("qp_solver", "projected_iter")),
+        qp_rel_tol=float(obj.get("qp_rel_tol", 1.0e-9)),
         max_qp_iterations=int(obj.get("max_qp_iterations", 40)),
         notes=str(obj.get("notes", "")),
     )
@@ -491,7 +502,191 @@ def solve_trajectory_qp(
         "cost_history": hist_cost,
         "n_voltage_violations_raw": int(np.sum(viol)),
         "voltage_violation_mask": viol,
+        "qp_solver": "projected_iter",
     }
+
+
+def _trajectory_cost(
+    I: np.ndarray,
+    *,
+    I_target: np.ndarray,
+    R: np.ndarray,
+    L: np.ndarray,
+    dt: float,
+    weight_track_I: float,
+    weight_V: float,
+    weight_dI: float,
+    weight_d2I: float,
+    isoflux_pack: Optional[Dict[str, Any]] = None,
+    weight_isoflux: float = 0.0,
+    weight_xpoint_B: float = 0.0,
+    weight_psi_bry: float = 0.0,
+) -> float:
+    """Scalar cost shared by projected_iter and SLSQP solvers."""
+    n_t, n = I.shape
+    V = voltages_from_dynamics(I, R=R, L=L, dt=dt)
+    wI = float(weight_track_I)
+    wV = float(weight_V)
+    w1 = float(weight_dI)
+    w2 = float(weight_d2I)
+    dI = np.diff(I, axis=0)
+    d2 = np.diff(dI, axis=0) if n_t > 2 else np.zeros((0, n))
+    cost = (
+        wI * float(np.mean((I - I_target) ** 2))
+        + wV * float(np.mean(V**2))
+        + w1 * float(np.mean(dI**2))
+        + (w2 * float(np.mean(d2**2)) if d2.size else 0.0)
+    )
+    knots = (isoflux_pack or {}).get("knots") if isinstance(isoflux_pack, dict) else None
+    if knots:
+        for k in range(min(len(knots), n_t)):
+            entry = knots[k]
+            if not isinstance(entry, dict):
+                continue
+            I_k = I[k]
+            for key, w in (
+                ("isoflux", float(weight_isoflux)),
+                ("xpoint_B", float(weight_xpoint_B)),
+                ("psi_bry", float(weight_psi_bry)),
+            ):
+                if w <= 0:
+                    continue
+                sens = entry.get(key)
+                if sens is None or not hasattr(sens, "G"):
+                    continue
+                G = np.asarray(sens.G, dtype=float)
+                y = np.asarray(sens.target, dtype=float).ravel()
+                if G.ndim == 2 and G.shape[1] == n and G.shape[0] == y.size:
+                    resid = G @ I_k - y
+                    cost += w * float(np.mean(resid**2))
+    return cost
+
+
+def solve_trajectory_slsqp(
+    *,
+    I_target: np.ndarray,
+    R: np.ndarray,
+    L: np.ndarray,
+    dt: float,
+    I_lo: np.ndarray,
+    I_hi: np.ndarray,
+    V_lo: np.ndarray,
+    V_hi: np.ndarray,
+    weight_track_I: float,
+    weight_V: float,
+    weight_dI: float,
+    weight_d2I: float,
+    max_iterations: int = 40,
+    rel_tol: float = 1.0e-9,
+    isoflux_pack: Optional[Dict[str, Any]] = None,
+    weight_isoflux: float = 0.0,
+    weight_xpoint_B: float = 0.0,
+    weight_psi_bry: float = 0.0,
+) -> Dict[str, Any]:
+    """SLSQP box-constrained trajectory optimizer (scipy)."""
+    from scipy.optimize import minimize
+
+    I_target = np.asarray(I_target, dtype=float)
+    n_t, n = I_target.shape
+    R = np.asarray(R, dtype=float).reshape(n)
+    L = np.asarray(L, dtype=float).reshape(n, n)
+    I_lo = np.asarray(I_lo, dtype=float).reshape(n)
+    I_hi = np.asarray(I_hi, dtype=float).reshape(n)
+    V_lo = np.asarray(V_lo, dtype=float).reshape(n)
+    V_hi = np.asarray(V_hi, dtype=float).reshape(n)
+    x0 = np.clip(I_target.copy(), I_lo, I_hi).ravel()
+    bounds = [(float(I_lo[j]), float(I_hi[j])) for _ in range(n_t) for j in range(n)]
+
+    def _unpack(x: np.ndarray) -> np.ndarray:
+        return np.asarray(x, dtype=float).reshape(n_t, n)
+
+    def objective(x: np.ndarray) -> float:
+        return _trajectory_cost(
+            _unpack(x),
+            I_target=I_target,
+            R=R,
+            L=L,
+            dt=dt,
+            weight_track_I=weight_track_I,
+            weight_V=weight_V,
+            weight_dI=weight_dI,
+            weight_d2I=weight_d2I,
+            isoflux_pack=isoflux_pack,
+            weight_isoflux=weight_isoflux,
+            weight_xpoint_B=weight_xpoint_B,
+            weight_psi_bry=weight_psi_bry,
+        )
+
+    res = minimize(
+        objective,
+        x0,
+        method="SLSQP",
+        bounds=bounds,
+        options={"maxiter": int(max_iterations), "ftol": float(rel_tol)},
+    )
+    I = np.clip(_unpack(res.x), I_lo, I_hi)
+    V = voltages_from_dynamics(I, R=R, L=L, dt=dt)
+    viol = (V > V_hi) | (V < V_lo)
+    return {
+        "I": I,
+        "V": V,
+        "cost_history": [float(res.fun)],
+        "n_voltage_violations_raw": int(np.sum(viol)),
+        "voltage_violation_mask": viol,
+        "qp_solver": "slsqp",
+        "slsqp_success": bool(res.success),
+        "slsqp_message": str(res.message),
+    }
+
+
+def solve_trajectory(
+    *,
+    qp_solver: str = "projected_iter",
+    qp_rel_tol: float = 1.0e-9,
+    I_target: np.ndarray,
+    R: np.ndarray,
+    L: np.ndarray,
+    dt: float,
+    I_lo: np.ndarray,
+    I_hi: np.ndarray,
+    V_lo: np.ndarray,
+    V_hi: np.ndarray,
+    weight_track_I: float,
+    weight_V: float,
+    weight_dI: float,
+    weight_d2I: float,
+    max_iterations: int = 40,
+    isoflux_pack: Optional[Dict[str, Any]] = None,
+    weight_isoflux: float = 0.0,
+    weight_xpoint_B: float = 0.0,
+    weight_psi_bry: float = 0.0,
+) -> Dict[str, Any]:
+    """Dispatch trajectory optimizer (projected_iter default, optional SLSQP)."""
+    solver = str(qp_solver or "projected_iter").strip().lower()
+    kw = dict(
+        I_target=I_target,
+        R=R,
+        L=L,
+        dt=dt,
+        I_lo=I_lo,
+        I_hi=I_hi,
+        V_lo=V_lo,
+        V_hi=V_hi,
+        weight_track_I=weight_track_I,
+        weight_V=weight_V,
+        weight_dI=weight_dI,
+        weight_d2I=weight_d2I,
+        max_iterations=max_iterations,
+        isoflux_pack=isoflux_pack,
+        weight_isoflux=weight_isoflux,
+        weight_xpoint_B=weight_xpoint_B,
+        weight_psi_bry=weight_psi_bry,
+    )
+    if solver == "slsqp":
+        return solve_trajectory_slsqp(**kw, rel_tol=qp_rel_tol)
+    if solver in {"projected_iter", "projected", "default"}:
+        return solve_trajectory_qp(**kw)
+    raise PlannerError(f"qp_solver must be projected_iter or slsqp (got {qp_solver!r})")
 
 
 def run_planner_stage(
@@ -704,7 +899,9 @@ def run_planner_stage(
                 f"require_psi_bry=true but status={psi_bry_status!r}: {psi_bry_note}"
             )
 
-    sol = solve_trajectory_qp(
+    sol = solve_trajectory(
+        qp_solver=planner_auth.qp_solver,
+        qp_rel_tol=planner_auth.qp_rel_tol,
         I_target=I_tgt,
         R=circuit_dynamics.R_ohm,
         L=circuit_dynamics.L_henry,
@@ -746,6 +943,8 @@ def run_planner_stage(
                 from .planner_picard import run_picard_outer_loop
 
                 qp_kwargs = {
+                    "qp_solver": planner_auth.qp_solver,
+                    "qp_rel_tol": planner_auth.qp_rel_tol,
                     "I_target": I_tgt,
                     "R": circuit_dynamics.R_ohm,
                     "L": circuit_dynamics.L_henry,
@@ -773,6 +972,7 @@ def run_planner_stage(
                     qp_kwargs=qp_kwargs,
                     max_picard_iterations=int(planner_auth.max_picard_iterations),
                     picard_rel_tol=float(planner_auth.picard_rel_tol),
+                    solve_qp_fn=solve_trajectory,
                 )
                 picard_status = str(pic.get("status") or "unknown")
                 picard_note = str(pic.get("note") or "")
@@ -897,6 +1097,21 @@ def run_planner_stage(
                 drive_labels=drive_labels,
             )
         )
+        from .planner_plots import write_planner_iv_plotly
+
+        plotly_name = write_planner_iv_plotly(
+            out_dir,
+            times=times,
+            circuit_order=order,
+            I_plan=I_plan,
+            I_meas=I_tgt,
+            V_plan=V_plan,
+            V_obs=V_obs,
+            coil_limits=coil_limits,
+            drive_labels=drive_labels,
+        )
+        if plotly_name:
+            plots_written.append(plotly_name)
     except Exception as e:
         plots_written.append(f"plot_skipped:{type(e).__name__}: {e}")
 
@@ -1007,7 +1222,11 @@ def run_planner_stage(
         "status": status,
         # Path B0–B3 honesty labels
         "method": "gspulse_python",
-        "method_version": "v1.3",
+        "method_version": "v1.4",
+        "qp_solver": sol.get("qp_solver") or planner_auth.qp_solver,
+        "require_isoflux": bool(planner_auth.require_isoflux),
+        "require_picard": bool(planner_auth.require_picard),
+        "require_psi_bry": bool(planner_auth.require_psi_bry),
         "picard": bool(picard_used),
         "picard_mode": picard_mode if picard_used else None,
         "picard_status": picard_status,
@@ -1062,11 +1281,18 @@ def run_planner_stage(
                 "note": psi_bry_note,
                 "psi_convention": (psi_bry_payload or {}).get("psi_convention"),
                 "var_used": (psi_bry_payload or {}).get("var_used"),
+                "attempts": (psi_bry_payload or {}).get("attempts"),
+                "ejima_status": (
+                    (psi_bry_payload or {}).get("ejima_status")
+                    or (plasma_inventory or {}).get("ejima_status")
+                ),
             },
         },
         "limitations": [
-            "method=gspulse_python v1.3: current-tracking + circuit dynamics QP "
-            "+ optional vacuum-coil Green's isoflux + optional Picard plasma freeze "
+            "method=gspulse_python v1.4: current-tracking + circuit dynamics QP "
+            f"(solver={planner_auth.qp_solver}) "
+            "+ vacuum-coil Green's isoflux (require={planner_auth.require_isoflux}) "
+            "+ Picard plasma freeze (require={planner_auth.require_picard}) "
             "+ optional ψ_bry absolute mean-flux (not upstream GSPulse MATLAB/MEQ)",
             (
                 "picard=true mode=forward_gs_freeze_plasma_offsets — plasma offsets frozen "
@@ -1100,7 +1326,8 @@ def run_planner_stage(
         "ADR-004 Phase 2 — Python GSPulse-style feedforward planner (no MATLAB).",
         "",
         f"- status: **{status}**",
-        f"- method: `gspulse_python` v1.3 (picard={bool(picard_used)}, "
+        f"- method: `gspulse_python` v1.4 (solver={planner_auth.qp_solver}, "
+        f"picard={bool(picard_used)}, "
         f"isoflux_cost={bool(isoflux_used)}, psi_bry={bool(psi_bry_used)}, "
         f"mode={meta.get('isoflux_mode')})",
         f"- picard: used={picard_used} status={picard_status} mode={picard_mode}",

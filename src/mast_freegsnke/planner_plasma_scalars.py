@@ -264,6 +264,9 @@ def inventory_plasma_drive(
         "n_profile_knots": None,
         "n_planner_knots": int(np.asarray(times).size),
         "authority_version": auth.authority_version,
+        "psi_bry_mode_priority": list(auth.mode_priority),
+        "ejima_status": auth.ejima.status,
+        "ejima_awaiting": auth.ejima.status != "cited",
     }
     ip_path = inputs_dir / "ip.csv"
     if ip_path.is_file():
@@ -307,8 +310,10 @@ def build_psi_bry_targets(
         "psi_bry_Wb": None,
         "psi_convention": auth.psi_convention,
         "var_used": None,
-        "note": "",
+        "ejima_status": auth.ejima.status,
+        "mode_priority": list(auth.mode_priority),
         "attempts": [],
+        "note": "",
     }
     if not auth.enabled:
         out["status"] = "disabled"
