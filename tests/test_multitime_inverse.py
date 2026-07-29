@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 
@@ -91,6 +92,13 @@ def test_inverse_template_uses_full_inverse_multitime_path() -> None:
     assert "restore_optimized_currents" in tpl
     assert "t0_solve_mode" in tpl
     assert "SystemExit(2)" in tpl
+    # Cold t0 Inverse can fail while continuation works (30201); retry after forward_gs seed.
+    assert "full_inverse retry after forward_gs seed" in tpl
+    assert "attach_profiles_after_restore" in tpl
+    assert "_boundary_for_time" in tpl
+    assert "boundary_dict_at_time" in tpl
+    assert "freegsnke_native" in tpl or "plot_style" in tpl
+    assert "coil_current_limits" in tpl
 
 
 def test_rendered_inverse_script_keeps_multitime_tokens(tmp_path: Path) -> None:
@@ -119,6 +127,54 @@ def test_runner_kills_script_on_timeout(tmp_path: Path) -> None:
     assert "TIMEOUT" in stderr
 
 
+def test_runner_does_not_hang_on_orphaned_grandchild(tmp_path: Path) -> None:
+    """Regression: grandchild holding inherited handles must not block the runner.
+
+    On Windows, multitime spawn children can outlive the script parent. Writing
+    logs to files (not PIPE) keeps wait() from depending on grandchild EOF.
+    """
+    run_dir = tmp_path / "run"
+    run_dir.mkdir(parents=True)
+    marker = run_dir / "grandchild.pid"
+    script = run_dir / "inverse_run.py"
+    script.write_text(
+        "import subprocess, sys, time\n"
+        f"marker = {str(marker)!r}\n"
+        "subprocess.Popen(\n"
+        "    [sys.executable, '-c',\n"
+        "     (\"open(%r, 'w').write(str(__import__('os').getpid())); \"\n"
+        "      \"__import__('time').sleep(60)\") % (marker,)],\n"
+        "    close_fds=False,\n"
+        ")\n"
+        "time.sleep(0.4)\n"
+        "print('parent_exiting', flush=True)\n"
+        "raise SystemExit(0)\n",
+        encoding="utf-8",
+    )
+    r = FreeGSNKERunner(timeout_s=10.0).run_script(script, run_dir=run_dir, label="inverse")
+    assert r.ok is True, (
+        r.returncode,
+        r.error_hint,
+        (run_dir / "logs" / "inverse.stderr.txt").read_text(errors="replace")[:500],
+    )
+    assert r.duration_s < 8.0
+    if marker.exists():
+        try:
+            import subprocess
+
+            gpid = int(marker.read_text().strip())
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(gpid)],
+                    capture_output=True,
+                    check=False,
+                )
+            else:
+                os.kill(gpid, 9)
+        except Exception:
+            pass
+
+
 def test_runner_evolutive_per_step_timeout_hint(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir(parents=True)
@@ -143,16 +199,20 @@ def test_evolutive_template_has_ip_collapse_abort() -> None:
     assert "[ABORT] evolutive Ip collapsed" in tpl
     assert "early_stop" in tpl
     assert "clamp_ip_to_measured" in tpl
-    assert "ic_coil_currents=measured_pf" in tpl
+    assert "ic_coil_currents" in tpl
+    assert "inverse_dump" in tpl
+    assert "n_passive" in tpl
     assert "abort_when_axis_drift_m" in tpl
     assert "[ABORT] evolutive axis drift" in tpl
     assert 'profiles_parameters["Ip"]' in tpl or "profiles_parameters[\"Ip\"]" in tpl
 
 
-def test_forward_template_uses_curated_plot() -> None:
+def test_forward_template_uses_native_plot() -> None:
     tpl = (REPO / "templates" / "forward_run.py.tpl").read_text(encoding="utf-8")
-    assert "plot_equilibrium_curated" in tpl
-    assert "overlay_honest_xpoints" in tpl
+    assert "save_equilibrium_png" in tpl
+    assert "attach_profiles_after_restore" in tpl
+    assert "freegsnke_native" in tpl or "plot_style" in tpl
+    assert "measured-PF replay" in tpl
 
 
 def test_runner_pins_blas_threads_by_default() -> None:
@@ -175,11 +235,20 @@ def test_evolutive_partial_history_n(tmp_path: Path) -> None:
     assert evolutive_partial_history_n(run_dir) == 2
 
 
-def test_evolutive_template_has_per_step_watchdog() -> None:
+def test_inverse_template_uses_timer_hard_kill() -> None:
+    tpl = (REPO / "templates" / "inverse_run.py.tpl").read_text(encoding="utf-8")
+    assert "threading.Timer" in tpl or "_threading.Timer" in tpl
+    assert "taskkill" in tpl
+    assert "per_time_timeout_s" in tpl
+
+
+def test_evolutive_template_watches_ic_static_gs() -> None:
     tpl = (REPO / "templates" / "evolutive_run.py.tpl").read_text(encoding="utf-8")
-    assert "_arm_step_watchdog" in tpl
-    assert "per_step_timeout_s" in tpl
-    assert "os._exit(124)" in tpl
+    assert 'label="ic_static_gs"' in tpl or "label='ic_static_gs'" in tpl
+    assert "Static GS solve for evolutive IC" in tpl
+    # IC solve must cap iterations — omitting max_solving_iterations hangs freegs4e.
+    ic_block = tpl.split("Static GS solve for evolutive IC", 1)[1].split("nl_kwargs", 1)[0]
+    assert "max_solving_iterations=max_iter" in ic_block
 
 
 def test_runner_success_untimed(tmp_path: Path) -> None:
@@ -195,7 +264,7 @@ def test_runner_success_untimed(tmp_path: Path) -> None:
 
 def test_default_config_ships_script_timeout() -> None:
     cfg = AppConfig.load(REPO / "configs" / "default.json")
-    assert cfg.freegsnke_script_timeout_s == 1200.0
+    assert cfg.freegsnke_script_timeout_s == 3600.0
     assert cfg.metrics_n_times == 41
     assert cfg.window_end_policy == "ip_peak_then_floor"
     assert cfg.window_end_ip_frac == 0.90

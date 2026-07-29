@@ -104,8 +104,8 @@ def _resolve_n_steps(ea_evolv: dict, t_start: float, t_end: float) -> dict:
     }
 
 
-def _arm_step_watchdog(timeout_s: float, step: int):
-    """Hard-kill the process if nlstepper hangs in native code (Windows).
+def _arm_step_watchdog(timeout_s: float, step: int, *, label: str = "nlstepper"):
+    """Hard-kill the process if FreeGSNKE hangs in native code (Windows).
 
     threading.Timer can call os._exit even while FreeGSNKE is inside C/Fortran;
     soft Exception handling cannot escape that hang.
@@ -115,7 +115,7 @@ def _arm_step_watchdog(timeout_s: float, step: int):
 
     def _boom() -> None:
         print(
-            f"[TIMEOUT] evolutive nlstepper step {step} exceeded "
+            f"[TIMEOUT] evolutive {label} step {step} exceeded "
             f"per_step_timeout_s={timeout_s} — process hard-killed "
             f"(partial history.csv retained if flushed)",
             flush=True,
@@ -302,7 +302,7 @@ def main() -> None:
             raise ValueError(
                 "evolutive_authority.abort_when_ip_below_measured_frac must be in (0,1) or null"
             )
-    ic_coil_src = str(ea_evolv.get("ic_coil_currents", "measured_pf")).strip().lower()
+    ic_coil_src = str(ea_evolv.get("ic_coil_currents", "inverse_dump")).strip().lower()
     if ic_coil_src not in {"measured_pf", "inverse_dump"}:
         raise ValueError(
             "evolutive_authority.ic_coil_currents must be 'measured_pf' or 'inverse_dump' "
@@ -465,6 +465,23 @@ def main() -> None:
             else None
         ),
     )
+    # Count passives from authority pickle (do not invent rho / fill empty list).
+    try:
+        import pickle as _pkl
+
+        with open(MACHINE / "passive_coils.pickle", "rb") as _pf:
+            _pobj = _pkl.load(_pf)
+        n_passive = int(len(_pobj) if _pobj is not None else 0)
+    except Exception:
+        n_passive = 0
+    if n_passive == 0:
+        print(
+            "[WARN] n_passive=0: classic MAST has no cited resistivity yet "
+            "(ADR-005). FreeGSNKE example05-class stability is NOT expected; "
+            "early soft-stop (axis_drift / Ip collapse) is honest success - "
+            "do not invent rho.",
+            flush=True,
+        )
     machine_order = _control_coil_names(tokamak)
     if machine_order != order:
         raise RuntimeError(
@@ -547,13 +564,30 @@ def main() -> None:
     # Required: nl_solver needs a converged GS IC (core_mask); restoring plasma_psi
     # alone is not enough when coil currents / profiles are reapplied.
     print("[INFO] Static GS solve for evolutive IC...", flush=True)
-    GSStaticSolver.solve(
-        eq=eq,
-        profiles=profiles,
-        constrain=None,
-        target_relative_tolerance=float(ea["solver"]["forward_target_relative_tolerance"]),
-        verbose=0,
-    )
+    # Prefer a slightly looser GS tolerance for IC than the archived forward
+    # default (1e-6): measured_pf currents + inverse dump psi often need a few
+    # Newton steps; hanging inside one Jacobian still hits the watchdog below.
+    ic_tol = float(ea["solver"]["forward_target_relative_tolerance"])
+    ic_tol = max(ic_tol, 1.0e-4)
+    wd_ic = _arm_step_watchdog(per_step_timeout_s, -1, label="ic_static_gs")
+    try:
+        GSStaticSolver.solve(
+            eq=eq,
+            profiles=profiles,
+            constrain=None,
+            target_relative_tolerance=ic_tol,
+            max_solving_iterations=max_iter,
+            verbose=0,
+        )
+        print(
+            f"[OK] evolutive IC static GS finished (tol={ic_tol:g}, max_iter={max_iter})",
+            flush=True,
+        )
+    finally:
+        try:
+            wd_ic.cancel()
+        except Exception:
+            pass
 
     nl_kwargs = dict(
         eq=eq,
@@ -817,20 +851,35 @@ def main() -> None:
 
         if snap_every > 0 and (step % snap_every == 0):
             try:
-                fig, ax = plt.subplots(1, 1, figsize=(4, 8), dpi=100)
-                try:
-                    from mast_freegsnke.equilibrium_presentation import (
-                        plot_equilibrium_curated,
-                    )
+                from mast_freegsnke.equilibrium_presentation import (
+                    attach_profiles_after_restore,
+                    save_equilibrium_png,
+                    try_load_presentation_authority,
+                )
 
-                    plot_equilibrium_curated(ax, stepping.eq1, tokamak)
+                _pres_s = try_load_presentation_authority(INPUTS)
+                _style_s = str(
+                    getattr(_pres_s, "plot_style", "freegsnke_native")
+                    if _pres_s
+                    else "freegsnke_native"
+                )
+                # Prefer eq1's own profiles after nlstepper; else re-bind IC profiles.
+                _prof_snap = getattr(stepping.eq1, "_profiles", None) or profiles
+                try:
+                    attach_profiles_after_restore(stepping.eq1, _prof_snap)
                 except Exception:
-                    stepping.eq1.plot(axis=ax, show=False)
-                    tokamak.plot(axis=ax, show=False)
-                ax.set_title(f"evolutive step {step}  t={t_abs:.4f}s")
-                fig.tight_layout()
-                fig.savefig(OUT / f"eq_snapshot_step{step:04d}.png", dpi=120, bbox_inches="tight")
-                plt.close(fig)
+                    pass
+                save_equilibrium_png(
+                    tokamak=tokamak,
+                    eq=stepping.eq1,
+                    out_path=OUT / f"eq_snapshot_step{step:04d}.png",
+                    title=f"evolutive step {step}  t={t_abs:.4f}s",
+                    dpi=120,
+                    figsize=(4.0, 8.0),
+                    run_dir=HERE,
+                    plot_style=_style_s,
+                    profiles=_prof_snap,
+                )
             except Exception as e:
                 print(f"[WARN] snapshot failed at step {step}: {e}", flush=True)
 
@@ -928,6 +977,7 @@ def main() -> None:
         "scale_paxis_with_ip": scale_paxis,
         "clamp_ip_to_measured": clamp_ip,
         "ic_coil_currents": ic_coil_src,
+        "n_passive": int(n_passive),
         "plasma_resistivity_ohm_m": eta,
         "max_solving_iterations": max_iter,
         "per_step_timeout_s": per_step_timeout_s,
@@ -996,9 +1046,16 @@ def main() -> None:
                 if clamp_ip
                 else "Ip free under circuit mutuals (clamp_ip_to_measured=false)"
             ),
-            "Passives empty until configs/passive_resistivity.json has cited resistivity (Alfven-unstable risk)",
+            "Passives empty until configs/passive_resistivity.json has cited resistivity "
+            "(Alfven-unstable risk; n_passive=0 -> example05-class stability not expected; "
+            "early soft-stop is honest success)",
         ],
     }
+    if n_passive == 0:
+        meta["limitations"].insert(
+            0,
+            "n_passive=0 preflight: do not claim full-window evolutive without cited passives",
+        )
     if early_stop:
         meta["limitations"].append(
             f"early_stop={early_stop}: evolutive Ip diverged from measured "

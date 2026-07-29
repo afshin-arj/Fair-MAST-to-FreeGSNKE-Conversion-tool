@@ -21,7 +21,7 @@ _KNOWN_LIMITATIONS = [
     "P3 and P6: no usable measured PF voltage in public L1/L2 -> from_current_ohmic (I*R with FreeGSNKE coil_resist after load) — treat as declared uncertainty, not measured V.",
     "Active-coil resistivity is FreeGSNKE copper default 1.55e-8 (declared material constant; Level-2 does not publish coil resistivity).",
     "Profile alpha_m/alpha_n/fvac are held from the inverse IC; optional scale_paxis_with_ip is a declared Ip scaling law (default off) — never invented profile numbers.",
-    "Evolutive default: ic_coil_currents=measured_pf + clamp_ip_to_measured (FAIR-MAST ip.csv / pf_currents.csv) — declared replay laws so Ip matches measurement under voltage drive.",
+    "Evolutive default: ic_coil_currents=inverse_dump + clamp_ip_to_measured — prefer converged Inverse IC; measured_pf remains an explicit evolutive_authority choice. n_passive=0 → example05-class stability not expected (do not invent ρ).",
     "Contract residual metrics score only families with honest channel identity + units; uncalibrated mirnov/saddle/omaha stay audit-only until calibration authority is populated.",
     "Equilibrium GIFs are presentation annexes — not a substitute for residual metrics or Ip match.",
     "04_efit_compare uses FAIR-MAST Level-2 EFIT++ archive products — not a live efit-ai Fortran solve.",

@@ -6,6 +6,7 @@
 from pathlib import Path
 import json
 import multiprocessing as _mp
+import os
 import pickle
 import time as _time
 import numpy as np
@@ -243,13 +244,56 @@ def _solve_forward_sample(
     proc = ctx.Process(target=_forward_sample_worker, args=(payload,))
     tic = _time.time()
     proc.start()
-    proc.join(timeout=float(mt_spec["per_time_timeout_s"]))
-    if proc.is_alive():
-        proc.terminate()
-        proc.join(timeout=5.0)
+    child_pid = int(proc.pid) if proc.pid else None
+    import threading as _threading
+
+    timed_out = {"v": False}
+
+    def _force_kill_child() -> None:
+        timed_out["v"] = True
+        if child_pid:
+            try:
+                import subprocess as _sp
+
+                if os.name == "nt":
+                    _sp.run(
+                        ["taskkill", "/F", "/T", "/PID", str(child_pid)],
+                        capture_output=True,
+                        timeout=30,
+                        check=False,
+                    )
+                else:
+                    try:
+                        os.kill(child_pid, 9)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        try:
+            if proc.is_alive():
+                proc.terminate()
+            if proc.is_alive():
+                proc.kill()
+        except Exception:
+            pass
+
+    wd = _threading.Timer(float(mt_spec["per_time_timeout_s"]), _force_kill_child)
+    wd.daemon = True
+    wd.start()
+    try:
+        proc.join()
+    finally:
+        try:
+            wd.cancel()
+        except Exception:
+            pass
+    if timed_out["v"] or proc.is_alive():
         if proc.is_alive():
-            proc.kill()
-            proc.join(timeout=5.0)
+            _force_kill_child()
+            try:
+                proc.join(timeout=5.0)
+            except Exception:
+                pass
         return {
             "ok": False,
             "status": "timeout",
@@ -341,43 +385,46 @@ def main():
         verbose=True,
     )
 
-    fig, ax = plt.subplots(1, 1, figsize=(6, 10), dpi=140)
+    # Dump currents by default (= Inverse IC); measured-PF multitime is labeled below.
     try:
-        from mast_freegsnke.equilibrium_presentation import plot_equilibrium_curated
+        from mast_freegsnke.equilibrium_presentation import (
+            attach_profiles_after_restore,
+            save_equilibrium_png,
+            try_load_presentation_authority,
+        )
 
-        plot_equilibrium_curated(ax, eq, tokamak)
-    except Exception:
-        tokamak.plot(axis=ax, show=False)
-        try:
-            eq.plot(axis=ax, show=False, xpoints=False, opoints=True)
-        except TypeError:
-            eq.plot(axis=ax, show=False)
-        try:
-            from mast_freegsnke.equilibrium_presentation import overlay_honest_xpoints
-
-            overlay_honest_xpoints(ax, eq)
-        except Exception:
-            pass
-    ax.set_aspect("equal")
-    ax.grid(alpha=0.3)
-    t0 = dump.get("t0"); Ip = dump.get("Ip")
-    if t0 is not None and Ip is not None:
-        ax.set_title(f"Forward replay (t0={t0:.3f}s, Ip={Ip/1e6:.3f}MA)")
-    else:
-        ax.set_title("Forward replay")
-    try:
-        ax.legend(loc="upper right", fontsize=8)
-    except Exception:
-        pass
-    fig.tight_layout()
-    fig.savefig(HERE / "forward_equilibrium.png", dpi=250, bbox_inches="tight")
-    plt.close(fig)
-    print("Saved forward_equilibrium.png")
+        attach_profiles_after_restore(eq, profiles)
+        _pres0 = try_load_presentation_authority(INPUTS)
+        _style = str(
+            getattr(_pres0, "plot_style", "freegsnke_native") if _pres0 else "freegsnke_native"
+        )
+        t0 = dump.get("t0")
+        Ip = dump.get("Ip")
+        _title = (
+            f"Forward GS (dump currents) t0={float(t0):.4f}s Ip={float(Ip)/1e6:.3f}MA"
+            if t0 is not None and Ip is not None
+            else "Forward GS (dump currents)"
+        )
+        save_equilibrium_png(
+            tokamak=tokamak,
+            eq=eq,
+            out_path=HERE / "forward_equilibrium.png",
+            title=_title,
+            dpi=250,
+            figsize=(6.0, 10.0),
+            run_dir=HERE,
+            plot_style=_style,
+            profiles=profiles,
+        )
+        print(f"Saved forward_equilibrium.png (plot_style={_style})")
+    except Exception as _fig_e:
+        print(f"[WARN] forward_equilibrium.png failed: {_fig_e}", flush=True)
 
     # Multi-time forward GS across formed-plasma window → frames + GIF
     # Hard per-sample kill (same FreeGSNKE hang mode as inverse multi-time).
     try:
         from mast_freegsnke.equilibrium_presentation import (
+            attach_profiles_after_restore,
             save_equilibrium_png,
             sorted_frame_paths,
             try_load_presentation_authority,
@@ -395,6 +442,7 @@ def main():
             tokamak_pickle = HERE / ".multitime_work" / "tokamak_fwd.pkl"
             n_ok = 0
             n_skip = 0
+            _plot_style = str(getattr(pres, "plot_style", "freegsnke_native"))
             # Continue from the t0 forward solution (cold-start each sample can hang).
             if not mt_spec["continuation"]:
                 eq.plasma_psi = eq.create_psi_plasma_default(adaptive_centre=True)
@@ -437,14 +485,24 @@ def main():
                 if result.get("ok"):
                     n_ok += 1
                     if pres.write_eq_frames:
+                        # Child restore only copies plasma_psi — re-bind profiles.
+                        _prof_i = ConstrainPaxisIp(
+                            eq=eq, Ip=float(ip_i), **profile_kwargs
+                        )
+                        attach_profiles_after_restore(eq, _prof_i)
                         tag = f"eq_t{float(t_i):.6f}".replace(".", "p")
                         png = save_equilibrium_png(
                             tokamak=tokamak,
                             eq=eq,
                             out_path=frames_dir / f"{tag}.png",
-                            title=f"Forward GS  t={float(t_i):.4f}s  Ip={ip_i/1e6:.3f}MA",
+                            title=(
+                                f"Forward GS measured-PF replay "
+                                f"t={float(t_i):.4f}s Ip={ip_i/1e6:.3f}MA"
+                            ),
                             dpi=int(pres.gif_dpi),
                             run_dir=HERE,
+                            plot_style=_plot_style,
+                            profiles=_prof_i,
                         )
                         entry["frame_png"] = str(png.relative_to(HERE)).replace("\\", "/")
                     print(
@@ -470,7 +528,8 @@ def main():
                         "n_skipped": n_skip,
                         "multitime_authority": mt_spec,
                         "note": (
-                            "Multi-time forward uses measured PF/Ip at each window sample, "
+                            "Multi-time forward uses measured PF/Ip at each window sample "
+                            "(not Inverse dump currents — SN-vs-DN vs Inverse is expected), "
                             "psi continuation from t0 (unless continuation=false), "
                             "max_solving_iterations + hard per_time_timeout_s kill. "
                             "Skipped times omit frames; never fabricate equilibria."

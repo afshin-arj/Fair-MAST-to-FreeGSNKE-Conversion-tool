@@ -107,6 +107,34 @@ def _detect_evolutive_timeout_hint(stdout_text: str, stderr_text: str) -> Option
     return None
 
 
+def _force_kill_process_tree(pid: int) -> None:
+    """Best-effort kill of ``pid`` and descendants (Windows orphans otherwise)."""
+    if pid is None or int(pid) <= 0:
+        return
+    pid = int(pid)
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        except Exception:
+            pass
+        return
+    try:
+        os.kill(pid, 9)
+    except Exception:
+        pass
+    # POSIX: try process-group kill when the child was started in a new session.
+    try:
+        os.killpg(pid, 9)
+    except Exception:
+        pass
+
+
 class FreeGSNKERunner:
     """Execute generated FreeGSNKE scripts in a controlled, audit-friendly way.
 
@@ -116,6 +144,11 @@ class FreeGSNKERunner:
     A hard wall-clock ``timeout_s`` (v10.5.0) prevents indefinite hangs when the
     FreeGSNKE inverse residual-resize loop never returns (known failure mode when
     Inverse_optimizer state is reused across times).
+
+    Logs are written via file handles (not PIPE). On Windows, multitime
+    ``multiprocessing`` children can outlive a killed inverse/forward parent and
+    keep inherited PIPEs open — ``subprocess.run(capture_output=True)`` then
+    waits forever for EOF. File redirection + ``taskkill /T`` closes that hole.
 
     ``repo_root`` / package ``src`` is prepended to PYTHONPATH so scripts can import
     ``mast_freegsnke`` (presentation GIFs, solver introspection) even when the
@@ -157,31 +190,55 @@ class FreeGSNKERunner:
 
         t0 = time.time()
         timed_out = False
-        try:
-            proc = subprocess.run(
+        returncode = -1
+        creationflags = 0
+        if os.name == "nt":
+            # New process group so taskkill /T can tear down multitime grandchildren.
+            creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+
+        with open(stdout_path, "w", encoding="utf-8", errors="replace") as out_f, open(
+            stderr_path, "w", encoding="utf-8", errors="replace"
+        ) as err_f:
+            proc = subprocess.Popen(
                 [self.python_exe, str(script_path)],
                 cwd=str(run_dir),
                 env=self.env,
+                stdout=out_f,
+                stderr=err_f,
                 text=True,
-                capture_output=True,
-                timeout=self.timeout_s,
+                creationflags=creationflags,
             )
-            returncode = int(proc.returncode)
-            stdout_text = proc.stdout or ""
-            stderr_text = proc.stderr or ""
-        except subprocess.TimeoutExpired as e:
-            timed_out = True
-            returncode = 124
-            stdout_text = (e.stdout.decode("utf-8", errors="replace") if isinstance(e.stdout, (bytes, bytearray)) else (e.stdout or ""))
-            stderr_text = (e.stderr.decode("utf-8", errors="replace") if isinstance(e.stderr, (bytes, bytearray)) else (e.stderr or ""))
+            try:
+                if self.timeout_s is None:
+                    returncode = int(proc.wait())
+                else:
+                    try:
+                        returncode = int(proc.wait(timeout=float(self.timeout_s)))
+                    except subprocess.TimeoutExpired:
+                        timed_out = True
+                        returncode = 124
+                        _force_kill_process_tree(int(proc.pid))
+                        try:
+                            proc.wait(timeout=15.0)
+                        except Exception:
+                            pass
+            finally:
+                if proc.poll() is None:
+                    _force_kill_process_tree(int(proc.pid))
+                    try:
+                        proc.wait(timeout=10.0)
+                    except Exception:
+                        pass
+
+        dt = float(time.time() - t0)
+        stdout_text = stdout_path.read_text(encoding="utf-8", errors="replace")
+        stderr_text = stderr_path.read_text(encoding="utf-8", errors="replace")
+        if timed_out:
             stderr_text += (
                 f"\n[TIMEOUT] FreeGSNKE script exceeded wall-clock limit "
-                f"of {self.timeout_s}s (label={label}); process killed.\n"
+                f"of {self.timeout_s}s (label={label}); process tree killed.\n"
             )
-        dt = float(time.time() - t0)
-
-        stdout_path.write_text(stdout_text)
-        stderr_path.write_text(stderr_text)
+            stderr_path.write_text(stderr_text, encoding="utf-8", errors="replace")
 
         hint = _detect_import_error(stderr_text)
         evo_hint = _detect_evolutive_timeout_hint(stdout_text, stderr_text)
@@ -250,3 +307,25 @@ def evolutive_partial_history_n(run_dir: Path) -> int:
                     pass
         return n
     return 0
+
+
+def evolutive_timeout_is_soft(
+    *,
+    returncode: int,
+    timed_out: bool,
+    stdout_text: str,
+    n_partial: int,
+) -> bool:
+    """Whether an evolutive failure should not block the shot.
+
+    Soft when:
+      - script wall-clock timeout / per-step ``os._exit(124)`` with ≥1 history rows, or
+      - IC static GS watchdog fired before history started (measured_pf IC can hang
+        inside one freegs4e Jacobian despite ``max_solving_iterations``).
+    """
+    if not (timed_out or int(returncode) == 124):
+        return False
+    if int(n_partial) >= 1:
+        return True
+    blob = stdout_text or ""
+    return ("ic_static_gs" in blob) and ("TIMEOUT" in blob)

@@ -338,3 +338,50 @@ def apply_shape_targets_to_execution_boundary(
     report["status"] = "ok"
     report["path"] = str(prov_path.as_posix())
     return report
+
+
+def boundary_dict_at_time(
+    inputs_dir: Path,
+    *,
+    t_s: float,
+    fallback: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Nearest archive shape_targets knot → Inverse boundary dict (no invent).
+
+    Returns ``fallback`` unchanged when shape_targets are missing/incomplete.
+    Preserves optional ``coil_current_limits`` from fallback when present.
+    """
+    inputs_dir = Path(inputs_dir)
+    out = {
+        "null_points": fallback.get("null_points"),
+        "isoflux_set": fallback.get("isoflux_set"),
+    }
+    if fallback.get("coil_current_limits") is not None:
+        out["coil_current_limits"] = fallback.get("coil_current_limits")
+
+    st = load_shape_targets_obj(inputs_dir)
+    if st is None or str(st.get("status") or "") != "ok":
+        return out
+    knot = pick_shape_knot(st, t_s=float(t_s))
+    if knot is None:
+        return out
+    try:
+        fb = BoundarySpec(
+            null_points=list(fallback["null_points"]),
+            isoflux_set=list(fallback["isoflux_set"]),
+            coil_current_limits=fallback.get("coil_current_limits"),
+        )
+    except Exception:
+        return out
+    spec, prov = boundary_from_shape_knot(knot, fallback=fb)
+    if spec is None or not prov.get("ok"):
+        return out
+    out = {
+        "null_points": spec.null_points,
+        "isoflux_set": spec.isoflux_set,
+    }
+    if spec.coil_current_limits is not None:
+        out["coil_current_limits"] = spec.coil_current_limits
+    elif fallback.get("coil_current_limits") is not None:
+        out["coil_current_limits"] = fallback.get("coil_current_limits")
+    return out

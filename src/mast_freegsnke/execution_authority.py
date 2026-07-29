@@ -114,6 +114,9 @@ class BoundarySpec:
     null_points: List[List[float]]
     # isoflux_set stored as nested list shaped like freegsnke expects (see templates)
     isoflux_set: List[List[List[float]]]
+    # Optional FreeGSNKE Inverse_optimizer coil_current_limits [[upper...],[lower...]]
+    # Empty / None = do not pass limits (example01a-style limits only when declared).
+    coil_current_limits: Optional[List[List[float]]] = None
 
     def validate(self) -> None:
         # FreeGSNKE Inverse_optimizer: null_points = [Rcoords, Zcoords] with
@@ -136,6 +139,18 @@ class BoundarySpec:
         _require(isinstance(self.isoflux_set, list) and len(self.isoflux_set) >= 1, "BoundarySpec: isoflux_set must be non-empty list")
         # Light structural validation only (exact shape may vary)
         _require(isinstance(self.isoflux_set[0], list), "BoundarySpec: isoflux_set outer element must be list")
+        if self.coil_current_limits is not None:
+            _require(
+                isinstance(self.coil_current_limits, list) and len(self.coil_current_limits) == 2,
+                "BoundarySpec: coil_current_limits must be [[upper...],[lower...]] or null",
+            )
+            _require(
+                len(self.coil_current_limits[0]) == len(self.coil_current_limits[1]),
+                "BoundarySpec: coil_current_limits upper/lower lengths must match",
+            )
+            for row in self.coil_current_limits:
+                _require(isinstance(row, list), "BoundarySpec: coil_current_limits rows must be lists")
+                _require(all(_is_number(v) for v in row), "BoundarySpec: coil_current_limits must be numbers")
 
 
 @dataclass(frozen=True)

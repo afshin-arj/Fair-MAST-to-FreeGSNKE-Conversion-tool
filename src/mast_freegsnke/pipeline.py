@@ -28,7 +28,12 @@ from .window_consensus import ConsensusWindow, infer_consensus_window
 from .probe_geometry import build_geometry_from_machine_dir, write_geometry_json, write_geometry_pickle, write_geometry_pickle_internal
 from .machine_authority import machine_authority_from_dir, snapshot_machine_authority
 from .provenance import write_provenance, write_manifest_v2
-from .freegsnke_runner import FreeGSNKERunner, evolutive_partial_history_n, write_execution_report
+from .freegsnke_runner import (
+    FreeGSNKERunner,
+    evolutive_partial_history_n,
+    evolutive_timeout_is_soft,
+    write_execution_report,
+)
 from .diagnostic_contracts import (
     load_contracts,
     resolve_contracts_for_run,
@@ -737,6 +742,7 @@ class ShotPipeline:
                     write_eq_frames=bool(self.cfg.write_eq_frames),
                     gif_fps=float(self.cfg.equilibrium_gif_fps),
                     gif_dpi=int(self.cfg.equilibrium_gif_dpi),
+                    plot_style="freegsnke_native",
                 )
                 pres_path = write_presentation_authority(inputs_dir, pres)
                 _stage(
@@ -1306,11 +1312,21 @@ class ShotPipeline:
                 from .boundary_from_shape import (
                     apply_shape_targets_to_execution_boundary,
                 )
+                from .formed_plasma import estimate_formed_plasma_t_or_none
 
-                t_prefer = None
-                if final_tw is not None:
-                    # Prefer window start (near inverse t0) over mid for X/LCFS remap.
+                # Remap X/LCFS at the same formed-plasma instant Inverse uses for t0
+                # (min |dIp/dt| above formed_plasma_frac), not window start — on 30201
+                # t_start=0.2012 while inverse t0≈0.2164. Clamp into finalized window.
+                t_prefer = estimate_formed_plasma_t_or_none(
+                    inputs_dir / "ip.csv",
+                    frac=float(self.cfg.formed_plasma_frac),
+                )
+                if t_prefer is None and final_tw is not None:
                     t_prefer = float(final_tw.t_start)
+                if t_prefer is not None and final_tw is not None:
+                    t_prefer = float(
+                        min(max(float(t_prefer), float(final_tw.t_start)), float(final_tw.t_end))
+                    )
                 bnd_rep = apply_shape_targets_to_execution_boundary(
                     inputs_dir, t_s=t_prefer
                 )
@@ -1477,14 +1493,28 @@ class ShotPipeline:
                             write_execution_report(run_dir, exec_summary)
                             if not er.ok:
                                 n_partial = evolutive_partial_history_n(run_dir)
-                                # Hung/timed-out nlstepper after useful steps: keep
-                                # inverse/forward success; do not fail-closed the shot.
-                                if (er.timed_out or int(er.returncode) == 124) and n_partial >= 1:
+                                stdout_txt = ""
+                                try:
+                                    stdout_txt = (
+                                        Path(run_dir) / str(er.stdout_path)
+                                    ).read_text(encoding="utf-8", errors="replace")
+                                except Exception:
+                                    stdout_txt = ""
+                                if evolutive_timeout_is_soft(
+                                    returncode=int(er.returncode),
+                                    timed_out=bool(er.timed_out),
+                                    stdout_text=stdout_txt,
+                                    n_partial=int(n_partial),
+                                ):
                                     _stage(
                                         "evolutive_execute",
                                         False,
                                         error_hint=er.error_hint or "evolutive_per_step_timeout",
-                                        note="partial_timeout_with_history",
+                                        note=(
+                                            "ic_static_gs_timeout"
+                                            if n_partial < 1
+                                            else "partial_timeout_with_history"
+                                        ),
                                         n_steps_recorded=n_partial,
                                         duration_s=er.duration_s,
                                     )

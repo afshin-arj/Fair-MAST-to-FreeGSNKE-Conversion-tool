@@ -114,7 +114,7 @@ class AppConfig:
     build_shape_targets: bool = False
     # Hard wall-clock limit for each FreeGSNKE script (seconds). None disables.
     # Protects the pipeline from FreeGSNKE's uncapped residual-resize hang.
-    freegsnke_script_timeout_s: Optional[float] = 1200.0
+    freegsnke_script_timeout_s: Optional[float] = 3600.0
 
 
     @staticmethod
@@ -291,7 +291,7 @@ class AppConfig:
         # Ensure equilibrium group is downloaded when EFIT compare is enabled
         if compare_efit_archive and "equilibrium" not in optional_groups:
             optional_groups = list(optional_groups) + ["equilibrium"]
-        raw_timeout = obj.get("freegsnke_script_timeout_s", 1200.0)
+        raw_timeout = obj.get("freegsnke_script_timeout_s", 3600.0)
         if raw_timeout is None:
             freegsnke_script_timeout_s: Optional[float] = None
         else:

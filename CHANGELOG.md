@@ -1,3 +1,29 @@
+## 11.21.0 — FreeGSNKE example alignment (native plots + per-time Inverse shape)
+
+### Plot (example01a / 02 / 05 style)
+- Default `plot_style=freegsnke_native`: `tokamak.plot` + `eq.plot` (+ Inverse `constrain.plot`); curated remains available.
+- `attach_profiles_after_restore` before every Inverse/Forward/Evolutive plot and LCFS (fixes blank contours after spawn-child `plasma_psi` restore).
+- Forward frames labeled **measured-PF replay** vs dump-current t0 PNG so SN-vs-DN is not misread as Inverse failure.
+
+### Physics / wiring
+- Per-sample Inverse boundary from nearest `shape_targets` knot at `t_i` (soft-fallback; never invent). Optional `coil_current_limits` wired into `Inverse_optimizer`.
+- Evolutive default `ic_coil_currents=inverse_dump` (prefer converged Inverse IC); `measured_pf` remains an explicit authority choice.
+- `n_passive=0` loud preflight + meta: example05-class stability not expected; early soft-stop is honest success (still do not invent ρ).
+
+### Validate
+- Shot 30201 re-run checklist vs archive DN + FreeGSNKE example plot style.
+- Version **11.21.0**.
+
+## 11.20.1 — Windows FreeGSNKE runner: stop orphan-pipe hangs + reliable per-time kill
+
+- **Root cause (shot 30202):** multitime `multiprocessing` children survived per-time kill and kept inherited stdout/stderr PIPEs open, so `subprocess.run(capture_output=True)` never returned after the script parent exited.
+- **Fix (runner):** FreeGSNKERunner writes logs to files (not PIPE), starts a new process group on Windows, and `taskkill /T` on timeout.
+- **Fix (multitime):** per-sample kill uses `threading.Timer` + `taskkill` — `Process.join(timeout=…)` can hang forever in native freegs4e on Windows (30202 burned the full script budget on one sample).
+- **Fix (evolutive):** watchdog IC static GS; pass `max_solving_iterations`; IC tol floor 1e-4; pipeline soft-skips IC `os._exit(124)` timeouts when inverse+forward already succeeded (30202/30204 measured_pf IC can hang inside one freegs4e Jacobian). Default `freegsnke_script_timeout_s` **1200→3600**. Batch summary ASCII-safe on Windows cp1252.
+- **30201 Inverse dig:** DN isoflux packing `[[R],[Z]]` / `(1,2,N)` is correct for FreeGSNKE 3.0.1; default grid 65×129 (~3 cm) is coarse but not the t0 failure. Cold t0 Inverse stalled (`rel_change~0.3`) while continuation neighbors converged; boundary remap now uses formed-plasma t0 (not window start); t0 retries `full_inverse` once after a successful `forward_gs` seed.
+- **30201 blank Inverse contours:** after spawn-child restore, curated plot used empty/stale `_profiles.xpt` so ψ levels were skipped (machine+targets only). Fix: `attach_profiles_after_restore` (Jtor + critical refresh) before LCFS/plot/frames; curated falls back to ψ linspace if X/O ψ missing.
+- Version **11.20.1**.
+
 ## 11.20.0 — LCFS SN/DN isoflux, window end before disruption, denser times, Planner V honesty
 
 - **SN/DN boundary:** archive-LCFS divertor tips prepended to Inverse isoflux; provenance `null_topology` / tip sources (never invent coordinates).

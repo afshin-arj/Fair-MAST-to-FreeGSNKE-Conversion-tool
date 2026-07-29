@@ -20,15 +20,20 @@ class PresentationError(ValueError):
 class PresentationAuthority:
     """Declared presentation knobs (snapshotted under inputs/)."""
 
-    version: str = "1.0"
+    version: str = "1.1"
     write_equilibrium_gifs: bool = True
     write_eq_frames: bool = True
     gif_fps: float = 2.0
     gif_dpi: int = 100
+    # freegsnke_native = tokamak.plot + eq.plot (+ constrain.plot) like example01a/02/05
+    # curated = sparse core surfaces + honest secondary-X legend
+    plot_style: str = "freegsnke_native"
     notes: str = (
         "PNG frames + GIFs across the finalized formed-plasma window "
         "(linspace_window_inclusive for inverse/forward; evolutive steps for nlstepper). "
-        "Not a substitute for metrics CSVs; skipped/failed solves omit frames."
+        "Default plot_style=freegsnke_native matches FreeGSNKE example01a/02/05 "
+        "(tokamak.plot + eq.plot). Not a substitute for metrics CSVs; "
+        "skipped/failed solves omit frames."
     )
 
     def validate(self) -> None:
@@ -42,6 +47,10 @@ class PresentationAuthority:
             raise PresentationError("gif_fps must be > 0")
         if not (isinstance(self.gif_dpi, int) and 50 <= int(self.gif_dpi) <= 400):
             raise PresentationError("gif_dpi must be int in [50, 400]")
+        if str(self.plot_style) not in {"freegsnke_native", "curated"}:
+            raise PresentationError(
+                "plot_style must be 'freegsnke_native' or 'curated'"
+            )
         if self.write_equilibrium_gifs and not self.write_eq_frames:
             raise PresentationError(
                 "write_equilibrium_gifs=true requires write_eq_frames=true "
@@ -59,11 +68,12 @@ def load_presentation_authority(path: Path) -> PresentationAuthority:
     if not isinstance(obj, dict):
         raise PresentationError("presentation authority root must be an object")
     auth = PresentationAuthority(
-        version=str(obj.get("version", "1.0")),
+        version=str(obj.get("version", "1.1")),
         write_equilibrium_gifs=bool(obj.get("write_equilibrium_gifs", True)),
         write_eq_frames=bool(obj.get("write_eq_frames", True)),
         gif_fps=float(obj.get("gif_fps", 2.0)),
         gif_dpi=int(obj.get("gif_dpi", 100)),
+        plot_style=str(obj.get("plot_style", "freegsnke_native")),
         notes=str(obj.get("notes", PresentationAuthority.notes)),
     )
     auth.validate()
@@ -83,6 +93,76 @@ def write_presentation_authority(inputs_dir: Path, auth: PresentationAuthority) 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(auth.to_dict(), indent=2) + "\n", encoding="utf-8")
     return out
+
+
+def attach_profiles_after_restore(
+    eq: Any,
+    profiles: Any,
+) -> bool:
+    """Re-bind ``eq._profiles`` and refresh O/X after child-process psi restore.
+
+    Multitime / t0 Inverse solve in a spawn child and only copy ``plasma_psi``
+    (and optionally currents) back. Without ``Jtor`` + critical refresh,
+    curated plots see O markers from a stale/empty ``_profiles`` and skip ψ
+    contours (shot 30201: machine+targets only).
+    """
+    import numpy as np
+
+    try:
+        psi = eq.psi() if callable(getattr(eq, "psi", None)) else getattr(eq, "psi", None)
+        if psi is None:
+            return False
+        psi_arr = np.asarray(psi, dtype=float)
+        profiles.Jtor(eq.R, eq.Z, psi_arr)
+        eq._profiles = profiles
+    except Exception:
+        try:
+            psi_arr = np.asarray(eq.psi(), dtype=float)
+        except Exception:
+            return False
+
+    def _has_xpt() -> bool:
+        try:
+            xpt = getattr(profiles, "xpt", None)
+            return xpt is not None and len(xpt) > 0
+        except Exception:
+            return False
+
+    def _has_opt() -> bool:
+        try:
+            opt = getattr(profiles, "opt", None)
+            return opt is not None and len(opt) > 0
+        except Exception:
+            return False
+
+    # Jtor can leave xpt empty (limiter / diverted_critical path). Refresh from
+    # freegs4e critical so curated LCFS levels are available.
+    if not _has_xpt() or not _has_opt():
+        try:
+            from freegs4e import critical
+
+            ip = float(getattr(profiles, "Ip", 0.0) or 0.0)
+            opt2, xpt2 = critical.find_critical(eq.R, eq.Z, psi_arr, None, ip)
+            if opt2 is not None and len(opt2) > 0:
+                profiles.opt = opt2
+                try:
+                    profiles.psi_axis = float(opt2[0][2])
+                except Exception:
+                    pass
+            if xpt2 is not None and len(xpt2) > 0:
+                profiles.xpt = xpt2
+                try:
+                    profiles.psi_bndry = float(xpt2[0][2])
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    try:
+        eq._profiles = profiles
+    except Exception:
+        return False
+    return _has_opt() or np.isfinite(psi_arr).any()
 
 
 def overlay_honest_xpoints(ax: Any, eq: Any) -> None:
@@ -234,6 +314,76 @@ def overlay_inverse_targets(
             pass
 
 
+def plot_equilibrium_freegsnke_native(
+    ax: Any,
+    eq: Any,
+    tokamak: Any = None,
+    *,
+    constrain: Any = None,
+    inverse_targets: Optional[Dict[str, Any]] = None,
+    profiles: Any = None,
+) -> None:
+    """Official FreeGSNKE example01a/02/05 plot style.
+
+    ``tokamak.plot`` + ``eq.plot`` (freegs4e: ~35 ψ levels, primary-X red LCFS,
+    all X/O markers). Inverse optionally adds ``constrain.plot``. Archive Inverse
+    targets are a thin overlay labeled as targets (not solved nulls).
+    """
+    if profiles is not None:
+        attach_profiles_after_restore(eq, profiles)
+    elif getattr(eq, "_profiles", None) is None:
+        raise PresentationError(
+            "eq._profiles missing for freegsnke_native plot "
+            "(pass profiles=... or call attach_profiles_after_restore first)"
+        )
+
+    if tokamak is not None:
+        try:
+            tokamak.plot(axis=ax, show=False)
+        except Exception:
+            pass
+    try:
+        eq.plot(axis=ax, show=False)
+    except TypeError:
+        try:
+            eq.plot(axis=ax, show=False, xpoints=True, opoints=True)
+        except Exception as e:
+            raise PresentationError(f"eq.plot failed: {e}") from e
+    except Exception as e:
+        # freegs4e plotEquilibrium indexes xpt[0]; empty X after a bad restore
+        # → fall back to curated contours rather than a blank/crashing frame.
+        try:
+            plot_equilibrium_curated(ax, eq, tokamak=None, inverse_targets=None)
+        except Exception:
+            raise PresentationError(f"eq.plot failed: {e}") from e
+
+    if constrain is not None:
+        try:
+            constrain.plot(axis=ax, show=False)
+        except TypeError:
+            try:
+                constrain.plot(axis=ax)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    overlay_inverse_targets(ax, inverse_targets)
+    try:
+        ax.set_aspect("equal")
+    except Exception:
+        pass
+    try:
+        ax.grid(alpha=0.25)
+    except Exception:
+        pass
+    try:
+        ax.set_xlabel("Major radius [m]")
+        ax.set_ylabel("Height [m]")
+    except Exception:
+        pass
+
+
 def plot_equilibrium_curated(
     ax: Any,
     eq: Any,
@@ -255,8 +405,13 @@ def plot_equilibrium_curated(
 
     try:
         psi = np.asarray(eq.psi(), dtype=float)
-        opt = eq._profiles.opt
-        xpt = eq._profiles.xpt
+        prof = getattr(eq, "_profiles", None)
+        if prof is None:
+            raise PresentationError("eq._profiles missing (call attach_profiles_after_restore)")
+        opt = getattr(prof, "opt", None)
+        xpt = getattr(prof, "xpt", None)
+    except PresentationError:
+        raise
     except Exception as e:
         raise PresentationError(f"equilibrium not solved for curated plot: {e}") from e
 
@@ -266,18 +421,35 @@ def plot_equilibrium_curated(
         except Exception:
             pass
 
-    # Prefer ψ_bndry from primary X; fall back to profiles attribute.
+    # Prefer ψ_bndry from primary X; then profiles attrs; then eq attrs.
+    psi_bndry = float("nan")
+    psi_axis = float("nan")
     try:
         psi_bndry = float(xpt[0][2])
     except Exception:
-        psi_bndry = float(getattr(eq, "psi_bndry", float("nan")))
+        for src in (prof, eq):
+            try:
+                v = float(getattr(src, "psi_bndry"))
+                if np.isfinite(v):
+                    psi_bndry = v
+                    break
+            except Exception:
+                pass
     try:
         psi_axis = float(opt[0][2])
     except Exception:
-        psi_axis = float(getattr(eq, "psi_axis", float("nan")))
+        for src in (prof, eq):
+            try:
+                v = float(getattr(src, "psi_axis"))
+                if np.isfinite(v):
+                    psi_axis = v
+                    break
+            except Exception:
+                pass
 
     R = eq.R
     Z = eq.Z
+    drew_core = False
     # Core nested surfaces strictly between axis and boundary (exclusive).
     if np.isfinite(psi_axis) and np.isfinite(psi_bndry) and abs(psi_bndry - psi_axis) > 0.0:
         lo, hi = (psi_axis, psi_bndry) if psi_axis < psi_bndry else (psi_bndry, psi_axis)
@@ -293,9 +465,24 @@ def plot_equilibrium_curated(
                 linewidths=0.7,
                 alpha=0.85,
             )
-    elif show_open_field:
-        levels = linspace(amin(psi), amax(psi), 12)
-        ax.contour(R, Z, psi, levels=levels, linewidths=0.5, alpha=0.5)
+            drew_core = True
+    # Honest fallback: never leave a blank plasma when ψ exists but X/O ψ
+    # levels were missing after child restore (30201 inverse_equilibrium.png).
+    if not drew_core and np.isfinite(psi).any():
+        pmin, pmax = float(amin(psi)), float(amax(psi))
+        if abs(pmax - pmin) > 0.0:
+            levels = linspace(pmin, pmax, 12)[1:-1]
+            if len(levels) > 0:
+                ax.contour(
+                    R,
+                    Z,
+                    psi,
+                    levels=levels,
+                    colors="0.35",
+                    linewidths=0.6,
+                    alpha=0.75,
+                )
+                drew_core = True
 
     # Optional muted open-field contours outside LCFS (never denser than core).
     if show_open_field and np.isfinite(psi_bndry):
@@ -361,14 +548,18 @@ def save_equilibrium_png(
     title: str,
     dpi: int = 100,
     figsize: tuple[float, float] = (4.0, 8.0),
-    curated: bool = True,
+    curated: bool = False,
+    plot_style: Optional[str] = None,
+    constrain: Any = None,
+    profiles: Any = None,
     inverse_targets: Optional[Dict[str, Any]] = None,
     run_dir: Optional[Path] = None,
 ) -> Path:
     """Save one equilibrium PNG frame (Agg-safe).
 
-    Default ``curated=True``: core surfaces + LCFS + honest X/O (not freegs4e's
-    dense global contour soup). Separatrix is primary-X ψ only.
+    Default ``plot_style=freegsnke_native`` (FreeGSNKE example01a/02/05):
+    ``tokamak.plot`` + ``eq.plot``. Pass ``plot_style='curated'`` or
+    ``curated=True`` for the sparse core-surface style.
     When ``run_dir`` is set, archive Inverse X/O targets are overlaid if present.
     """
     import matplotlib
@@ -379,35 +570,34 @@ def save_equilibrium_png(
     if inverse_targets is None and run_dir is not None:
         inverse_targets = load_inverse_null_targets(Path(run_dir))
 
+    style = str(plot_style or ("curated" if curated else "freegsnke_native")).strip().lower()
+    if style not in {"freegsnke_native", "curated"}:
+        style = "freegsnke_native"
+
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(1, 1, figsize=figsize, dpi=dpi)
-    if curated:
+    if style == "curated":
         try:
+            if profiles is not None:
+                attach_profiles_after_restore(eq, profiles)
             plot_equilibrium_curated(ax, eq, tokamak, inverse_targets=inverse_targets)
         except Exception as e:
             plt.close(fig)
             raise PresentationError(f"curated plot failed: {e}") from e
     else:
         try:
-            tokamak.plot(axis=ax, show=False)
-        except Exception:
-            pass
-        try:
-            eq.plot(axis=ax, show=False, xpoints=False, opoints=True)
-        except TypeError:
-            try:
-                eq.plot(axis=ax, show=False)
-            except Exception as e:
-                plt.close(fig)
-                raise PresentationError(f"eq.plot failed: {e}") from e
+            plot_equilibrium_freegsnke_native(
+                ax,
+                eq,
+                tokamak,
+                constrain=constrain,
+                inverse_targets=inverse_targets,
+                profiles=profiles,
+            )
         except Exception as e:
             plt.close(fig)
-            raise PresentationError(f"eq.plot failed: {e}") from e
-        overlay_honest_xpoints(ax, eq)
-        overlay_inverse_targets(ax, inverse_targets)
-        ax.set_aspect("equal")
-        ax.grid(alpha=0.3)
+            raise PresentationError(f"freegsnke_native plot failed: {e}") from e
     ax.set_title(title)
     try:
         ax.legend(loc="upper right", fontsize=7, framealpha=0.85)

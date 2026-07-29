@@ -85,7 +85,7 @@ def run_shot_batch(
                     )
                 break
         else:
-            print(f"[OK] Shot {shot} completed → {runs_dir / str(shot)}")
+            print(f"[OK] Shot {shot} completed -> {runs_dir / str(shot)}")
 
     executed = [(s, rc) for s, rc in results if rc != EXIT_UNSUITABLE]
     if executed:
@@ -105,7 +105,7 @@ def run_shot_batch(
                 print(f"  [SKIP] shot {shot}  (not suitable for analysis)")
             else:
                 mark = "OK  " if rc == 0 else "FAIL"
-                print(f"  [{mark}] shot {shot}  (exit {rc})  → {runs_dir / str(shot)}")
+                print(f"  [{mark}] shot {shot}  (exit {rc})  -> {runs_dir / str(shot)}")
         for shot in skipped_abort:
             print(f"  [SKIP] shot {shot}  (not run: batch_abort_on_failure)")
         failed = [shot for shot, rc in results if rc not in (0, EXIT_UNSUITABLE)]

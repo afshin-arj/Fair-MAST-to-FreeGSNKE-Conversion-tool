@@ -101,15 +101,24 @@ class ScriptGenerator:
         run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir/"inputs").mkdir(parents=True, exist_ok=True)
 
-        inv_tpl = (self.templates_dir/"inverse_run.py.tpl").read_text()
-        fwd_tpl = (self.templates_dir/"forward_run.py.tpl").read_text()
+        inv_tpl = (self.templates_dir/"inverse_run.py.tpl").read_text(encoding="utf-8")
+        fwd_tpl = (self.templates_dir/"forward_run.py.tpl").read_text(encoding="utf-8")
         evo_tpl_path = self.templates_dir / "evolutive_run.py.tpl"
-        evo_tpl = evo_tpl_path.read_text() if evo_tpl_path.exists() else None
+        evo_tpl = evo_tpl_path.read_text(encoding="utf-8") if evo_tpl_path.exists() else None
 
-        (run_dir/"inverse_run.py").write_text(self._render_template(inv_tpl, machine_dir=machine_dir, formed_frac=formed_frac))
-        (run_dir/"forward_run.py").write_text(self._render_template(fwd_tpl, machine_dir=machine_dir))
+        (run_dir/"inverse_run.py").write_text(
+            self._render_template(inv_tpl, machine_dir=machine_dir, formed_frac=formed_frac),
+            encoding="utf-8",
+        )
+        (run_dir/"forward_run.py").write_text(
+            self._render_template(fwd_tpl, machine_dir=machine_dir),
+            encoding="utf-8",
+        )
         if evo_tpl is not None:
-            (run_dir/"evolutive_run.py").write_text(self._render_template(evo_tpl, machine_dir=machine_dir))
+            (run_dir/"evolutive_run.py").write_text(
+                self._render_template(evo_tpl, machine_dir=machine_dir),
+                encoding="utf-8",
+            )
 
         # Suggest-only helper (never applied automatically).
         (run_dir/"suggest_pf_map.py").write_text(SUGGEST_PF_HELPER)

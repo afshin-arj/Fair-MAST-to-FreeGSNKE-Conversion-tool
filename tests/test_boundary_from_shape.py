@@ -160,6 +160,60 @@ def test_pick_shape_knot_nearest_time() -> None:
     assert k["t_s"] == 0.30
 
 
+def test_boundary_dict_at_time_nearest_knot(tmp_path: Path) -> None:
+    from mast_freegsnke.boundary_from_shape import boundary_dict_at_time
+
+    fallback = {
+        "null_points": [[0.5, 0.6], [0.0, 0.1]],
+        "isoflux_set": [[[0.5, 0.7], [0.0, 0.2]]],
+        "coil_current_limits": [[1.0, 2.0], [-1.0, -2.0]],
+    }
+    # Missing shape_targets → fallback preserved (incl. limits).
+    out0 = boundary_dict_at_time(tmp_path, t_s=0.25, fallback=fallback)
+    assert out0["null_points"] == fallback["null_points"]
+    assert out0["coil_current_limits"] == fallback["coil_current_limits"]
+
+    st = {
+        "status": "ok",
+        "knots": [
+            {
+                "t_s": 0.20,
+                "scalars": {
+                    "x_point_r": 1.05,
+                    "x_point_z": -1.20,
+                    "magnetic_axis_r": 0.90,
+                    "magnetic_axis_z": 0.01,
+                },
+                "control_points": {
+                    "r_m": [0.7, 1.2, 1.4, 1.2, 0.7],
+                    "z_m": [0.0, 0.8, 0.0, -0.8, 0.0],
+                },
+            },
+            {
+                "t_s": 0.40,
+                "scalars": {
+                    "x_point_r": 1.15,
+                    "x_point_z": -1.30,
+                    "magnetic_axis_r": 0.95,
+                    "magnetic_axis_z": 0.02,
+                },
+                "control_points": {
+                    "r_m": [0.7, 1.2, 1.4, 1.2, 0.7],
+                    "z_m": [0.0, 0.8, 0.0, -0.8, 0.0],
+                },
+            },
+        ],
+    }
+    (tmp_path / "shape_targets_authority").mkdir(parents=True)
+    (tmp_path / "shape_targets_authority" / "shape_targets.json").write_text(
+        json.dumps(st), encoding="utf-8"
+    )
+    out = boundary_dict_at_time(tmp_path, t_s=0.22, fallback=fallback)
+    assert out["null_points"][0][0] == 1.05
+    assert out["null_points"][1][0] == -1.20
+    assert out["coil_current_limits"] == fallback["coil_current_limits"]
+
+
 def test_boundary_spec_allows_more_than_two_nulls() -> None:
     # DN: X_lower, O, X_upper
     spec = BoundarySpec(

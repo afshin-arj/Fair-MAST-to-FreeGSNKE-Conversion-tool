@@ -47,7 +47,8 @@ def test_inverse_template_plot_failsoft_after_dump() -> None:
     tpl = (REPO / "templates" / "inverse_run.py.tpl").read_text(encoding="utf-8")
     after_dump = tpl.split('print("Saved inverse_dump.pkl")', 1)[1]
     assert "never abort after a successful dump" in after_dump or "inverse_equilibrium.png failed" in after_dump
-    assert "eq.plot failed" in after_dump
+    assert "save_equilibrium_png" in after_dump
+    assert "inverse_equilibrium.png failed" in after_dump
     # Optional TORAX must warn, not re-raise.
     torax = after_dump.split("ADR-001", 1)[1].split("write_synthetic_probe_csvs", 1)[0]
     assert "raise" not in torax

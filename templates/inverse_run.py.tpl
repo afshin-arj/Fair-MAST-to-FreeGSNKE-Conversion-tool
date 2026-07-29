@@ -70,6 +70,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
+import os
 import time as _time
 import multiprocessing as _mp
 
@@ -186,6 +187,29 @@ def _load_multitime_spec(solv: dict) -> dict:
     }
 
 
+def _make_inverse_constrain(bnd: dict):
+    """Build Inverse_optimizer from boundary dict (optional coil_current_limits)."""
+    kwargs = dict(
+        null_points=bnd["null_points"],
+        isoflux_set=np.array(bnd["isoflux_set"], dtype=float),
+    )
+    lim = bnd.get("coil_current_limits")
+    if lim is not None:
+        kwargs["coil_current_limits"] = np.array(lim, dtype=float)
+    return Inverse_optimizer(**kwargs)
+
+
+def _boundary_for_time(ea_bnd: dict, t_i: float) -> dict:
+    """Per-sample Inverse boundary from nearest shape_targets knot (no invent)."""
+    try:
+        from mast_freegsnke.boundary_from_shape import boundary_dict_at_time
+
+        return boundary_dict_at_time(INPUTS, t_s=float(t_i), fallback=ea_bnd)
+    except Exception as e:
+        print(f"[WARN] boundary_at_t={t_i:.6f} fallback to execution_authority: {e}", flush=True)
+        return ea_bnd
+
+
 def _solve_one_sample_inplace(
     *,
     eq,
@@ -211,10 +235,7 @@ def _solve_one_sample_inplace(
     tic = _time.time()
     try:
         if mode == "full_inverse":
-            constrain = Inverse_optimizer(
-                null_points=bnd["null_points"],
-                isoflux_set=np.array(bnd["isoflux_set"], dtype=float),
-            )
+            constrain = _make_inverse_constrain(bnd)
             solver.solve(
                 eq=eq,
                 profiles=profiles_i,
@@ -434,13 +455,58 @@ def _solve_one_sample(
     proc = ctx.Process(target=_multitime_solve_worker, args=(payload,))
     tic = _time.time()
     proc.start()
-    proc.join(timeout=float(mt_spec["per_time_timeout_s"]))
-    if proc.is_alive():
-        proc.terminate()
-        proc.join(timeout=5.0)
+    child_pid = int(proc.pid) if proc.pid else None
+    # Windows: Process.join(timeout=…) can hang forever while the child is in
+    # native FreeGSNKE/freegs4e code. Use a Timer + taskkill instead.
+    import threading as _threading
+
+    timed_out = {"v": False}
+
+    def _force_kill_child() -> None:
+        timed_out["v"] = True
+        if child_pid:
+            try:
+                import subprocess as _sp
+
+                if os.name == "nt":
+                    _sp.run(
+                        ["taskkill", "/F", "/T", "/PID", str(child_pid)],
+                        capture_output=True,
+                        timeout=30,
+                        check=False,
+                    )
+                else:
+                    try:
+                        os.kill(child_pid, 9)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        try:
+            if proc.is_alive():
+                proc.terminate()
+            if proc.is_alive():
+                proc.kill()
+        except Exception:
+            pass
+
+    wd = _threading.Timer(float(mt_spec["per_time_timeout_s"]), _force_kill_child)
+    wd.daemon = True
+    wd.start()
+    try:
+        proc.join()
+    finally:
+        try:
+            wd.cancel()
+        except Exception:
+            pass
+    if timed_out["v"] or proc.is_alive():
         if proc.is_alive():
-            proc.kill()
-            proc.join(timeout=5.0)
+            _force_kill_child()
+            try:
+                proc.join(timeout=5.0)
+            except Exception:
+                pass
         return {
             "ok": False,
             "status": "timeout",
@@ -541,6 +607,7 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
         if mt_spec["fallback_mode"] == "forward_gs" and mt_spec["preferred_mode"] != "forward_gs":
             modes_to_try.append("forward_gs")
 
+        bnd_i = _boundary_for_time(bnd, float(t_i))
         attempted = []
         result = None
         for mode in modes_to_try:
@@ -557,7 +624,7 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
                 profiles_kwargs=profiles_kwargs,
                 solv=solv,
                 mt_spec=mt_spec,
-                bnd=bnd,
+                bnd=bnd_i,
                 grid=ea["grid"],
                 t_i=float(t_i),
                 ip_i=float(ip_i),
@@ -631,20 +698,37 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
             # Presentation frame (formed-plasma window sample)
             try:
                 from mast_freegsnke.equilibrium_presentation import (
+                    attach_profiles_after_restore,
                     save_equilibrium_png,
                     try_load_presentation_authority,
                 )
                 _pres = try_load_presentation_authority(INPUTS)
                 if _pres is not None and _pres.write_eq_frames:
+                    # Child restore only copies plasma_psi; refresh _profiles so
+                    # native/curated contours are not blank (30201 inverse frames).
+                    _prof_i = ConstrainPaxisIp(eq=eq, Ip=float(ip_i), **profiles_kwargs)
+                    attach_profiles_after_restore(eq, _prof_i)
                     _frames_dir = HERE / "presentation" / "inverse_frames"
                     _tag = f"eq_t{t_i:.6f}".replace(".", "p")
+                    _style = str(getattr(_pres, "plot_style", "freegsnke_native") or "freegsnke_native")
+                    _constrain_i = None
+                    if mode_used == "full_inverse":
+                        try:
+                            _constrain_i = _make_inverse_constrain(bnd_i)
+                        except Exception:
+                            _constrain_i = None
                     _png = save_equilibrium_png(
                         tokamak=tokamak,
                         eq=eq,
                         out_path=_frames_dir / f"{_tag}.png",
-                        title=f"Inverse {mode_used}  t={t_i:.4f}s  Ip={ip_i/1e6:.3f}MA",
+                        title=(
+                            f"Inverse {mode_used}  t={t_i:.4f}s  Ip={ip_i/1e6:.3f}MA"
+                        ),
                         dpi=int(_pres.gif_dpi),
                         run_dir=HERE,
+                        plot_style=_style,
+                        profiles=_prof_i,
+                        constrain=_constrain_i,
                     )
                     entry["frame_png"] = str(_png.relative_to(HERE)).replace("\\", "/")
             except Exception as _pe:
@@ -811,10 +895,11 @@ def main():
         alpha_n=float(prof["alpha_n"]),
     )
 
-    # Boundary / inverse constraints (execution-authority controlled)
+    # Boundary / inverse constraints (execution-authority + per-t0 shape_targets)
     null_points = bnd["null_points"]
     isoflux_set = np.array(bnd["isoflux_set"], dtype=float)
-    constrain = Inverse_optimizer(null_points=null_points, isoflux_set=isoflux_set)
+    bnd_t0 = _boundary_for_time(bnd, float(t0))
+    constrain = _make_inverse_constrain(bnd_t0)
 
     solver = GSstaticsolver.NKGSsolver(eq)
 
@@ -862,7 +947,7 @@ def main():
             profiles_kwargs=profiles_kwargs,
             solv=solv,
             mt_spec=mt_spec,
-            bnd=bnd,
+            bnd=bnd_t0,
             grid=ea["grid"],
             t_i=float(t0),
             ip_i=float(ip0),
@@ -887,6 +972,55 @@ def main():
             f"error={t0_result.get('error')}",
             flush=True,
         )
+    # Cold Inverse at formed-plasma t0 can stall (30201: rel_change~0.3) while the
+    # same DN constraints converge on nearby window samples via continuation. If
+    # forward_gs produced a physical psi at measured PF, retry Inverse once from
+    # that seed (declared numeric strategy — not invented metrology).
+    if (
+        t0_result is not None
+        and t0_result.get("ok")
+        and t0_mode_used == "forward_gs"
+        and mt_spec["preferred_mode"] == "full_inverse"
+    ):
+        print(
+            "[..] t0 full_inverse retry after forward_gs seed "
+            f"(timeout={mt_spec['per_time_timeout_s']}s, "
+            f"max_iter={mt_spec['max_solving_iterations']})",
+            flush=True,
+        )
+        retry = _solve_one_sample(
+            eq=eq,
+            solver=solver,
+            tokamak=tokamak,
+            profiles_kwargs=profiles_kwargs,
+            solv=solv,
+            mt_spec=mt_spec,
+            bnd=bnd_t0,
+            grid=ea["grid"],
+            t_i=float(t0),
+            ip_i=float(ip0),
+            pf_i=pf_init,
+            mode="full_inverse",
+            l2_reg=l2_reg,
+            tokamak_pickle=HERE / ".multitime_work" / "tokamak.pkl",
+            restore_optimized_currents=True,
+        )
+        if retry.get("ok"):
+            t0_result = retry
+            t0_mode_used = "full_inverse"
+            print(
+                f"[OK] t0 full_inverse after forward_gs seed: "
+                f"status={retry.get('status')} iters={retry.get('iterations')} "
+                f"rel_change={retry.get('rel_change')} "
+                f"duration_s={retry.get('duration_s')}",
+                flush=True,
+            )
+        else:
+            print(
+                f"[WARN] t0 full_inverse retry failed; keeping forward_gs dump: "
+                f"status={retry.get('status')} error={retry.get('error')}",
+                flush=True,
+            )
     if t0_result is None or not t0_result.get("ok"):
         err = None if t0_result is None else t0_result.get("error")
         print(
@@ -918,6 +1052,24 @@ def main():
     pn = np.linspace(0.0, 1.0, 401)
     fvac_val = profiles.fvac() if callable(getattr(profiles, "fvac", None)) else float(profiles.fvac)
     coil_currents = {cname: float(coil.current) for cname, coil in getattr(eq.tokamak, "coils", []) if hasattr(coil, "current")}
+    # Fresh ConstrainPaxisIp after hard-kill child restore has no L/Beta0 until Jtor.
+    # Must run BEFORE LCFS extract + curated plot (30201: contours missing when
+    # _profiles.xpt empty / LCFS extract ran pre-Jtor).
+    try:
+        from mast_freegsnke.equilibrium_presentation import attach_profiles_after_restore
+
+        if not attach_profiles_after_restore(eq, profiles):
+            raise RuntimeError("attach_profiles_after_restore returned False")
+    except Exception as _jtor_e:
+        print(f"[WARN] profile Jtor normalise failed: {_jtor_e}", flush=True)
+        try:
+            _psi_for_jtor = eq.psi() if callable(getattr(eq, "psi", None)) else getattr(eq, "psi", None)
+            if _psi_for_jtor is None:
+                raise RuntimeError("eq.psi unavailable for Jtor normalise")
+            profiles.Jtor(eq.R, eq.Z, np.asarray(_psi_for_jtor, dtype=float))
+            eq._profiles = profiles
+        except Exception as _jtor_e2:
+            print(f"[WARN] profile Jtor fallback failed: {_jtor_e2}", flush=True)
     # Persist LCFS polyline so EFIT side-by-side / scorecard can load without eq object
     _lcfs_R = _lcfs_Z = None
     try:
@@ -935,21 +1087,6 @@ def main():
             print("[WARN] FreeGSNKE LCFS extract returned None after inverse")
     except Exception as _lcfs_e:
         print(f"[WARN] FreeGSNKE LCFS extract failed: {_lcfs_e}")
-    # Fresh ConstrainPaxisIp after hard-kill child restore has no L/Beta0 until Jtor.
-    # Without this, pprime/ffprime raise and abort the run even when t0 forward_gs ok
-    # (shot 30202: t0 inverse timeout → forward_gs → ValueError on dump).
-    try:
-        _psi_for_jtor = eq.psi() if callable(getattr(eq, "psi", None)) else getattr(eq, "psi", None)
-        if _psi_for_jtor is None:
-            raise RuntimeError("eq.psi unavailable for Jtor normalise")
-        profiles.Jtor(eq.R, eq.Z, np.asarray(_psi_for_jtor, dtype=float))
-        # freegs4e plot / curated presentation require eq._profiles after child restore
-        try:
-            eq._profiles = profiles
-        except Exception:
-            pass
-    except Exception as _jtor_e:
-        print(f"[WARN] profile Jtor normalise failed: {_jtor_e}", flush=True)
     _pprime = _ffprime = None
     try:
         _pprime = np.array([profiles.pprime(x) for x in pn], dtype=float)
@@ -1006,61 +1143,30 @@ def main():
     # Plot is best-effort — never abort after a successful dump (shot 30202:
     # hard-kill restore leaves eq without _profiles; freegs4e.plot raises).
     try:
-        fig, ax = plt.subplots(1,1, figsize=(6,10), dpi=140)
-        _plot_ok = False
-        try:
-            from mast_freegsnke.equilibrium_presentation import (
-                load_inverse_null_targets,
-                plot_equilibrium_curated,
-            )
+        from mast_freegsnke.equilibrium_presentation import (
+            load_inverse_null_targets,
+            save_equilibrium_png,
+            try_load_presentation_authority,
+        )
 
-            plot_equilibrium_curated(
-                ax, eq, tokamak, inverse_targets=load_inverse_null_targets(HERE)
-            )
-            _plot_ok = True
-        except Exception as _cur_e:
-            print(f"[WARN] curated equilibrium plot failed: {_cur_e}", flush=True)
-            try:
-                tokamak.plot(axis=ax, show=False)
-            except Exception:
-                pass
-            try:
-                eq.plot(axis=ax, show=False, xpoints=False, opoints=True)
-                _plot_ok = True
-            except TypeError:
-                try:
-                    eq.plot(axis=ax, show=False)
-                    _plot_ok = True
-                except Exception as _eqp_e:
-                    print(f"[WARN] eq.plot failed: {_eqp_e}", flush=True)
-            except Exception as _eqp_e:
-                print(f"[WARN] eq.plot failed: {_eqp_e}", flush=True)
-            try:
-                from mast_freegsnke.equilibrium_presentation import overlay_honest_xpoints
-
-                overlay_honest_xpoints(ax, eq)
-            except Exception:
-                pass
-        # Overlay Inverse *targets* (archive-remapped when shape_targets present)
-        try:
-            Rx, Ro = float(null_points[0][0]), float(null_points[0][1])
-            Zx, Zo = float(null_points[1][0]), float(null_points[1][1])
-            ax.plot(Rx, Zx, "r+", ms=14, mew=2.0, label="X target (Inverse)")
-            ax.plot(Ro, Zo, "bo", ms=6, label="O target (Inverse)")
-        except Exception:
-            pass
-        ax.set_aspect("equal"); ax.grid(alpha=0.3)
-        try:
-            ax.legend(loc="best", fontsize=8)
-        except Exception:
-            pass
-        fig.tight_layout()
-        fig.savefig(HERE/"inverse_equilibrium.png", dpi=250, bbox_inches="tight")
-        print("Saved inverse_equilibrium.png" + ("" if _plot_ok else " (machine/targets only)"))
-        try:
-            plt.close(fig)
-        except Exception:
-            pass
+        _pres = try_load_presentation_authority(INPUTS)
+        _style = str(
+            getattr(_pres, "plot_style", "freegsnke_native") if _pres else "freegsnke_native"
+        )
+        save_equilibrium_png(
+            tokamak=tokamak,
+            eq=eq,
+            out_path=HERE / "inverse_equilibrium.png",
+            title=f"Inverse {t0_mode_used} t0={float(t0):.4f}s Ip={float(ip0)/1e6:.3f}MA",
+            dpi=250,
+            figsize=(6.0, 10.0),
+            run_dir=HERE,
+            plot_style=_style,
+            profiles=profiles,
+            constrain=constrain,
+            inverse_targets=load_inverse_null_targets(HERE),
+        )
+        print(f"Saved inverse_equilibrium.png (plot_style={_style})")
     except Exception as _fig_e:
         print(f"[WARN] inverse_equilibrium.png failed: {_fig_e}", flush=True)
 
