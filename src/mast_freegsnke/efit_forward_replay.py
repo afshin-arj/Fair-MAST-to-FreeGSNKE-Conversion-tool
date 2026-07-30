@@ -421,9 +421,8 @@ tokamak = build_machine.tokamak(
     wall_path=str(md / "wall.pickle"),
 )
 curr = pay["currents"]
-for name, coil in getattr(tokamak, "coils", []):
-    if name in curr and hasattr(coil, "current"):
-        coil.current = float(curr[name])
+from mast_freegsnke.tokamak_currents import set_tokamak_currents
+set_tokamak_currents(tokamak, curr)
 g = pay["grid"]
 eq = equilibrium_update.Equilibrium(
     tokamak=tokamak,

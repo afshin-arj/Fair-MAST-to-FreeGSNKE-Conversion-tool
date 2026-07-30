@@ -23,7 +23,7 @@ def test_presentation_authority_roundtrip(tmp_path: Path) -> None:
     assert loaded.write_equilibrium_gifs is True
     assert loaded.gif_fps == pytest.approx(2.5)
     assert loaded.gif_dpi == 120
-    assert loaded.plot_style == "freegsnke_native"
+    assert loaded.plot_style == "curated"
 
 
 def test_presentation_authority_rejects_bad_plot_style() -> None:

@@ -1,3 +1,20 @@
+## 11.22.0 — Inverse plot honesty + DN shape audit + coil current_vec fix
+
+### Plot
+- Default Inverse/presentation `plot_style=curated` again (native domain-wide levels pierce coils and hide missing LCFS).
+- Overlay persisted dump `lcfs_R/Z` when live primary-X ψ is missing; core contours prefer axis→LCFS ψ (not whole-domain spray).
+- `attach_profiles_after_restore` finds critical points on **total** ψ and ports `eq.xpt`/`eq.opt`.
+
+### Physics / honesty
+- **Root cause of false 0-X after restore:** assigning `coil.current` does not update FreeGSNKE `tokamak.current_vec`, so `eq.psi()` ignored coil flux (plasma_psi only). Fix: `set_tokamak_currents` → `set_coil_current` (wired in Inverse/Forward/Evolutive + LCFS recover).
+- FreeGSNKE Inverse stop gate is GS residual — constraint loss is not a stop condition. New `shape_audit` scores total-ψ O/X vs declared null targets; status may become `gs_converged_shape_unverified` / `dn_missing_xpoints`.
+- Shape extractor reads FreeGSNKE `eq.xpt` (was looking for nonexistent `x_points`).
+- DN packing unchanged (already correct for FreeGSNKE 3.0.1).
+
+### Validate
+- Unit tests for shape honesty + presentation defaults.
+- Version **11.22.0**.
+
 ## 11.21.0 — FreeGSNKE example alignment (native plots + per-time Inverse shape)
 
 ### Plot (example01a / 02 / 05 style)

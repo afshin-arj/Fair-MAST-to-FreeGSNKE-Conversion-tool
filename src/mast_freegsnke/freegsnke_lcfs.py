@@ -375,9 +375,8 @@ tokamak = build_machine.tokamak(
     wall_path=str(MACHINE / "wall.pickle"),
 )
 curr = dump.get("coil_currents") or {{}}
-for name, coil in getattr(tokamak, "coils", []):
-    if name in curr and hasattr(coil, "current"):
-        coil.current = float(curr[name])
+from mast_freegsnke.tokamak_currents import set_tokamak_currents
+set_tokamak_currents(tokamak, curr)
 eq = equilibrium_update.Equilibrium(
     tokamak=tokamak,
     Rmin=float(grid["Rmin"]),

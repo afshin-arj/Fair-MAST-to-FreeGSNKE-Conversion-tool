@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 
 class PresentationError(ValueError):
@@ -26,14 +26,16 @@ class PresentationAuthority:
     gif_fps: float = 2.0
     gif_dpi: int = 100
     # freegsnke_native = tokamak.plot + eq.plot (+ constrain.plot) like example01a/02/05
-    # curated = sparse core surfaces + honest secondary-X legend
-    plot_style: str = "freegsnke_native"
+    # curated = sparse core surfaces + honest secondary-X legend + dump-LCFS fallback
+    # Default curated: Inverse DN honesty — native domain-wide levels pierce coils and
+    # hide missing LCFS when xpt empty after restore.
+    plot_style: str = "curated"
     notes: str = (
         "PNG frames + GIFs across the finalized formed-plasma window "
         "(linspace_window_inclusive for inverse/forward; evolutive steps for nlstepper). "
-        "Default plot_style=freegsnke_native matches FreeGSNKE example01a/02/05 "
-        "(tokamak.plot + eq.plot). Not a substitute for metrics CSVs; "
-        "skipped/failed solves omit frames."
+        "Default plot_style=curated (core surfaces + LCFS); freegsnke_native remains "
+        "available for example01a-style tokamak.plot+eq.plot. Not a substitute for "
+        "metrics CSVs; skipped/failed solves omit frames."
     )
 
     def validate(self) -> None:
@@ -73,7 +75,7 @@ def load_presentation_authority(path: Path) -> PresentationAuthority:
         write_eq_frames=bool(obj.get("write_eq_frames", True)),
         gif_fps=float(obj.get("gif_fps", 2.0)),
         gif_dpi=int(obj.get("gif_dpi", 100)),
-        plot_style=str(obj.get("plot_style", "freegsnke_native")),
+        plot_style=str(obj.get("plot_style", "curated")),
         notes=str(obj.get("notes", PresentationAuthority.notes)),
     )
     auth.validate()
@@ -102,9 +104,10 @@ def attach_profiles_after_restore(
     """Re-bind ``eq._profiles`` and refresh O/X after child-process psi restore.
 
     Multitime / t0 Inverse solve in a spawn child and only copy ``plasma_psi``
-    (and optionally currents) back. Without ``Jtor`` + critical refresh,
-    curated plots see O markers from a stale/empty ``_profiles`` and skip ψ
-    contours (shot 30201: machine+targets only).
+    (and optionally currents) back. Critical points must be found on **total**
+    ψ (``eq.psi()`` = plasma + coils); ``plasma_psi`` alone yields false 0-X
+    (shot 30201). Also ports ``eq.xpt`` / ``eq.opt`` like FreeGSNKE
+    ``port_critical``.
     """
     import numpy as np
 
@@ -135,34 +138,96 @@ def attach_profiles_after_restore(
         except Exception:
             return False
 
-    # Jtor can leave xpt empty (limiter / diverted_critical path). Refresh from
-    # freegs4e critical so curated LCFS levels are available.
-    if not _has_xpt() or not _has_opt():
-        try:
-            from freegs4e import critical
+    # Always refresh critical on total ψ — Jtor may leave xpt empty or stale.
+    try:
+        from mast_freegsnke.inverse_shape_honesty import (
+            critical_points_from_total_psi,
+            port_critical_to_eq,
+        )
 
-            ip = float(getattr(profiles, "Ip", 0.0) or 0.0)
-            opt2, xpt2 = critical.find_critical(eq.R, eq.Z, psi_arr, None, ip)
-            if opt2 is not None and len(opt2) > 0:
-                profiles.opt = opt2
-                try:
-                    profiles.psi_axis = float(opt2[0][2])
-                except Exception:
-                    pass
-            if xpt2 is not None and len(xpt2) > 0:
-                profiles.xpt = xpt2
-                try:
-                    profiles.psi_bndry = float(xpt2[0][2])
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        ip = float(getattr(profiles, "Ip", 0.0) or 0.0)
+        crit = critical_points_from_total_psi(eq, ip=ip)
+        if crit.get("ok"):
+            port_critical_to_eq(eq, profiles, crit)
+    except Exception:
+        if not _has_xpt() or not _has_opt():
+            try:
+                from freegs4e import critical
+
+                ip = float(getattr(profiles, "Ip", 0.0) or 0.0)
+                opt2, xpt2 = critical.find_critical(eq.R, eq.Z, psi_arr, None, ip)
+                if opt2 is not None and len(opt2) > 0:
+                    profiles.opt = opt2
+                    try:
+                        eq.opt = opt2
+                        profiles.psi_axis = float(opt2[0][2])
+                    except Exception:
+                        pass
+                if xpt2 is not None and len(xpt2) > 0:
+                    profiles.xpt = xpt2
+                    try:
+                        eq.xpt = xpt2
+                        profiles.psi_bndry = float(xpt2[0][2])
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
     try:
         eq._profiles = profiles
     except Exception:
         return False
     return _has_opt() or np.isfinite(psi_arr).any()
+
+
+def overlay_dump_lcfs(
+    ax: Any,
+    lcfs_r: Any,
+    lcfs_z: Any,
+    *,
+    label: str = "LCFS (dump polyline)",
+) -> bool:
+    """Draw persisted Inverse dump LCFS when live xpt/red contour is missing."""
+    import numpy as np
+
+    try:
+        rr = np.asarray(lcfs_r, dtype=float).ravel()
+        zz = np.asarray(lcfs_z, dtype=float).ravel()
+    except Exception:
+        return False
+    m = np.isfinite(rr) & np.isfinite(zz)
+    if int(m.sum()) < 3:
+        return False
+    ax.plot(
+        rr[m],
+        zz[m],
+        "r-",
+        lw=2.0,
+        zorder=5,
+        label=label,
+    )
+    return True
+
+
+def load_dump_lcfs(run_dir: Path) -> Optional[Tuple[Any, Any]]:
+    """Load ``lcfs_R`` / ``lcfs_Z`` from ``inverse_dump.pkl`` if present."""
+    run_dir = Path(run_dir)
+    pkl = run_dir / "inverse_dump.pkl"
+    if not pkl.is_file():
+        return None
+    try:
+        import pickle
+
+        with open(pkl, "rb") as f:
+            dump = pickle.load(f)
+    except Exception:
+        return None
+    if not isinstance(dump, dict):
+        return None
+    r, z = dump.get("lcfs_R"), dump.get("lcfs_Z")
+    if r is None or z is None:
+        return None
+    return r, z
 
 
 def overlay_honest_xpoints(ax: Any, eq: Any) -> None:
@@ -393,12 +458,15 @@ def plot_equilibrium_curated(
     show_open_field: bool = False,
     n_open_contours: int = 4,
     inverse_targets: Optional[Dict[str, Any]] = None,
+    dump_lcfs: Optional[Tuple[Any, Any]] = None,
 ) -> None:
     """Curated ψ plot: wall + nested core surfaces + LCFS + honest X/O.
 
     Avoids freegs4e default (35 global levels + all-red ×) which looks noisy
     near coils and implies secondary nulls lie on the separatrix.
     Optional ``inverse_targets`` overlays archive Inverse X/O (+/o).
+    Optional ``dump_lcfs`` (R,Z) draws the persisted Inverse polyline when
+    live primary-X ψ is missing.
     """
     import numpy as np
     from numpy import amax, amin, linspace
@@ -468,10 +536,30 @@ def plot_equilibrium_curated(
             drew_core = True
     # Honest fallback: never leave a blank plasma when ψ exists but X/O ψ
     # levels were missing after child restore (30201 inverse_equilibrium.png).
-    if not drew_core and np.isfinite(psi).any():
-        pmin, pmax = float(amin(psi)), float(amax(psi))
-        if abs(pmax - pmin) > 0.0:
-            levels = linspace(pmin, pmax, 12)[1:-1]
+    # Prefer levels between axis and dump-LCFS mean ψ when available — never
+    # spray domain-wide contours through PF coils as if they were core surfaces.
+    if not drew_core and np.isfinite(psi).any() and np.isfinite(psi_axis):
+        psi_edge = float("nan")
+        if dump_lcfs is not None:
+            try:
+                rr = np.asarray(dump_lcfs[0], dtype=float).ravel()
+                zz = np.asarray(dump_lcfs[1], dtype=float).ravel()
+                m = np.isfinite(rr) & np.isfinite(zz)
+                if int(m.sum()) >= 3:
+                    r_mesh = np.asarray(eq.R, dtype=float)
+                    z_mesh = np.asarray(eq.Z, dtype=float)
+                    vals = []
+                    for r0, z0 in zip(rr[m][:: max(1, int(m.sum()) // 40)], zz[m][:: max(1, int(m.sum()) // 40)]):
+                        dist2 = (r_mesh - r0) ** 2 + (z_mesh - z0) ** 2
+                        ii = int(np.nanargmin(dist2))
+                        vals.append(float(psi.ravel()[ii]))
+                    if vals:
+                        psi_edge = float(np.median(np.asarray(vals, dtype=float)))
+            except Exception:
+                psi_edge = float("nan")
+        if np.isfinite(psi_edge) and abs(psi_edge - psi_axis) > 0.0:
+            lo, hi = (psi_axis, psi_edge) if psi_axis < psi_edge else (psi_edge, psi_axis)
+            levels = linspace(lo, hi, int(n_core_contours) + 2)[1:-1]
             if len(levels) > 0:
                 ax.contour(
                     R,
@@ -481,6 +569,25 @@ def plot_equilibrium_curated(
                     colors="0.35",
                     linewidths=0.6,
                     alpha=0.75,
+                )
+                drew_core = True
+                if not np.isfinite(psi_bndry):
+                    psi_bndry = psi_edge
+    if not drew_core and np.isfinite(psi).any():
+        # Last resort: few muted levels (still better than blank), labeled open-field.
+        pmin, pmax = float(amin(psi)), float(amax(psi))
+        if abs(pmax - pmin) > 0.0:
+            levels = linspace(pmin, pmax, 8)[1:-1]
+            if len(levels) > 0:
+                ax.contour(
+                    R,
+                    Z,
+                    psi,
+                    levels=levels,
+                    colors="0.55",
+                    linewidths=0.45,
+                    alpha=0.45,
+                    linestyles=":",
                 )
                 drew_core = True
 
@@ -504,8 +611,15 @@ def plot_equilibrium_curated(
                 linestyles=":",
             )
 
-    # Separatrix / LCFS at primary-X ψ
-    if np.isfinite(psi_bndry):
+    # Separatrix / LCFS: prefer persisted dump polyline (honest closed boundary).
+    # Contouring ψ=ψ_bndry draws the full isoflux including private-flux legs that
+    # often snake through the solenoid on coarse grids — looks like "LCFS in coils".
+    drew_lcfs = False
+    if dump_lcfs is not None:
+        drew_lcfs = overlay_dump_lcfs(
+            ax, dump_lcfs[0], dump_lcfs[1], label="LCFS (dump polyline)"
+        )
+    if not drew_lcfs and np.isfinite(psi_bndry):
         ax.contour(
             R,
             Z,
@@ -516,6 +630,19 @@ def plot_equilibrium_curated(
             linestyles="solid",
         )
         ax.plot([], [], "r-", lw=2.0, label="LCFS (primary X ψ)")
+        drew_lcfs = True
+    elif drew_lcfs and np.isfinite(psi_bndry) and show_open_field:
+        # Optional: faint primary-X isoflux for divertor legs (not default).
+        ax.contour(
+            R,
+            Z,
+            psi,
+            levels=[psi_bndry],
+            colors="r",
+            linewidths=0.7,
+            linestyles=":",
+            alpha=0.35,
+        )
 
     # O-points (magnetic axis first)
     try:
@@ -548,19 +675,20 @@ def save_equilibrium_png(
     title: str,
     dpi: int = 100,
     figsize: tuple[float, float] = (4.0, 8.0),
-    curated: bool = False,
+    curated: bool = True,
     plot_style: Optional[str] = None,
     constrain: Any = None,
     profiles: Any = None,
     inverse_targets: Optional[Dict[str, Any]] = None,
     run_dir: Optional[Path] = None,
+    dump_lcfs: Optional[Tuple[Any, Any]] = None,
 ) -> Path:
     """Save one equilibrium PNG frame (Agg-safe).
 
-    Default ``plot_style=freegsnke_native`` (FreeGSNKE example01a/02/05):
-    ``tokamak.plot`` + ``eq.plot``. Pass ``plot_style='curated'`` or
-    ``curated=True`` for the sparse core-surface style.
-    When ``run_dir`` is set, archive Inverse X/O targets are overlaid if present.
+    Default ``plot_style=curated`` (core surfaces + LCFS). Pass
+    ``plot_style='freegsnke_native'`` for example01a-style ``tokamak.plot`` +
+    ``eq.plot``. When ``run_dir`` is set, archive Inverse X/O targets and dump
+    LCFS polyline are used if present.
     """
     import matplotlib
 
@@ -569,10 +697,12 @@ def save_equilibrium_png(
 
     if inverse_targets is None and run_dir is not None:
         inverse_targets = load_inverse_null_targets(Path(run_dir))
+    if dump_lcfs is None and run_dir is not None:
+        dump_lcfs = load_dump_lcfs(Path(run_dir))
 
     style = str(plot_style or ("curated" if curated else "freegsnke_native")).strip().lower()
     if style not in {"freegsnke_native", "curated"}:
-        style = "freegsnke_native"
+        style = "curated"
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -581,7 +711,13 @@ def save_equilibrium_png(
         try:
             if profiles is not None:
                 attach_profiles_after_restore(eq, profiles)
-            plot_equilibrium_curated(ax, eq, tokamak, inverse_targets=inverse_targets)
+            plot_equilibrium_curated(
+                ax,
+                eq,
+                tokamak,
+                inverse_targets=inverse_targets,
+                dump_lcfs=dump_lcfs,
+            )
         except Exception as e:
             plt.close(fig)
             raise PresentationError(f"curated plot failed: {e}") from e
@@ -595,6 +731,14 @@ def save_equilibrium_png(
                 inverse_targets=inverse_targets,
                 profiles=profiles,
             )
+            # Native may omit LCFS when xpt empty — still show dump polyline.
+            if dump_lcfs is not None:
+                try:
+                    xpt = getattr(getattr(eq, "_profiles", None), "xpt", None)
+                    if xpt is None or len(xpt) < 1:
+                        overlay_dump_lcfs(ax, dump_lcfs[0], dump_lcfs[1])
+                except Exception:
+                    overlay_dump_lcfs(ax, dump_lcfs[0], dump_lcfs[1])
         except Exception as e:
             plt.close(fig)
             raise PresentationError(f"freegsnke_native plot failed: {e}") from e

@@ -97,8 +97,9 @@ def test_inverse_template_uses_full_inverse_multitime_path() -> None:
     assert "attach_profiles_after_restore" in tpl
     assert "_boundary_for_time" in tpl
     assert "boundary_dict_at_time" in tpl
-    assert "freegsnke_native" in tpl or "plot_style" in tpl
     assert "coil_current_limits" in tpl
+    assert "score_inverse_shape" in tpl
+    assert "dump_lcfs" in tpl
 
 
 def test_rendered_inverse_script_keeps_multitime_tokens(tmp_path: Path) -> None:

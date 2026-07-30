@@ -248,6 +248,13 @@ def _solve_one_sample_inplace(
             )
             rel = float(getattr(solver, "relative_change", float("nan")))
             iters = int(len(getattr(solver, "constrain_loss", [])))
+            loss_hist = list(getattr(solver, "constrain_loss", []) or [])
+            loss_final = None
+            try:
+                if loss_hist:
+                    loss_final = float(loss_hist[-1])
+            except Exception:
+                loss_final = None
             tol = float(solv["inverse_target_relative_tolerance"])
             duration_s = float(_time.time() - tic)
             if duration_s > float(mt_spec["per_time_timeout_s"]):
@@ -257,6 +264,7 @@ def _solve_one_sample_inplace(
                     "solve_mode": mode,
                     "iterations": iters,
                     "rel_change": rel,
+                    "constrain_loss_final": loss_final,
                     "duration_s": duration_s,
                     "error": (
                         f"per-time solve exceeded solver.multitime.per_time_timeout_s="
@@ -270,6 +278,7 @@ def _solve_one_sample_inplace(
                     "solve_mode": mode,
                     "iterations": iters,
                     "rel_change": rel,
+                    "constrain_loss_final": loss_final,
                     "duration_s": duration_s,
                     "error": (
                         f"inverse did not reach tolerance: rel_change={rel:.3e} vs {tol:.3e} "
@@ -282,6 +291,7 @@ def _solve_one_sample_inplace(
                 "solve_mode": mode,
                 "iterations": iters,
                 "rel_change": rel,
+                "constrain_loss_final": loss_final,
                 "duration_s": duration_s,
                 "error": None,
             }
@@ -710,13 +720,20 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
                     attach_profiles_after_restore(eq, _prof_i)
                     _frames_dir = HERE / "presentation" / "inverse_frames"
                     _tag = f"eq_t{t_i:.6f}".replace(".", "p")
-                    _style = str(getattr(_pres, "plot_style", "freegsnke_native") or "freegsnke_native")
+                    _style = str(getattr(_pres, "plot_style", "curated") or "curated")
                     _constrain_i = None
                     if mode_used == "full_inverse":
                         try:
                             _constrain_i = _make_inverse_constrain(bnd_i)
                         except Exception:
                             _constrain_i = None
+                    _dump_lcfs = None
+                    try:
+                        from mast_freegsnke.freegsnke_lcfs import lcfs_arrays_from_eq
+
+                        _dump_lcfs = lcfs_arrays_from_eq(eq)
+                    except Exception:
+                        _dump_lcfs = None
                     _png = save_equilibrium_png(
                         tokamak=tokamak,
                         eq=eq,
@@ -729,6 +746,7 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
                         plot_style=_style,
                         profiles=_prof_i,
                         constrain=_constrain_i,
+                        dump_lcfs=_dump_lcfs,
                     )
                     entry["frame_png"] = str(_png.relative_to(HERE)).replace("\\", "/")
             except Exception as _pe:
@@ -831,9 +849,9 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
 
 
 def set_machine_currents(tokamak, currents_dict):
-    for name, coil in getattr(tokamak, "coils", []):
-        if name in currents_dict and hasattr(coil, "current"):
-            coil.current = float(currents_dict[name])
+    from mast_freegsnke.tokamak_currents import set_tokamak_currents
+
+    set_tokamak_currents(tokamak, currents_dict)
 
 def get_control_coil_names(tokamak):
     names = []
@@ -1070,6 +1088,46 @@ def main():
             eq._profiles = profiles
         except Exception as _jtor_e2:
             print(f"[WARN] profile Jtor fallback failed: {_jtor_e2}", flush=True)
+    # Honest shape audit: GS "converged" ≠ DN targets matched (constraint loss not a stop gate).
+    _shape_audit = None
+    try:
+        from mast_freegsnke.inverse_shape_honesty import score_inverse_shape
+
+        _topo = None
+        try:
+            _prov = INPUTS / "execution_authority" / "boundary_from_shape_targets.json"
+            if _prov.is_file():
+                _topo = json.loads(_prov.read_text(encoding="utf-8")).get("null_topology")
+        except Exception:
+            _topo = None
+        _shape_audit = score_inverse_shape(
+            eq=eq,
+            null_points=bnd_t0.get("null_points"),
+            ip=float(ip0),
+            constrain_loss_final=t0_result.get("constrain_loss_final"),
+            null_topology=_topo,
+        )
+        _ss = str(_shape_audit.get("shape_status") or "")
+        print(
+            f"[INFO] inverse shape_audit: status={_ss} "
+            f"n_xpt={(_shape_audit.get('critical') or {}).get('n_xpt')} "
+            f"n_opt={(_shape_audit.get('critical') or {}).get('n_opt')} "
+            f"constrain_loss_final={_shape_audit.get('constrain_loss_final')} "
+            f"dn_x_count_ok={_shape_audit.get('dn_x_count_ok')}",
+            flush=True,
+        )
+        if _ss in {"dn_missing_xpoints", "gs_converged_shape_unverified", "critical_unavailable"}:
+            print(
+                f"[WARN] Inverse GS ok but shape unverified ({_ss}): "
+                "FreeGSNKE stops on GS residual, not isoflux/null loss. "
+                "Do not read 'converged' as DN LCFS success.",
+                flush=True,
+            )
+            if str(t0_result.get("status") or "") == "converged":
+                t0_result["status"] = "gs_converged_shape_unverified"
+                t0_mode_used = str(t0_result.get("solve_mode") or t0_mode_used)
+    except Exception as _sa_e:
+        print(f"[WARN] inverse shape_audit failed: {_sa_e}", flush=True)
     # Persist LCFS polyline so EFIT side-by-side / scorecard can load without eq object
     _lcfs_R = _lcfs_Z = None
     try:
@@ -1112,6 +1170,8 @@ def main():
         t0_solve_duration_s=t0_result.get("duration_s"),
         t0_solve_iterations=t0_result.get("iterations"),
         t0_rel_change=t0_result.get("rel_change"),
+        t0_constrain_loss_final=t0_result.get("constrain_loss_final"),
+        shape_audit=_shape_audit,
     )
     # Total ψ (plasma + coils) for honest EFIT side-by-side coloring (not plasma_psi alone)
     try:
@@ -1151,13 +1211,22 @@ def main():
 
         _pres = try_load_presentation_authority(INPUTS)
         _style = str(
-            getattr(_pres, "plot_style", "freegsnke_native") if _pres else "freegsnke_native"
+            getattr(_pres, "plot_style", "curated") if _pres else "curated"
         )
+        _dump_lcfs = None
+        if _lcfs_R is not None and _lcfs_Z is not None:
+            _dump_lcfs = (_lcfs_R, _lcfs_Z)
+        _title = f"Inverse {t0_mode_used} t0={float(t0):.4f}s Ip={float(ip0)/1e6:.3f}MA"
+        if _shape_audit and str(_shape_audit.get("shape_status") or "") not in {
+            "",
+            "shape_plausible",
+        }:
+            _title += f" [{_shape_audit.get('shape_status')}]"
         save_equilibrium_png(
             tokamak=tokamak,
             eq=eq,
             out_path=HERE / "inverse_equilibrium.png",
-            title=f"Inverse {t0_mode_used} t0={float(t0):.4f}s Ip={float(ip0)/1e6:.3f}MA",
+            title=_title,
             dpi=250,
             figsize=(6.0, 10.0),
             run_dir=HERE,
@@ -1165,6 +1234,7 @@ def main():
             profiles=profiles,
             constrain=constrain,
             inverse_targets=load_inverse_null_targets(HERE),
+            dump_lcfs=_dump_lcfs,
         )
         print(f"Saved inverse_equilibrium.png (plot_style={_style})")
     except Exception as _fig_e:

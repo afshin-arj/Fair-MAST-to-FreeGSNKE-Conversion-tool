@@ -264,9 +264,9 @@ def _control_coil_names(tokamak) -> list:
 
 
 def _set_currents(tokamak, currents: dict) -> None:
-    for name, coil in getattr(tokamak, "coils", []):
-        if name in currents and hasattr(coil, "current"):
-            coil.current = float(currents[name])
+    from mast_freegsnke.tokamak_currents import set_tokamak_currents
+
+    set_tokamak_currents(tokamak, currents)
 
 
 def _try_load_profile_trajectory():

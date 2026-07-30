@@ -36,9 +36,14 @@ def _load_execution_authority_bundle_fallback() -> dict:
 
 
 def set_active_currents(tokamak, currents_dict):
-    for cname, coil in getattr(tokamak, "coils", []):
-        if cname in ACTIVE_CIRCUITS and cname in currents_dict and hasattr(coil, "current"):
-            coil.current = float(currents_dict[cname])
+    from mast_freegsnke.tokamak_currents import set_tokamak_currents
+
+    filtered = {
+        cname: currents_dict[cname]
+        for cname in ACTIVE_CIRCUITS
+        if cname in currents_dict
+    }
+    set_tokamak_currents(tokamak, filtered)
 
 
 def interp_at_time(df, t0, value_col):

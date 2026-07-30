@@ -143,8 +143,13 @@ def extract_freegsnke_shape_targets(eq: Any) -> Dict[str, Any]:
         except Exception:
             out["notes"].append("opt_parse_failed")
 
-    # X-point(s): take closest to axis if multiple
-    xpts = getattr(eq, "x_points", None) or getattr(eq, "xpoints", None)
+    # X-point(s): FreeGSNKE 3.0.1 uses eq.xpt / _profiles.xpt (not x_points).
+    xpts = (
+        getattr(eq, "xpt", None)
+        or getattr(getattr(eq, "_profiles", None), "xpt", None)
+        or getattr(eq, "x_points", None)
+        or getattr(eq, "xpoints", None)
+    )
     if xpts is not None:
         try:
             pts = []
@@ -164,8 +169,21 @@ def extract_freegsnke_shape_targets(eq: Any) -> Dict[str, Any]:
                     )
                 out["x_point_r"] = _finite(pts[0][0])
                 out["x_point_z"] = _finite(pts[0][1])
+                if len(pts) > 1:
+                    out["x_points_all"] = [[float(p[0]), float(p[1])] for p in pts]
         except Exception:
             out["notes"].append("xpoint_parse_failed")
+    # Prefer opt from FreeGSNKE naming when axis still missing
+    if out["magnetic_axis_r"] is None:
+        opt2 = getattr(getattr(eq, "_profiles", None), "opt", None) or getattr(eq, "opt", None)
+        if opt2 is not None:
+            try:
+                row = np.asarray(opt2[0], dtype=float).ravel()
+                if row.size >= 2:
+                    out["magnetic_axis_r"] = _finite(row[0])
+                    out["magnetic_axis_z"] = _finite(row[1])
+            except Exception:
+                out["notes"].append("profiles_opt_parse_failed")
 
     # Midplane from boundary / FreeGSNKE APIs
     r = getattr(eq, "rboundary", None) or getattr(eq, "Rbound", None)

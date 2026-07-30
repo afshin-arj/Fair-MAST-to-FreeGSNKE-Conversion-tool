@@ -131,15 +131,9 @@ def load_grid_and_solver(inputs_dir: Path) -> Tuple[Dict[str, Any], Dict[str, An
 
 
 def set_circuit_currents(tokamak: Any, currents: Dict[str, float]) -> None:
-    coils = getattr(tokamak, "coils", None)
-    if coils is None:
-        for name, I in currents.items():
-            tokamak[name].current = float(I)
-        return
-    for cname, coil in coils:
-        if cname in currents and hasattr(coil, "current"):
-            coil.current = float(currents[cname])
+    from .tokamak_currents import set_tokamak_currents
 
+    set_tokamak_currents(tokamak, currents)
 
 def _psi_at_points(eq: Any, r: np.ndarray, z: np.ndarray) -> np.ndarray:
     r = np.asarray(r, dtype=float).ravel()

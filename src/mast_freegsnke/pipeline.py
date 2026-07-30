@@ -742,7 +742,7 @@ class ShotPipeline:
                     write_eq_frames=bool(self.cfg.write_eq_frames),
                     gif_fps=float(self.cfg.equilibrium_gif_fps),
                     gif_dpi=int(self.cfg.equilibrium_gif_dpi),
-                    plot_style="freegsnke_native",
+                    plot_style="curated",
                 )
                 pres_path = write_presentation_authority(inputs_dir, pres)
                 _stage(
