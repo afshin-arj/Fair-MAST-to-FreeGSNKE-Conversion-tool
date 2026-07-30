@@ -46,15 +46,34 @@ def test_multitime_solve_spec_defaults_and_validation() -> None:
 def test_execution_authority_writes_multitime_solver_knobs(tmp_path: Path) -> None:
     root = write_execution_authority(tmp_path, metrics_n_times=5)
     bundle = load_execution_authority_bundle(root / "execution_authority_bundle.json")
-    assert bundle.authority_version == "10.5.0"
+    assert bundle.authority_version == "11.23.0"
     assert bundle.solver.multitime.preferred_mode == "full_inverse"
     assert bundle.solver.multitime.fresh_constrain_per_time is True
     assert bundle.solver.multitime.max_solving_iterations == 50
     assert bundle.solver.multitime.per_time_timeout_s == 180.0
+    assert bundle.solver.inverse_shape_acceptance.enabled is True
+    assert bundle.solver.inverse_shape_acceptance.on_fail == "label_only"
+    assert bundle.solver.inverse_shape_retry.max_retries == 1
 
     raw = json.loads((root / "solver_spec.json").read_text())
     assert "multitime" in raw
     assert raw["multitime"]["preferred_mode"] == "full_inverse"
+    assert "inverse_shape_acceptance" in raw
+    assert "inverse_shape_retry" in raw
+
+
+def test_execution_authority_loads_legacy_bundle_without_shape_gate(tmp_path: Path) -> None:
+    """Bundles without shape gate keys get safe defaults (not invent thresholds)."""
+    root = write_execution_authority(tmp_path, metrics_n_times=3)
+    bundle_path = root / "execution_authority_bundle.json"
+    obj = json.loads(bundle_path.read_text())
+    del obj["solver"]["inverse_shape_acceptance"]
+    del obj["solver"]["inverse_shape_retry"]
+    bundle_path.write_text(json.dumps(obj, indent=2) + "\n")
+
+    loaded = load_execution_authority_bundle(bundle_path)
+    assert loaded.solver.inverse_shape_acceptance.enabled is True
+    assert loaded.solver.inverse_shape_retry.max_retries == 1
 
 
 def test_execution_authority_loads_legacy_bundle_without_multitime(tmp_path: Path) -> None:
@@ -100,6 +119,9 @@ def test_inverse_template_uses_full_inverse_multitime_path() -> None:
     assert "coil_current_limits" in tpl
     assert "score_inverse_shape" in tpl
     assert "dump_lcfs" in tpl
+    assert "_apply_shape_gate_and_retry" in tpl
+    assert "inverse_shape_retry" in tpl
+    assert "inverse_result.json" in tpl
 
 
 def test_rendered_inverse_script_keeps_multitime_tokens(tmp_path: Path) -> None:

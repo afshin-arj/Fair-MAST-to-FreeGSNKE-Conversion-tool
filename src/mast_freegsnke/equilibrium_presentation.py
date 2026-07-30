@@ -665,6 +665,17 @@ def plot_equilibrium_curated(
     ax.grid(alpha=0.25)
     ax.set_xlabel("Major radius [m]")
     ax.set_ylabel("Height [m]")
+    # Honest presentation: vacuum ψ exists at PF coils; open-field contours are
+    # off by default so dashed levels through coil boxes are not read as plasma.
+    if not show_open_field:
+        ax.plot(
+            [],
+            [],
+            ":",
+            color="0.65",
+            lw=0.8,
+            label="open-field omitted (vacuum ψ at coils; not plasma)",
+        )
 
 
 def save_equilibrium_png(

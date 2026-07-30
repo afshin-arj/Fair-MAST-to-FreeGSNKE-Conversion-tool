@@ -210,6 +210,204 @@ def _boundary_for_time(ea_bnd: dict, t_i: float) -> dict:
         return ea_bnd
 
 
+def _null_topology_hint():
+    try:
+        prov = INPUTS / "execution_authority" / "boundary_from_shape_targets.json"
+        if prov.is_file():
+            return json.loads(prov.read_text(encoding="utf-8")).get("null_topology")
+    except Exception:
+        return None
+    return None
+
+
+def _with_retry_knobs(solv: dict, mt_spec: dict, l2_reg):
+    """Declared FreeGSNKE knob overrides for shape-retry (no forged stop)."""
+    retry = solv.get("inverse_shape_retry") if isinstance(solv.get("inverse_shape_retry"), dict) else {}
+    solv2 = dict(solv)
+    mt2 = dict(mt_spec)
+    if retry.get("inverse_target_relative_tolerance") is not None:
+        solv2["inverse_target_relative_tolerance"] = float(
+            retry["inverse_target_relative_tolerance"]
+        )
+    if retry.get("inverse_target_relative_psit_update") is not None:
+        solv2["inverse_target_relative_psit_update"] = float(
+            retry["inverse_target_relative_psit_update"]
+        )
+    if retry.get("max_solving_iterations") is not None:
+        mt2["max_solving_iterations"] = int(retry["max_solving_iterations"])
+    l2_2 = np.asarray(l2_reg, dtype=float).copy()
+    if retry.get("l2_reg_default") is not None and l2_2.size:
+        # Scale all entries toward declared tighter default (keep relative per-coil ratios).
+        base = float((solv.get("l2_reg") or {}).get("default", l2_2[0]) or l2_2[0])
+        new_def = float(retry["l2_reg_default"])
+        if base > 0.0:
+            l2_2 = l2_2 * (new_def / base)
+        else:
+            l2_2[:] = new_def
+    return solv2, mt2, l2_2
+
+
+def _score_shape_now(eq, profiles, bnd: dict, ip: float, loss, solv: dict) -> dict:
+    from mast_freegsnke.equilibrium_presentation import attach_profiles_after_restore
+    from mast_freegsnke.inverse_shape_honesty import score_inverse_shape
+
+    try:
+        attach_profiles_after_restore(eq, profiles)
+    except Exception:
+        pass
+    acc = solv.get("inverse_shape_acceptance")
+    if not isinstance(acc, dict):
+        acc = None
+    return score_inverse_shape(
+        eq=eq,
+        null_points=bnd.get("null_points"),
+        ip=float(ip),
+        constrain_loss_final=loss,
+        null_topology=_null_topology_hint(),
+        acceptance=acc,
+    )
+
+
+def _apply_shape_gate_and_retry(
+    *,
+    eq,
+    solver,
+    tokamak,
+    profiles_kwargs: dict,
+    solv: dict,
+    mt_spec: dict,
+    bnd: dict,
+    grid: dict,
+    t_i: float,
+    ip_i: float,
+    pf_i: dict,
+    l2_reg,
+    result: dict,
+    tokamak_pickle,
+    restore_optimized_currents: bool = True,
+):
+    """After GS-ok Inverse: score shape; optional declared FreeGSNKE re-solve.
+
+    Returns (result, shape_audit, attempts).
+    """
+    from mast_freegsnke.inverse_shape_honesty import apply_acceptance_status
+    from freegsnke.jtor_update import ConstrainPaxisIp as _CPA
+
+    attempts = []
+    profiles = _CPA(eq=eq, Ip=float(ip_i), **profiles_kwargs)
+    audit = _score_shape_now(
+        eq, profiles, bnd, float(ip_i), result.get("constrain_loss_final"), solv
+    )
+    gate = apply_acceptance_status(
+        gs_ok=bool(result.get("ok")),
+        gs_status=str(result.get("status") or ""),
+        audit=audit,
+    )
+    attempts.append(
+        {
+            "attempt": 0,
+            "rel_change": result.get("rel_change"),
+            "constrain_loss_final": result.get("constrain_loss_final"),
+            "shape_status": audit.get("shape_status"),
+            "shape_accepted": gate.get("shape_accepted"),
+            "fail_reasons": list(audit.get("fail_reasons") or []),
+        }
+    )
+    print(
+        f"[INFO] inverse shape_audit t={float(t_i):.6f}: status={audit.get('shape_status')} "
+        f"accepted={gate.get('shape_accepted')} "
+        f"n_xpt={(audit.get('critical') or {}).get('n_xpt')} "
+        f"reasons={audit.get('fail_reasons')}",
+        flush=True,
+    )
+
+    retry = solv.get("inverse_shape_retry") if isinstance(solv.get("inverse_shape_retry"), dict) else {}
+    max_retries = int(retry.get("max_retries", 0) or 0)
+    attempt = 0
+    while (
+        bool(result.get("ok"))
+        and (not gate.get("shape_accepted"))
+        and attempt < max_retries
+    ):
+        attempt += 1
+        solv2, mt2, l2_2 = _with_retry_knobs(solv, mt_spec, l2_reg)
+        print(
+            f"[..] shape retry {attempt}/{max_retries} at t={float(t_i):.6f} "
+            f"tol={solv2.get('inverse_target_relative_tolerance')} "
+            f"max_iter={mt2.get('max_solving_iterations')} "
+            f"l2_default={float(np.asarray(l2_2).ravel()[0]) if np.size(l2_2) else None}",
+            flush=True,
+        )
+        retry_res = _solve_one_sample(
+            eq=eq,
+            solver=solver,
+            tokamak=tokamak,
+            profiles_kwargs=profiles_kwargs,
+            solv=solv2,
+            mt_spec=mt2,
+            bnd=bnd,
+            grid=grid,
+            t_i=float(t_i),
+            ip_i=float(ip_i),
+            pf_i=pf_i,
+            mode="full_inverse",
+            l2_reg=l2_2,
+            tokamak_pickle=tokamak_pickle,
+            restore_optimized_currents=restore_optimized_currents,
+        )
+        if not retry_res.get("ok"):
+            attempts.append(
+                {
+                    "attempt": attempt,
+                    "rel_change": retry_res.get("rel_change"),
+                    "constrain_loss_final": retry_res.get("constrain_loss_final"),
+                    "shape_status": "retry_gs_failed",
+                    "shape_accepted": False,
+                    "error": retry_res.get("error"),
+                }
+            )
+            print(
+                f"[WARN] shape retry {attempt} GS failed: {retry_res.get('error')}",
+                flush=True,
+            )
+            break
+        result = dict(retry_res)
+        profiles = _CPA(eq=eq, Ip=float(ip_i), **profiles_kwargs)
+        audit = _score_shape_now(
+            eq, profiles, bnd, float(ip_i), result.get("constrain_loss_final"), solv
+        )
+        gate = apply_acceptance_status(
+            gs_ok=True,
+            gs_status=str(result.get("status") or "converged"),
+            audit=audit,
+        )
+        attempts.append(
+            {
+                "attempt": attempt,
+                "rel_change": result.get("rel_change"),
+                "constrain_loss_final": result.get("constrain_loss_final"),
+                "shape_status": audit.get("shape_status"),
+                "shape_accepted": gate.get("shape_accepted"),
+                "fail_reasons": list(audit.get("fail_reasons") or []),
+            }
+        )
+        print(
+            f"[INFO] shape retry {attempt} audit: status={audit.get('shape_status')} "
+            f"accepted={gate.get('shape_accepted')}",
+            flush=True,
+        )
+
+    result = dict(result)
+    result["status"] = str(gate.get("status") or result.get("status"))
+    result["ok"] = bool(gate.get("ok", result.get("ok")))
+    result["shape_accepted"] = bool(gate.get("shape_accepted"))
+    result["shape_audit"] = audit
+    result["shape_attempts"] = attempts
+    if gate.get("soft_skip"):
+        result["soft_skip"] = True
+    return result, audit, attempts
+
+
 def _solve_one_sample_inplace(
     *,
     eq,
@@ -671,7 +869,37 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
             "error": None,
         }
 
-        if result is not None and result.get("ok"):
+        if result is not None and result.get("ok") and str(result.get("solve_mode")) == "full_inverse":
+            try:
+                _pf_now = {
+                    str(cname): float(coil.current)
+                    for cname, coil in getattr(tokamak, "coils", [])
+                    if hasattr(coil, "current")
+                }
+                result, _aud_i, _att_i = _apply_shape_gate_and_retry(
+                    eq=eq,
+                    solver=solver,
+                    tokamak=tokamak,
+                    profiles_kwargs=profiles_kwargs,
+                    solv=solv,
+                    mt_spec=mt_spec,
+                    bnd=bnd_i,
+                    grid=grid,
+                    t_i=float(t_i),
+                    ip_i=float(ip_i),
+                    pf_i=_pf_now,
+                    l2_reg=l2_reg,
+                    result=result,
+                    tokamak_pickle=tokamak_pickle,
+                    restore_optimized_currents=False,
+                )
+                entry["shape_audit"] = _aud_i
+                entry["shape_attempts"] = _att_i
+                entry["shape_accepted"] = result.get("shape_accepted")
+            except Exception as _sg_e:
+                print(f"[WARN] shape gate at t={t_i:.6f}s failed: {_sg_e}", flush=True)
+
+        if result is not None and result.get("ok") and not result.get("soft_skip"):
             fl_rows.append([float(t_i)] + [float(v) for v in probes.calculate_fluxloop_value(eq)])
             pu_rows.append([float(t_i)] + [float(v) for v in probes.calculate_pickup_value(eq)])
             mode_used = str(result.get("solve_mode"))
@@ -683,7 +911,13 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
                 "duration_s": result.get("duration_s"),
                 "error": result.get("error"),
             })
-            if mode_used == "full_inverse" and entry["status"] == "converged":
+            if mode_used == "full_inverse" and str(entry["status"]) in {
+                "converged",
+                "shape_accepted",
+                "gs_converged_shape_unverified",
+                "shape_plausible",
+                "dn_missing_xpoints",
+            }:
                 n_inverse += 1
             elif mode_used == "forward_gs":
                 n_forward += 1
@@ -753,12 +987,30 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
                 print(f"[WARN] inverse frame failed at t={t_i:.6f}s: {_pe}", flush=True)
         else:
             err = None if result is None else result.get("error")
-            entry.update({
-                "status": "skipped",
-                "error": err or "all solve attempts failed",
-            })
-            n_skipped += 1
-            print(f"[SKIP] t={t_i:.6f}s: {entry['error']}", flush=True)
+            if result is not None and result.get("soft_skip"):
+                entry.update({
+                    "status": str(result.get("status") or "gs_converged_shape_unverified"),
+                    "solve_mode": str(result.get("solve_mode") or "full_inverse"),
+                    "iterations": result.get("iterations"),
+                    "rel_change": result.get("rel_change"),
+                    "duration_s": result.get("duration_s"),
+                    "error": "soft_skip_time: shape acceptance failed",
+                    "shape_accepted": False,
+                })
+                n_skipped += 1
+                print(
+                    f"[SKIP] t={t_i:.6f}s soft_skip_time (shape gate): "
+                    f"status={entry['status']} reasons="
+                    f"{(entry.get('shape_audit') or {}).get('fail_reasons')}",
+                    flush=True,
+                )
+            else:
+                entry.update({
+                    "status": "skipped",
+                    "error": err or "all solve attempts failed",
+                })
+                n_skipped += 1
+                print(f"[SKIP] t={t_i:.6f}s: {entry['error']}", flush=True)
         per_time.append(entry)
 
     if not fl_rows:
@@ -1069,7 +1321,6 @@ def main():
     import pickle
     pn = np.linspace(0.0, 1.0, 401)
     fvac_val = profiles.fvac() if callable(getattr(profiles, "fvac", None)) else float(profiles.fvac)
-    coil_currents = {cname: float(coil.current) for cname, coil in getattr(eq.tokamak, "coils", []) if hasattr(coil, "current")}
     # Fresh ConstrainPaxisIp after hard-kill child restore has no L/Beta0 until Jtor.
     # Must run BEFORE LCFS extract + curated plot (30201: contours missing when
     # _profiles.xpt empty / LCFS extract ran pre-Jtor).
@@ -1088,46 +1339,57 @@ def main():
             eq._profiles = profiles
         except Exception as _jtor_e2:
             print(f"[WARN] profile Jtor fallback failed: {_jtor_e2}", flush=True)
-    # Honest shape audit: GS "converged" ≠ DN targets matched (constraint loss not a stop gate).
+    # Honest shape audit + optional declared FreeGSNKE re-solve (GS stop unchanged).
     _shape_audit = None
-    try:
-        from mast_freegsnke.inverse_shape_honesty import score_inverse_shape
-
-        _topo = None
+    _shape_attempts = []
+    if t0_result.get("ok") and str(t0_mode_used) == "full_inverse":
         try:
-            _prov = INPUTS / "execution_authority" / "boundary_from_shape_targets.json"
-            if _prov.is_file():
-                _topo = json.loads(_prov.read_text(encoding="utf-8")).get("null_topology")
-        except Exception:
-            _topo = None
-        _shape_audit = score_inverse_shape(
-            eq=eq,
-            null_points=bnd_t0.get("null_points"),
-            ip=float(ip0),
-            constrain_loss_final=t0_result.get("constrain_loss_final"),
-            null_topology=_topo,
-        )
-        _ss = str(_shape_audit.get("shape_status") or "")
-        print(
-            f"[INFO] inverse shape_audit: status={_ss} "
-            f"n_xpt={(_shape_audit.get('critical') or {}).get('n_xpt')} "
-            f"n_opt={(_shape_audit.get('critical') or {}).get('n_opt')} "
-            f"constrain_loss_final={_shape_audit.get('constrain_loss_final')} "
-            f"dn_x_count_ok={_shape_audit.get('dn_x_count_ok')}",
-            flush=True,
-        )
-        if _ss in {"dn_missing_xpoints", "gs_converged_shape_unverified", "critical_unavailable"}:
-            print(
-                f"[WARN] Inverse GS ok but shape unverified ({_ss}): "
-                "FreeGSNKE stops on GS residual, not isoflux/null loss. "
-                "Do not read 'converged' as DN LCFS success.",
-                flush=True,
+            _pf_now = {
+                str(cname): float(coil.current)
+                for cname, coil in getattr(tokamak, "coils", [])
+                if hasattr(coil, "current")
+            }
+            t0_result, _shape_audit, _shape_attempts = _apply_shape_gate_and_retry(
+                eq=eq,
+                solver=solver,
+                tokamak=tokamak,
+                profiles_kwargs=profiles_kwargs,
+                solv=solv,
+                mt_spec=mt_spec,
+                bnd=bnd_t0,
+                grid=grid,
+                t_i=float(t0),
+                ip_i=float(ip0),
+                pf_i=_pf_now,
+                l2_reg=l2_reg,
+                result=t0_result,
+                tokamak_pickle=HERE / ".multitime_work" / "tokamak.pkl",
+                restore_optimized_currents=True,
             )
-            if str(t0_result.get("status") or "") == "converged":
-                t0_result["status"] = "gs_converged_shape_unverified"
-                t0_mode_used = str(t0_result.get("solve_mode") or t0_mode_used)
-    except Exception as _sa_e:
-        print(f"[WARN] inverse shape_audit failed: {_sa_e}", flush=True)
+            t0_mode_used = str(t0_result.get("solve_mode") or t0_mode_used)
+            if not t0_result.get("ok") and not t0_result.get("soft_skip"):
+                acc = solv.get("inverse_shape_acceptance") or {}
+                if str(acc.get("on_fail") or "") == "blocking":
+                    raise SystemExit(
+                        f"Inverse t0 shape gate blocking: {t0_result.get('status')} "
+                        f"reasons={(_shape_audit or {}).get('fail_reasons')}"
+                    )
+            # Refresh ConstrainPaxisIp after possible retry restore
+            profiles = ConstrainPaxisIp(eq=eq, Ip=float(ip0), **profiles_kwargs)
+            from mast_freegsnke.equilibrium_presentation import attach_profiles_after_restore
+
+            attach_profiles_after_restore(eq, profiles)
+            constrain = _make_inverse_constrain(bnd_t0)
+            fvac_val = profiles.fvac() if callable(getattr(profiles, "fvac", None)) else float(profiles.fvac)
+        except SystemExit:
+            raise
+        except Exception as _sa_e:
+            print(f"[WARN] inverse shape_gate failed: {_sa_e}", flush=True)
+    coil_currents = {
+        cname: float(coil.current)
+        for cname, coil in getattr(eq.tokamak, "coils", [])
+        if hasattr(coil, "current")
+    }
     # Persist LCFS polyline so EFIT side-by-side / scorecard can load without eq object
     _lcfs_R = _lcfs_Z = None
     try:
@@ -1172,6 +1434,7 @@ def main():
         t0_rel_change=t0_result.get("rel_change"),
         t0_constrain_loss_final=t0_result.get("constrain_loss_final"),
         shape_audit=_shape_audit,
+        shape_attempts=_shape_attempts,
     )
     # Total ψ (plasma + coils) for honest EFIT side-by-side coloring (not plasma_psi alone)
     try:
@@ -1199,6 +1462,31 @@ def main():
     with open(HERE/"inverse_dump.pkl", "wb") as f:
         pickle.dump(dump, f)
     print("Saved inverse_dump.pkl")
+    # JSON-safe shape gate provenance (science_audit / SUMMARY; no forged GS stop)
+    try:
+        _shape_json = {
+            "status": str(t0_result.get("status") or ""),
+            "shape_accepted": bool(t0_result.get("shape_accepted"))
+            if t0_result.get("shape_accepted") is not None
+            else None,
+            "rel_change": t0_result.get("rel_change"),
+            "constrain_loss_final": t0_result.get("constrain_loss_final"),
+            "iterations": t0_result.get("iterations"),
+            "duration_s": t0_result.get("duration_s"),
+            "solve_mode": str(t0_mode_used),
+            "shape_audit": _shape_audit,
+            "shape_attempts": _shape_attempts,
+            "notes": [
+                "FreeGSNKE Inverse stop = GS residual / relative ψ update only.",
+                "shape_audit uses declared solver.inverse_shape_acceptance thresholds.",
+            ],
+        }
+        (HERE / "inverse_result.json").write_text(
+            json.dumps(_shape_json, indent=2, default=str) + "\n", encoding="utf-8"
+        )
+        print("Saved inverse_result.json (shape gate provenance)")
+    except Exception as _sj_e:
+        print(f"[WARN] inverse_result.json failed: {_sj_e}", flush=True)
 
     # Plot is best-effort — never abort after a successful dump (shot 30202:
     # hard-kill restore leaves eq without _profiles; freegs4e.plot raises).

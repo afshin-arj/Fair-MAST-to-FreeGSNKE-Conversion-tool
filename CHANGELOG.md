@@ -1,3 +1,21 @@
+## 11.23.0 — Honest Inverse shape acceptance (no forged FreeGSNKE stop)
+
+### Authority
+- Declared `solver.inverse_shape_acceptance` thresholds (DN X count, O/X target distance, optional constrain_loss / ψ-span, `on_fail`).
+- Declared `solver.inverse_shape_retry`: real FreeGSNKE re-solve with tighter tol / max_iter / lower `l2_reg` only — never patches GS stop.
+
+### Inverse template
+- Post-solve `shape_audit` + optional retries; statuses `shape_accepted` / `gs_converged_shape_unverified` / `dn_missing_xpoints`.
+- Persist `inverse_result.json` + dump `shape_audit` / `shape_attempts`; multitime soft-skip when `on_fail=soft_skip_time`.
+
+### Presentation / SUMMARY
+- Curated default: dump LCFS + core only; `show_open_field=False` with legend “open-field omitted (vacuum ψ at coils; not plasma)”.
+- `science_audit.inverse_shape_gate` + SUMMARY note: FreeGSNKE stop = GS/ψ-update; shape gate = declared authority.
+
+### Validate
+- Unit tests for acceptance math, retry knobs in authority/template, SUMMARY/science_audit surface.
+- Version **11.23.0**.
+
 ## 11.22.0 — Inverse plot honesty + DN shape audit + coil current_vec fix
 
 ### Plot

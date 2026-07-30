@@ -23,7 +23,8 @@ _KNOWN_LIMITATIONS = [
     "Profile alpha_m/alpha_n/fvac are held from the inverse IC; optional scale_paxis_with_ip is a declared Ip scaling law (default off) — never invented profile numbers.",
     "Evolutive default: ic_coil_currents=inverse_dump + clamp_ip_to_measured — prefer converged Inverse IC; measured_pf remains an explicit evolutive_authority choice. n_passive=0 → example05-class stability not expected (do not invent ρ).",
     "Contract residual metrics score only families with honest channel identity + units; uncalibrated mirnov/saddle/omaha stay audit-only until calibration authority is populated.",
-    "Equilibrium GIFs are presentation annexes — not a substitute for residual metrics or Ip match.",
+    "FreeGSNKE Inverse stops on GS residual / relative ψ update only; constraint loss and DN X/O placement are scored by declared inverse_shape_acceptance (not a FreeGSNKE stop). GS ok ≠ automatic DN success.",
+    "Equilibrium GIFs are presentation annexes — not a substitute for residual metrics or Ip match. Curated plots omit open-field ψ through PF coils by default (vacuum ψ ≠ plasma).",
     "04_efit_compare uses FAIR-MAST Level-2 EFIT++ archive products — not a live efit-ai Fortran solve.",
 ]
 
@@ -131,6 +132,7 @@ def write_shot_expert_overlay(
     ohmic = science_audit.get("ohmic_drive") or {}
     phases = science_audit.get("phase_timeline") or {}
     passives = science_audit.get("passive_resistivity") or {}
+    shape_gate = science_audit.get("inverse_shape_gate") or {}
 
     # Authority hashes (best-effort)
     auth_lines: List[str] = []
@@ -232,6 +234,10 @@ def write_shot_expert_overlay(
             f"inverse={rq.get('n_inverse_converged')}, "
             f"forward_gs={rq.get('n_forward_gs_fallback')}, "
             f"skipped={rq.get('n_skipped')})",
+            f"- **Inverse shape gate:** accepted={shape_gate.get('n_shape_accepted', '—')}, "
+            f"GS-ok/shape-unverified={shape_gate.get('n_gs_ok_shape_unverified', '—')}, "
+            f"DN-missing-X={shape_gate.get('n_dn_missing_xpoints', '—')} "
+            f"(audits={shape_gate.get('n_with_audit', '—')})",
             "",
             "## Science residuals (primary)",
             "",
@@ -240,6 +246,14 @@ def write_shot_expert_overlay(
             "| Quantity | Value | Notes |",
             "|----------|-------|-------|",
             *_metrics_rows(manifest, run_dir),
+            "",
+            "### Inverse shape acceptance (GS stop ≠ DN success)",
+            "",
+            f"- **Available:** `{shape_gate.get('available')}`",
+            f"- **t0 status:** `{(shape_gate.get('t0') or {}).get('status')}` / "
+            f"shape=`{(shape_gate.get('t0') or {}).get('shape_status')}` "
+            f"(constrain_loss=`{(shape_gate.get('t0') or {}).get('constrain_loss_final')}`)",
+            f"- **Note:** {shape_gate.get('note', '')}",
             "",
             "### Evolutive Ip vs measured FAIR-MAST Ip",
             "",

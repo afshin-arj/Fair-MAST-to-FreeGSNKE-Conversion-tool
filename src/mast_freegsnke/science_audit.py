@@ -166,6 +166,141 @@ def reconstruct_quality(run_dir: Path) -> Dict[str, Any]:
     return out
 
 
+def inverse_shape_gate_summary(run_dir: Path) -> Dict[str, Any]:
+    """Surface GS stop vs declared shape acceptance (never equate the two).
+
+    FreeGSNKE Inverse stops on GS residual / relative ψ update; shape_audit is
+    our post-solve declared gate (execution_authority.inverse_shape_acceptance).
+    """
+    run_dir = Path(run_dir)
+    out: Dict[str, Any] = {
+        "available": False,
+        "t0": None,
+        "n_shape_accepted": 0,
+        "n_gs_ok_shape_unverified": 0,
+        "n_dn_missing_xpoints": 0,
+        "n_with_audit": 0,
+        "per_time_statuses": [],
+        "note": (
+            "FreeGSNKE stop = GS residual / relative tokamak-flux update; "
+            "shape gate = declared solver.inverse_shape_acceptance (not a FreeGSNKE stop)."
+        ),
+    }
+    # t0 dump result (if present)
+    for cand in (
+        run_dir / "03_reconstruction" / "inverse" / "inverse_result.json",
+        run_dir / "inverse_result.json",
+        run_dir / "03_reconstruction" / "inverse" / "full_inverse_result.json",
+    ):
+        obj = _safe_json(cand)
+        if isinstance(obj, dict) and (
+            obj.get("shape_audit") is not None or obj.get("shape_status") is not None
+        ):
+            aud = obj.get("shape_audit") if isinstance(obj.get("shape_audit"), dict) else {}
+            try:
+                rel = str(cand.resolve().relative_to(run_dir.resolve())).replace("\\", "/")
+            except Exception:
+                rel = str(cand)
+            out["t0"] = {
+                "path": rel,
+                "status": obj.get("status"),
+                "shape_accepted": obj.get("shape_accepted", aud.get("shape_accepted")),
+                "shape_status": aud.get("shape_status") or obj.get("shape_status"),
+                "constrain_loss_final": aud.get("constrain_loss_final")
+                if aud
+                else obj.get("constrain_loss_final"),
+                "rel_change": obj.get("rel_change"),
+                "fail_reasons": list(aud.get("fail_reasons") or []),
+            }
+            out["available"] = True
+            break
+
+    # Fallback: inverse_dump.pkl may hold shape_audit before JSON provenance existed.
+    if out["t0"] is None:
+        for cand in (
+            run_dir / "inverse_dump.pkl",
+            run_dir / "03_reconstruction" / "inverse" / "inverse_dump.pkl",
+        ):
+            if not cand.is_file():
+                continue
+            try:
+                import pickle
+
+                dump = pickle.loads(cand.read_bytes())
+            except Exception:
+                continue
+            if not isinstance(dump, dict):
+                continue
+            aud = dump.get("shape_audit") if isinstance(dump.get("shape_audit"), dict) else {}
+            if not aud and dump.get("t0_solve_status") is None:
+                continue
+            try:
+                rel = str(cand.resolve().relative_to(run_dir.resolve())).replace("\\", "/")
+            except Exception:
+                rel = str(cand)
+            out["t0"] = {
+                "path": rel,
+                "status": dump.get("t0_solve_status") or aud.get("shape_status"),
+                "shape_accepted": aud.get("shape_accepted"),
+                "shape_status": aud.get("shape_status"),
+                "constrain_loss_final": aud.get("constrain_loss_final")
+                if aud
+                else dump.get("t0_constrain_loss_final"),
+                "rel_change": dump.get("t0_rel_change"),
+                "fail_reasons": list(aud.get("fail_reasons") or []),
+            }
+            out["available"] = True
+            break
+
+    st = _safe_json(run_dir / "synthetic" / "synthetic_times.json")
+    if not isinstance(st, dict):
+        return out
+    statuses: List[str] = []
+    n_acc = n_unv = n_dn = n_aud = 0
+    for entry in st.get("per_time") or []:
+        if not isinstance(entry, dict):
+            continue
+        aud = entry.get("shape_audit") if isinstance(entry.get("shape_audit"), dict) else {}
+        status = str(
+            aud.get("shape_status")
+            or entry.get("status")
+            or ""
+        )
+        if aud or entry.get("shape_accepted") is not None:
+            n_aud += 1
+            out["available"] = True
+        if status in {"shape_accepted", "shape_plausible"} or entry.get("shape_accepted") is True:
+            n_acc += 1
+        elif status == "dn_missing_xpoints":
+            n_dn += 1
+        elif status in {"gs_converged_shape_unverified", "critical_unavailable"}:
+            n_unv += 1
+        if status:
+            statuses.append(status)
+    # Count t0 dump audit when multitime has no per-time shape_audit yet.
+    if n_aud == 0 and isinstance(out.get("t0"), dict) and out["t0"].get("shape_status"):
+        n_aud = 1
+        st0 = str(out["t0"].get("shape_status") or "")
+        if st0 in {"shape_accepted", "shape_plausible"}:
+            n_acc = 1
+        elif st0 == "dn_missing_xpoints":
+            n_dn = 1
+        elif st0 in {"gs_converged_shape_unverified", "critical_unavailable"}:
+            n_unv = 1
+        statuses = [st0]
+    out.update(
+        {
+            "n_shape_accepted": n_acc,
+            "n_gs_ok_shape_unverified": n_unv,
+            "n_dn_missing_xpoints": n_dn,
+            "n_with_audit": n_aud,
+            "per_time_statuses": statuses,
+            "overall_solve_mode": st.get("solve_mode"),
+        }
+    )
+    return out
+
+
 def ohmic_drive_inventory(run_dir: Path) -> Dict[str, Any]:
     """List circuits driven by from_current_ohmic (declared, not measured V)."""
     run_dir = Path(run_dir)
@@ -272,8 +407,9 @@ def build_science_audit(run_dir: Path) -> Dict[str, Any]:
     """Write 01_summary/science_audit.json and return the audit object."""
     run_dir = Path(run_dir)
     audit: Dict[str, Any] = {
-        "version": "1.0",
+        "version": "1.1",
         "reconstruction_quality": reconstruct_quality(run_dir),
+        "inverse_shape_gate": inverse_shape_gate_summary(run_dir),
         "evolutive_ip": score_evolutive_ip(run_dir),
         "ohmic_drive": ohmic_drive_inventory(run_dir),
         "phase_timeline": phase_timeline_from_window(run_dir),
@@ -281,7 +417,8 @@ def build_science_audit(run_dir: Path) -> Dict[str, Any]:
         "presentation_note": (
             "Equilibrium GIFs under 03_reconstruction/presentation/ and "
             "03_reconstruction/evolutive/ (or legacy presentation/, evolutive/) are annex visuals; "
-            "scientific review should start from residuals, Ip match, and solve_mode."
+            "scientific review should start from residuals, Ip match, solve_mode, and "
+            "inverse_shape_gate (GS stop ≠ shape acceptance)."
         ),
     }
     # Persist phase timeline under inputs for tooling

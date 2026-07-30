@@ -223,12 +223,107 @@ class MultiTimeSolveSpec:
 
 
 @dataclass(frozen=True)
+class InverseShapeAcceptanceSpec:
+    """Post-solve shape gate (declared). FreeGSNKE still stops on GS/ψ-update only.
+
+    Compares total-ψ O/X to declared Inverse null targets after each solve.
+    Never invents metrology; never patches FreeGSNKE's stop condition.
+    """
+
+    enabled: bool = True
+    min_xpoints_for_dn: int = 2
+    max_x_target_dist_m: float = 0.05
+    max_o_target_dist_m: float = 0.05
+    max_constrain_loss: Optional[float] = 1.0e-2
+    max_xpt_psi_span: Optional[float] = None
+    # label_only: keep GS success, honest status string
+    # soft_skip_time: multitime omits sample (never fabricate)
+    # blocking: fail t0 / treat as not ok
+    on_fail: str = "label_only"
+
+    def validate(self) -> None:
+        _require(isinstance(self.enabled, bool), "InverseShapeAcceptanceSpec: enabled must be bool")
+        _require(
+            isinstance(self.min_xpoints_for_dn, int) and 1 <= self.min_xpoints_for_dn <= 8,
+            "InverseShapeAcceptanceSpec: min_xpoints_for_dn must be int in [1, 8]",
+        )
+        _require(
+            _is_number(self.max_x_target_dist_m) and float(self.max_x_target_dist_m) > 0.0,
+            "InverseShapeAcceptanceSpec: max_x_target_dist_m must be > 0",
+        )
+        _require(
+            _is_number(self.max_o_target_dist_m) and float(self.max_o_target_dist_m) > 0.0,
+            "InverseShapeAcceptanceSpec: max_o_target_dist_m must be > 0",
+        )
+        if self.max_constrain_loss is not None:
+            _require(
+                _is_number(self.max_constrain_loss) and float(self.max_constrain_loss) >= 0.0,
+                "InverseShapeAcceptanceSpec: max_constrain_loss must be >= 0 or null",
+            )
+        if self.max_xpt_psi_span is not None:
+            _require(
+                _is_number(self.max_xpt_psi_span) and float(self.max_xpt_psi_span) >= 0.0,
+                "InverseShapeAcceptanceSpec: max_xpt_psi_span must be >= 0 or null",
+            )
+        _require(
+            self.on_fail in {"label_only", "soft_skip_time", "blocking"},
+            "InverseShapeAcceptanceSpec: on_fail must be label_only|soft_skip_time|blocking",
+        )
+
+
+@dataclass(frozen=True)
+class InverseShapeRetrySpec:
+    """Optional re-solve with declared FreeGSNKE knobs when shape acceptance fails.
+
+    Each retry is a real ``solver.solve(..., constrain=Inverse_optimizer)`` —
+    no forged stop condition, no invented equilibria.
+    """
+
+    max_retries: int = 1
+    inverse_target_relative_tolerance: Optional[float] = 5.0e-4
+    inverse_target_relative_psit_update: Optional[float] = 5.0e-4
+    max_solving_iterations: Optional[int] = 80
+    l2_reg_default: Optional[float] = 1.0e-9
+
+    def validate(self) -> None:
+        _require(
+            isinstance(self.max_retries, int) and 0 <= self.max_retries <= 5,
+            "InverseShapeRetrySpec: max_retries must be int in [0, 5]",
+        )
+        for name, val in (
+            ("inverse_target_relative_tolerance", self.inverse_target_relative_tolerance),
+            ("inverse_target_relative_psit_update", self.inverse_target_relative_psit_update),
+        ):
+            if val is None:
+                continue
+            _require(
+                _is_number(val) and 0.0 < float(val) < 1.0,
+                f"InverseShapeRetrySpec: {name} must be in (0,1) or null",
+            )
+        if self.max_solving_iterations is not None:
+            _require(
+                isinstance(self.max_solving_iterations, int)
+                and 1 <= self.max_solving_iterations <= 500,
+                "InverseShapeRetrySpec: max_solving_iterations must be int in [1, 500] or null",
+            )
+        if self.l2_reg_default is not None:
+            _require(
+                _is_number(self.l2_reg_default) and float(self.l2_reg_default) >= 0.0,
+                "InverseShapeRetrySpec: l2_reg_default must be >= 0 or null",
+            )
+
+
+@dataclass(frozen=True)
 class SolverSpec:
     inverse_target_relative_tolerance: float
     inverse_target_relative_psit_update: float
     forward_target_relative_tolerance: float
     l2_reg: L2RegSpec
     multitime: MultiTimeSolveSpec = field(default_factory=MultiTimeSolveSpec)
+    inverse_shape_acceptance: InverseShapeAcceptanceSpec = field(
+        default_factory=InverseShapeAcceptanceSpec
+    )
+    inverse_shape_retry: InverseShapeRetrySpec = field(default_factory=InverseShapeRetrySpec)
 
     def validate(self) -> None:
         for name, val in [
@@ -239,6 +334,8 @@ class SolverSpec:
             _require(_is_number(val) and 0.0 < float(val) < 1.0, f"SolverSpec: {name} must be in (0,1)")
         self.l2_reg.validate()
         self.multitime.validate()
+        self.inverse_shape_acceptance.validate()
+        self.inverse_shape_retry.validate()
 
 
 @dataclass(frozen=True)
@@ -349,11 +446,27 @@ def default_execution_authority_bundle(metrics_n_times: int = 21) -> ExecutionAu
             fresh_constrain_per_time=True,
             fallback_mode="forward_gs",
         ),
+        inverse_shape_acceptance=InverseShapeAcceptanceSpec(
+            enabled=True,
+            min_xpoints_for_dn=2,
+            max_x_target_dist_m=0.05,
+            max_o_target_dist_m=0.05,
+            max_constrain_loss=1.0e-2,
+            max_xpt_psi_span=None,
+            on_fail="label_only",
+        ),
+        inverse_shape_retry=InverseShapeRetrySpec(
+            max_retries=1,
+            inverse_target_relative_tolerance=5.0e-4,
+            inverse_target_relative_psit_update=5.0e-4,
+            max_solving_iterations=80,
+            l2_reg_default=1.0e-9,
+        ),
     )
 
     return ExecutionAuthorityBundle(
         authority_name="freegsnke_execution_authority",
-        authority_version="10.5.0",
+        authority_version="11.23.0",
         grid=grid,
         profile=profile,
         profile_basis=profile_basis,
@@ -415,12 +528,27 @@ def load_execution_authority_bundle(bundle_path: Path) -> ExecutionAuthorityBund
     if not isinstance(multitime_obj, dict):
         raise ValueError("SolverSpec.multitime must be a JSON object")
     multitime = MultiTimeSolveSpec(**multitime_obj) if multitime_obj else MultiTimeSolveSpec()
+    acc_obj = obj["solver"].get("inverse_shape_acceptance", {})
+    if acc_obj is None:
+        acc_obj = {}
+    if not isinstance(acc_obj, dict):
+        raise ValueError("SolverSpec.inverse_shape_acceptance must be a JSON object")
+    retry_obj = obj["solver"].get("inverse_shape_retry", {})
+    if retry_obj is None:
+        retry_obj = {}
+    if not isinstance(retry_obj, dict):
+        raise ValueError("SolverSpec.inverse_shape_retry must be a JSON object")
+    # Tolerate older bundles missing new keys (defaults apply).
+    acceptance = InverseShapeAcceptanceSpec(**acc_obj) if acc_obj else InverseShapeAcceptanceSpec()
+    retry = InverseShapeRetrySpec(**retry_obj) if retry_obj else InverseShapeRetrySpec()
     solver = SolverSpec(
         inverse_target_relative_tolerance=obj["solver"]["inverse_target_relative_tolerance"],
         inverse_target_relative_psit_update=obj["solver"]["inverse_target_relative_psit_update"],
         forward_target_relative_tolerance=obj["solver"]["forward_target_relative_tolerance"],
         l2_reg=l2_reg,
         multitime=multitime,
+        inverse_shape_acceptance=acceptance,
+        inverse_shape_retry=retry,
     )
     passive = PassiveStructureSpec(**obj.get("passive_structure", {}))
     metrics_timebase = MetricsTimebaseSpec(**obj.get("metrics_timebase", {}))

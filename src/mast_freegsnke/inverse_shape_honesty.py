@@ -84,11 +84,13 @@ def score_inverse_shape(
     ip: float,
     constrain_loss_final: Optional[float] = None,
     null_topology: Optional[str] = None,
+    acceptance: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Score solved critical points vs declared Inverse null targets.
 
-    Returns an audit dict. Does not invent tolerances as pass/fail gates unless
-    topology claims DN (then ``dn_x_count_ok`` requires ≥2 X on total ψ).
+    When ``acceptance`` (InverseShapeAcceptanceSpec asdict) is provided and
+    enabled, ``shape_accepted`` / ``shape_status`` use those declared thresholds.
+    Without acceptance authority, keeps soft honesty labels only.
     """
     targets = _as_rz_list(null_points)
     crit = critical_points_from_total_psi(eq, ip=float(ip))
@@ -126,24 +128,58 @@ def score_inverse_shape(
         psi_span = float(max(psi_x) - min(psi_x))
 
     dn_claimed = topology in {"double_null", "dn"} or len(targets) >= 3
-    dn_x_ok = (not dn_claimed) or int(crit.get("n_xpt") or 0) >= 2
+    acc = dict(acceptance or {})
+    acc_enabled = bool(acc.get("enabled", False)) if acceptance is not None else False
+    min_x_dn = int(acc.get("min_xpoints_for_dn", 2) or 2)
+    max_x_dist = float(acc.get("max_x_target_dist_m", 0.05) or 0.05)
+    max_o_dist = float(acc.get("max_o_target_dist_m", 0.05) or 0.05)
+    max_loss = acc.get("max_constrain_loss", None)
+    max_span = acc.get("max_xpt_psi_span", None)
+    on_fail = str(acc.get("on_fail", "label_only") or "label_only")
+
+    n_xpt = int(crit.get("n_xpt") or 0)
+    dn_x_ok = (not dn_claimed) or n_xpt >= min_x_dn
 
     loss = _finite(constrain_loss_final)
-    # Soft honesty label — GS may be OK while shape is unverified.
+    reasons: List[str] = []
+
     if not crit.get("ok"):
         shape_status = "critical_unavailable"
+        reasons.append("critical_unavailable")
     elif dn_claimed and not dn_x_ok:
         shape_status = "dn_missing_xpoints"
-    elif loss is not None and loss > 1.0e-2:
-        shape_status = "gs_converged_shape_unverified"
-    elif any(
-        (s.get("nearest_solved_dist_m") is not None and float(s["nearest_solved_dist_m"]) > 0.08)
-        for s in target_scores
-        if s.get("role") == "x"
-    ):
-        shape_status = "gs_converged_shape_unverified"
+        reasons.append(f"n_xpt={n_xpt}<{min_x_dn}")
     else:
-        shape_status = "shape_plausible"
+        # Distance / loss / psi-span checks
+        for s in target_scores:
+            d = s.get("nearest_solved_dist_m")
+            if d is None:
+                reasons.append(f"missing_solved_{s['role']}_{s['index']}")
+                continue
+            lim = max_o_dist if s.get("role") == "o" else max_x_dist
+            # Soft defaults when acceptance disabled: keep prior 0.08 X heuristic
+            if not acc_enabled:
+                lim = 0.08 if s.get("role") == "x" else max_o_dist
+            if float(d) > float(lim):
+                reasons.append(
+                    f"{s['role']}_{s['index']}_dist={float(d):.4f}>{float(lim):.4f}"
+                )
+        loss_lim = float(max_loss) if max_loss is not None else (1.0e-2 if not acc_enabled else None)
+        if loss is not None and loss_lim is not None and float(loss) > float(loss_lim):
+            reasons.append(f"constrain_loss={float(loss):.4g}>{float(loss_lim):.4g}")
+        if (
+            max_span is not None
+            and psi_span is not None
+            and float(psi_span) > float(max_span)
+        ):
+            reasons.append(f"xpt_psi_span={float(psi_span):.4g}>{float(max_span):.4g}")
+
+        if reasons:
+            shape_status = "gs_converged_shape_unverified"
+        else:
+            shape_status = "shape_accepted" if acc_enabled else "shape_plausible"
+
+    shape_accepted = shape_status in {"shape_accepted", "shape_plausible"}
 
     return {
         "null_topology": topology,
@@ -154,12 +190,48 @@ def score_inverse_shape(
         "targets": target_scores,
         "xpt_psi_span": psi_span,
         "shape_status": shape_status,
+        "shape_accepted": bool(shape_accepted),
+        "acceptance_enabled": bool(acc_enabled),
+        "acceptance_on_fail": on_fail,
+        "fail_reasons": reasons,
+        "acceptance": acc if acc_enabled else None,
         "notes": [
             "FreeGSNKE Inverse stop condition is GS residual / relative ψ update; "
-            "constraint loss is not a stop gate (example01a-class).",
+            "constraint loss is not a FreeGSNKE stop gate (example01a-class).",
             "Critical points scored on total ψ (eq.psi), not plasma_psi alone.",
+            (
+                "Shape acceptance uses declared solver.inverse_shape_acceptance thresholds."
+                if acc_enabled
+                else "Shape acceptance authority disabled; soft honesty labels only."
+            ),
         ],
     }
+
+
+def apply_acceptance_status(
+    *,
+    gs_ok: bool,
+    gs_status: str,
+    audit: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Merge GS result with shape audit into honest status / ok flag."""
+    if not gs_ok:
+        return {
+            "ok": False,
+            "status": str(gs_status or "not_converged"),
+            "shape_accepted": False,
+        }
+    shape_ok = bool(audit.get("shape_accepted"))
+    status = str(audit.get("shape_status") or "gs_converged_shape_unverified")
+    on_fail = str(audit.get("acceptance_on_fail") or "label_only")
+    if shape_ok:
+        return {"ok": True, "status": "shape_accepted" if audit.get("acceptance_enabled") else "converged", "shape_accepted": True}
+    if on_fail == "blocking":
+        return {"ok": False, "status": status, "shape_accepted": False}
+    if on_fail == "soft_skip_time":
+        return {"ok": False, "status": status, "shape_accepted": False, "soft_skip": True}
+    # label_only: keep ok=True (GS succeeded) but honest status
+    return {"ok": True, "status": status, "shape_accepted": False}
 
 
 def port_critical_to_eq(eq: Any, profiles: Any, crit: Mapping[str, Any]) -> None:
