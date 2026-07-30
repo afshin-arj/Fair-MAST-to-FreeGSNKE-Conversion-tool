@@ -324,6 +324,9 @@ class SolverSpec:
         default_factory=InverseShapeAcceptanceSpec
     )
     inverse_shape_retry: InverseShapeRetrySpec = field(default_factory=InverseShapeRetrySpec)
+    # Static Forward window profile knobs: freeze Inverse dump (default) or
+    # interpolate cited ADR-004 profile_trajectory (never invent).
+    forward_profile_source: str = "inverse_dump_frozen"
 
     def validate(self) -> None:
         for name, val in [
@@ -336,6 +339,11 @@ class SolverSpec:
         self.multitime.validate()
         self.inverse_shape_acceptance.validate()
         self.inverse_shape_retry.validate()
+        _require(
+            self.forward_profile_source in {"inverse_dump_frozen", "profile_trajectory"},
+            "SolverSpec: forward_profile_source must be "
+            "'inverse_dump_frozen' or 'profile_trajectory'",
+        )
 
 
 @dataclass(frozen=True)
@@ -462,11 +470,12 @@ def default_execution_authority_bundle(metrics_n_times: int = 21) -> ExecutionAu
             max_solving_iterations=80,
             l2_reg_default=1.0e-9,
         ),
+        forward_profile_source="inverse_dump_frozen",
     )
 
     return ExecutionAuthorityBundle(
         authority_name="freegsnke_execution_authority",
-        authority_version="11.23.0",
+        authority_version="11.24.0",
         grid=grid,
         profile=profile,
         profile_basis=profile_basis,
@@ -541,6 +550,7 @@ def load_execution_authority_bundle(bundle_path: Path) -> ExecutionAuthorityBund
     # Tolerate older bundles missing new keys (defaults apply).
     acceptance = InverseShapeAcceptanceSpec(**acc_obj) if acc_obj else InverseShapeAcceptanceSpec()
     retry = InverseShapeRetrySpec(**retry_obj) if retry_obj else InverseShapeRetrySpec()
+    fwd_src = str(obj["solver"].get("forward_profile_source", "inverse_dump_frozen") or "inverse_dump_frozen")
     solver = SolverSpec(
         inverse_target_relative_tolerance=obj["solver"]["inverse_target_relative_tolerance"],
         inverse_target_relative_psit_update=obj["solver"]["inverse_target_relative_psit_update"],
@@ -549,6 +559,7 @@ def load_execution_authority_bundle(bundle_path: Path) -> ExecutionAuthorityBund
         multitime=multitime,
         inverse_shape_acceptance=acceptance,
         inverse_shape_retry=retry,
+        forward_profile_source=fwd_src,
     )
     passive = PassiveStructureSpec(**obj.get("passive_structure", {}))
     metrics_timebase = MetricsTimebaseSpec(**obj.get("metrics_timebase", {}))

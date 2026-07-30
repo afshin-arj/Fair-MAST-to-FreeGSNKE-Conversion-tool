@@ -403,13 +403,76 @@ def passive_resistivity_status(run_dir: Path, repo_cfg_path: Optional[Path] = No
     }
 
 
+def forward_gate_summary(run_dir: Path) -> Dict[str, Any]:
+    """Surface static Forward presentation provenance (not Inverse shape gate).
+
+    Dump-current t0 vs measured-PF window; profile_source rollup from
+    presentation/forward_times.json. Never equate Forward plots with Inverse DN.
+    """
+    run_dir = Path(run_dir)
+    out: Dict[str, Any] = {
+        "available": False,
+        "n_ok": None,
+        "n_skipped": None,
+        "n_times": None,
+        "profile_source_requested": None,
+        "profile_sources_used": [],
+        "forward_png_present": (run_dir / "forward_equilibrium.png").is_file(),
+        "note": (
+            "Static Forward: t0 GS on Inverse dump currents; window = measured PF/Ip. "
+            "Default profiles freeze Inverse dump paxis/α unless "
+            "solver.forward_profile_source=profile_trajectory. Plots must use live "
+            "Forward LCFS (not Inverse dump LCFS). Measured-PF Forward is not Inverse "
+            "shape acceptance."
+        ),
+    }
+    ft = None
+    for cand in (
+        run_dir / "presentation" / "forward_times.json",
+        run_dir / "03_reconstruction" / "presentation" / "forward_times.json",
+    ):
+        ft = _safe_json(cand)
+        if isinstance(ft, dict):
+            try:
+                out["path"] = str(cand.resolve().relative_to(run_dir.resolve())).replace("\\", "/")
+            except Exception:
+                out["path"] = str(cand)
+            break
+    if not isinstance(ft, dict):
+        return out
+    n_ok = int(ft.get("n_ok") or 0)
+    n_skip = int(ft.get("n_skipped") or 0)
+    n_times = int(ft.get("n_times") or len(ft.get("times") or []) or len(ft.get("per_time") or []) or 0)
+    srcs = ft.get("profile_sources_used")
+    if not isinstance(srcs, list):
+        srcs = []
+        for e in ft.get("per_time") or []:
+            if isinstance(e, dict) and e.get("profile_source_used"):
+                srcs.append(str(e["profile_source_used"]))
+        srcs = sorted(set(srcs))
+    out.update(
+        {
+            "available": True,
+            "n_ok": n_ok,
+            "n_skipped": n_skip,
+            "n_times": n_times,
+            "solve_mode": ft.get("solve_mode"),
+            "profile_source_requested": ft.get("profile_source_requested"),
+            "profile_sources_used": list(srcs),
+            "forward_note": ft.get("note"),
+        }
+    )
+    return out
+
+
 def build_science_audit(run_dir: Path) -> Dict[str, Any]:
     """Write 01_summary/science_audit.json and return the audit object."""
     run_dir = Path(run_dir)
     audit: Dict[str, Any] = {
-        "version": "1.1",
+        "version": "1.2",
         "reconstruction_quality": reconstruct_quality(run_dir),
         "inverse_shape_gate": inverse_shape_gate_summary(run_dir),
+        "forward_gate": forward_gate_summary(run_dir),
         "evolutive_ip": score_evolutive_ip(run_dir),
         "ohmic_drive": ohmic_drive_inventory(run_dir),
         "phase_timeline": phase_timeline_from_window(run_dir),
@@ -417,8 +480,8 @@ def build_science_audit(run_dir: Path) -> Dict[str, Any]:
         "presentation_note": (
             "Equilibrium GIFs under 03_reconstruction/presentation/ and "
             "03_reconstruction/evolutive/ (or legacy presentation/, evolutive/) are annex visuals; "
-            "scientific review should start from residuals, Ip match, solve_mode, and "
-            "inverse_shape_gate (GS stop ≠ shape acceptance)."
+            "scientific review should start from residuals, Ip match, solve_mode, "
+            "inverse_shape_gate, and forward_gate (measured-PF Forward ≠ Inverse DN)."
         ),
     }
     # Persist phase timeline under inputs for tooling

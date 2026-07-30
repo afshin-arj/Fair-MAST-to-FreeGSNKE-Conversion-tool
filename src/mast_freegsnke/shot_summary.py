@@ -24,6 +24,7 @@ _KNOWN_LIMITATIONS = [
     "Evolutive default: ic_coil_currents=inverse_dump + clamp_ip_to_measured — prefer converged Inverse IC; measured_pf remains an explicit evolutive_authority choice. n_passive=0 → example05-class stability not expected (do not invent ρ).",
     "Contract residual metrics score only families with honest channel identity + units; uncalibrated mirnov/saddle/omaha stay audit-only until calibration authority is populated.",
     "FreeGSNKE Inverse stops on GS residual / relative ψ update only; constraint loss and DN X/O placement are scored by declared inverse_shape_acceptance (not a FreeGSNKE stop). GS ok ≠ automatic DN success.",
+    "Static Forward: t0 uses Inverse dump currents; window uses measured PF/Ip with frozen Inverse profile shape unless solver.forward_profile_source=profile_trajectory. Forward plots must use live Forward LCFS (never Inverse dump LCFS); measured-PF Forward is not Inverse DN success.",
     "Equilibrium GIFs are presentation annexes — not a substitute for residual metrics or Ip match. Curated plots omit open-field ψ through PF coils by default (vacuum ψ ≠ plasma).",
     "04_efit_compare uses FAIR-MAST Level-2 EFIT++ archive products — not a live efit-ai Fortran solve.",
 ]
@@ -133,6 +134,7 @@ def write_shot_expert_overlay(
     phases = science_audit.get("phase_timeline") or {}
     passives = science_audit.get("passive_resistivity") or {}
     shape_gate = science_audit.get("inverse_shape_gate") or {}
+    fwd_gate = science_audit.get("forward_gate") or {}
 
     # Authority hashes (best-effort)
     auth_lines: List[str] = []
@@ -238,6 +240,9 @@ def write_shot_expert_overlay(
             f"GS-ok/shape-unverified={shape_gate.get('n_gs_ok_shape_unverified', '—')}, "
             f"DN-missing-X={shape_gate.get('n_dn_missing_xpoints', '—')} "
             f"(audits={shape_gate.get('n_with_audit', '—')})",
+            f"- **Static Forward:** ok={fwd_gate.get('n_ok', '—')}/"
+            f"{fwd_gate.get('n_times', '—')} skipped={fwd_gate.get('n_skipped', '—')} "
+            f"profile={fwd_gate.get('profile_source_requested') or (fwd_gate.get('profile_sources_used') or ['—'])}",
             "",
             "## Science residuals (primary)",
             "",
@@ -254,6 +259,15 @@ def write_shot_expert_overlay(
             f"shape=`{(shape_gate.get('t0') or {}).get('shape_status')}` "
             f"(constrain_loss=`{(shape_gate.get('t0') or {}).get('constrain_loss_final')}`)",
             f"- **Note:** {shape_gate.get('note', '')}",
+            "",
+            "### Static Forward (measured-PF replay)",
+            "",
+            f"- **Available:** `{fwd_gate.get('available')}`",
+            f"- **Window solves:** ok={fwd_gate.get('n_ok')} skipped={fwd_gate.get('n_skipped')} "
+            f"n_times={fwd_gate.get('n_times')}",
+            f"- **Profile source:** requested=`{fwd_gate.get('profile_source_requested')}` "
+            f"used=`{fwd_gate.get('profile_sources_used')}`",
+            f"- **Note:** {fwd_gate.get('note', '')}",
             "",
             "### Evolutive Ip vs measured FAIR-MAST Ip",
             "",

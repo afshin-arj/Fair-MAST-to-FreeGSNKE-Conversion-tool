@@ -117,6 +117,130 @@ def _load_multitime_spec(solv: dict) -> dict:
     }
 
 
+def _forward_profile_source(solv: dict) -> str:
+    src = str((solv or {}).get("forward_profile_source", "inverse_dump_frozen") or "inverse_dump_frozen")
+    if src not in {"inverse_dump_frozen", "profile_trajectory"}:
+        raise ValueError(
+            f"unsupported solver.forward_profile_source={src!r} "
+            "(use inverse_dump_frozen|profile_trajectory)"
+        )
+    return src
+
+
+def _resolve_forward_profile_kwargs(
+    *,
+    dump_profile_kwargs: dict,
+    t_i: float,
+    source_requested: str,
+) -> tuple:
+    """Return (profile_kwargs, source_used). Never invent knobs."""
+    frozen = {
+        "paxis": float(dump_profile_kwargs["paxis"]),
+        "fvac": float(dump_profile_kwargs["fvac"]),
+        "alpha_m": float(dump_profile_kwargs["alpha_m"]),
+        "alpha_n": float(dump_profile_kwargs["alpha_n"]),
+    }
+    if source_requested == "inverse_dump_frozen":
+        return frozen, "inverse_dump_frozen"
+
+    # profile_trajectory path
+    require = False
+    try:
+        from mast_freegsnke.profile_trajectory import (
+            interpolate_profile_at,
+            load_profile_trajectory_policy,
+            try_load_built_trajectory,
+        )
+
+        pol_path = INPUTS / "profile_trajectory_authority" / "profile_trajectory_authority.json"
+        if pol_path.exists():
+            require = bool(load_profile_trajectory_policy(pol_path).require)
+        traj = try_load_built_trajectory(INPUTS)
+        if traj is not None:
+            kn = interpolate_profile_at(traj, float(t_i))
+            return (
+                {
+                    "paxis": float(kn["paxis"]),
+                    "fvac": float(kn["fvac"]),
+                    "alpha_m": float(kn["alpha_m"]),
+                    "alpha_n": float(kn["alpha_n"]),
+                },
+                "profile_trajectory",
+            )
+    except Exception as e:
+        if require:
+            raise RuntimeError(
+                "solver.forward_profile_source=profile_trajectory but trajectory "
+                f"unavailable/invalid: {e}. Fix profile_trajectory authority or set "
+                "forward_profile_source=inverse_dump_frozen."
+            ) from e
+        print(
+            f"[WARN] profile_trajectory unavailable at t={float(t_i):.6f}: {e}; "
+            "falling back to inverse_dump_frozen",
+            flush=True,
+        )
+        return frozen, "inverse_dump_frozen_fallback"
+
+    if require:
+        raise RuntimeError(
+            "solver.forward_profile_source=profile_trajectory but no ok trajectory "
+            "under inputs/profile_trajectory_authority/. Build profile_trajectory "
+            "or set forward_profile_source=inverse_dump_frozen."
+        )
+    print(
+        f"[WARN] profile_trajectory missing/not-ok at t={float(t_i):.6f}; "
+        "falling back to inverse_dump_frozen",
+        flush=True,
+    )
+    return frozen, "inverse_dump_frozen_fallback"
+
+
+def _live_forward_lcfs(eq):
+    """Extract live Forward LCFS polyline; never return Inverse dump LCFS."""
+    try:
+        from mast_freegsnke.freegsnke_lcfs import lcfs_arrays_from_eq
+
+        return lcfs_arrays_from_eq(eq)
+    except Exception:
+        return None
+
+
+def _save_forward_png(
+    *,
+    tokamak,
+    eq,
+    profiles,
+    out_path,
+    title: str,
+    dpi: int,
+    figsize,
+    plot_style: str,
+):
+    """Forward plot: live LCFS only; never Inverse dump LCFS or Inverse targets."""
+    from mast_freegsnke.equilibrium_presentation import (
+        attach_profiles_after_restore,
+        save_equilibrium_png,
+    )
+
+    attach_profiles_after_restore(eq, profiles)
+    live = _live_forward_lcfs(eq)
+    return save_equilibrium_png(
+        tokamak=tokamak,
+        eq=eq,
+        out_path=out_path,
+        title=title,
+        dpi=int(dpi),
+        figsize=figsize,
+        run_dir=HERE,
+        plot_style=str(plot_style or "curated"),
+        profiles=profiles,
+        dump_lcfs=live,
+        use_inverse_dump_lcfs=False,
+        use_inverse_targets=False,
+        lcfs_label="LCFS (Forward)",
+    )
+
+
 def _forward_sample_worker(payload: dict) -> None:
     """Spawn-child: one forward GS sample (hard per_time_timeout_s kill)."""
     import pickle as _pickle
@@ -392,16 +516,11 @@ def main():
 
     # Dump currents by default (= Inverse IC); measured-PF multitime is labeled below.
     try:
-        from mast_freegsnke.equilibrium_presentation import (
-            attach_profiles_after_restore,
-            save_equilibrium_png,
-            try_load_presentation_authority,
-        )
+        from mast_freegsnke.equilibrium_presentation import try_load_presentation_authority
 
-        attach_profiles_after_restore(eq, profiles)
         _pres0 = try_load_presentation_authority(INPUTS)
         _style = str(
-            getattr(_pres0, "plot_style", "freegsnke_native") if _pres0 else "freegsnke_native"
+            getattr(_pres0, "plot_style", "curated") if _pres0 else "curated"
         )
         t0 = dump.get("t0")
         Ip = dump.get("Ip")
@@ -410,16 +529,15 @@ def main():
             if t0 is not None and Ip is not None
             else "Forward GS (dump currents)"
         )
-        save_equilibrium_png(
+        _save_forward_png(
             tokamak=tokamak,
             eq=eq,
+            profiles=profiles,
             out_path=HERE / "forward_equilibrium.png",
             title=_title,
             dpi=250,
             figsize=(6.0, 10.0),
-            run_dir=HERE,
             plot_style=_style,
-            profiles=profiles,
         )
         print(f"Saved forward_equilibrium.png (plot_style={_style})")
     except Exception as _fig_e:
@@ -429,8 +547,6 @@ def main():
     # Hard per-sample kill (same FreeGSNKE hang mode as inverse multi-time).
     try:
         from mast_freegsnke.equilibrium_presentation import (
-            attach_profiles_after_restore,
-            save_equilibrium_png,
             sorted_frame_paths,
             try_load_presentation_authority,
             write_gif_from_pngs,
@@ -447,7 +563,9 @@ def main():
             tokamak_pickle = HERE / ".multitime_work" / "tokamak_fwd.pkl"
             n_ok = 0
             n_skip = 0
-            _plot_style = str(getattr(pres, "plot_style", "freegsnke_native"))
+            _plot_style = str(getattr(pres, "plot_style", "curated") or "curated")
+            _src_req = _forward_profile_source(solv)
+            _src_used_rollup = set()
             # Continue from the t0 forward solution (cold-start each sample can hang).
             if not mt_spec["continuation"]:
                 eq.plasma_psi = eq.create_psi_plasma_default(adaptive_centre=True)
@@ -456,11 +574,18 @@ def main():
             for t_i in times:
                 pf_i = load_pf_currents(float(t_i))
                 ip_i = interp_at_time(ip_df, float(t_i), "ip")
+                pk_i, src_used = _resolve_forward_profile_kwargs(
+                    dump_profile_kwargs=profile_kwargs,
+                    t_i=float(t_i),
+                    source_requested=_src_req,
+                )
+                _src_used_rollup.add(src_used)
                 if not mt_spec["continuation"]:
                     eq.plasma_psi = eq.create_psi_plasma_default(adaptive_centre=True)
                     eq.solved = False
                 print(
                     f"[..] forward window sample t={float(t_i):.6f}s Ip={ip_i/1e6:.3f}MA "
+                    f"profile_source={src_used} "
                     f"(timeout={mt_spec['per_time_timeout_s']}s, "
                     f"max_iter={mt_spec['max_solving_iterations']})",
                     flush=True,
@@ -471,7 +596,7 @@ def main():
                     grid=grid,
                     solv=solv,
                     mt_spec=mt_spec,
-                    profile_kwargs=profile_kwargs,
+                    profile_kwargs=pk_i,
                     t_i=float(t_i),
                     ip_i=float(ip_i),
                     pf_i=pf_i,
@@ -486,30 +611,34 @@ def main():
                     "rel_change": result.get("rel_change"),
                     "duration_s": result.get("duration_s"),
                     "error": result.get("error"),
+                    "profile_source_requested": _src_req,
+                    "profile_source_used": src_used,
                 }
                 if result.get("ok"):
                     n_ok += 1
                     if pres.write_eq_frames:
                         # Child restore only copies plasma_psi — re-bind profiles.
                         _prof_i = ConstrainPaxisIp(
-                            eq=eq, Ip=float(ip_i), **profile_kwargs
+                            eq=eq, Ip=float(ip_i), **pk_i
                         )
-                        attach_profiles_after_restore(eq, _prof_i)
                         tag = f"eq_t{float(t_i):.6f}".replace(".", "p")
-                        png = save_equilibrium_png(
+                        png = _save_forward_png(
                             tokamak=tokamak,
                             eq=eq,
+                            profiles=_prof_i,
                             out_path=frames_dir / f"{tag}.png",
                             title=(
                                 f"Forward GS measured-PF replay "
                                 f"t={float(t_i):.4f}s Ip={ip_i/1e6:.3f}MA"
                             ),
                             dpi=int(pres.gif_dpi),
-                            run_dir=HERE,
+                            figsize=(4.0, 8.0),
                             plot_style=_plot_style,
-                            profiles=_prof_i,
                         )
                         entry["frame_png"] = str(png.relative_to(HERE)).replace("\\", "/")
+                        _live = _live_forward_lcfs(eq)
+                        if _live is not None:
+                            entry["lcfs_n"] = int(len(_live[0]))
                     print(
                         f"[OK] forward window sample t={float(t_i):.6f}s "
                         f"status={entry['status']} duration_s={result.get('duration_s')}",
@@ -532,12 +661,18 @@ def main():
                         "n_ok": n_ok,
                         "n_skipped": n_skip,
                         "multitime_authority": mt_spec,
+                        "profile_source_requested": _src_req,
+                        "profile_sources_used": sorted(_src_used_rollup),
                         "note": (
                             "Multi-time forward uses measured PF/Ip at each window sample "
-                            "(not Inverse dump currents — SN-vs-DN vs Inverse is expected), "
-                            "psi continuation from t0 (unless continuation=false), "
-                            "max_solving_iterations + hard per_time_timeout_s kill. "
-                            "Skipped times omit frames; never fabricate equilibria."
+                            "(not Inverse dump currents). Default profiles freeze Inverse "
+                            "dump paxis/α (forward_profile_source=inverse_dump_frozen); "
+                            "optional profile_trajectory is declared authority only. "
+                            "Plots use live Forward LCFS — never Inverse dump LCFS / Inverse "
+                            "null targets (measured-PF Forward is not Inverse shape acceptance; "
+                            "SN-vs-DN vs Inverse is expected). psi continuation from t0 "
+                            "(unless continuation=false), max_solving_iterations + hard "
+                            "per_time_timeout_s kill. Skipped times omit frames; never fabricate."
                         ),
                     },
                     indent=2,

@@ -46,7 +46,7 @@ def test_multitime_solve_spec_defaults_and_validation() -> None:
 def test_execution_authority_writes_multitime_solver_knobs(tmp_path: Path) -> None:
     root = write_execution_authority(tmp_path, metrics_n_times=5)
     bundle = load_execution_authority_bundle(root / "execution_authority_bundle.json")
-    assert bundle.authority_version == "11.23.0"
+    assert bundle.authority_version == "11.24.0"
     assert bundle.solver.multitime.preferred_mode == "full_inverse"
     assert bundle.solver.multitime.fresh_constrain_per_time is True
     assert bundle.solver.multitime.max_solving_iterations == 50
@@ -54,12 +54,26 @@ def test_execution_authority_writes_multitime_solver_knobs(tmp_path: Path) -> No
     assert bundle.solver.inverse_shape_acceptance.enabled is True
     assert bundle.solver.inverse_shape_acceptance.on_fail == "label_only"
     assert bundle.solver.inverse_shape_retry.max_retries == 1
+    assert bundle.solver.forward_profile_source == "inverse_dump_frozen"
 
     raw = json.loads((root / "solver_spec.json").read_text())
     assert "multitime" in raw
     assert raw["multitime"]["preferred_mode"] == "full_inverse"
     assert "inverse_shape_acceptance" in raw
     assert "inverse_shape_retry" in raw
+    assert raw["forward_profile_source"] == "inverse_dump_frozen"
+
+
+def test_execution_authority_loads_legacy_bundle_without_forward_profile_source(
+    tmp_path: Path,
+) -> None:
+    root = write_execution_authority(tmp_path, metrics_n_times=3)
+    bundle_path = root / "execution_authority_bundle.json"
+    obj = json.loads(bundle_path.read_text())
+    del obj["solver"]["forward_profile_source"]
+    bundle_path.write_text(json.dumps(obj, indent=2) + "\n")
+    loaded = load_execution_authority_bundle(bundle_path)
+    assert loaded.solver.forward_profile_source == "inverse_dump_frozen"
 
 
 def test_execution_authority_loads_legacy_bundle_without_shape_gate(tmp_path: Path) -> None:
@@ -230,12 +244,21 @@ def test_evolutive_template_has_ip_collapse_abort() -> None:
     assert 'profiles_parameters["Ip"]' in tpl or "profiles_parameters[\"Ip\"]" in tpl
 
 
-def test_forward_template_uses_native_plot() -> None:
+def test_forward_template_plot_honesty_and_profile_source() -> None:
     tpl = (REPO / "templates" / "forward_run.py.tpl").read_text(encoding="utf-8")
     assert "save_equilibrium_png" in tpl
     assert "attach_profiles_after_restore" in tpl
-    assert "freegsnke_native" in tpl or "plot_style" in tpl
     assert "measured-PF replay" in tpl
+    assert "use_inverse_dump_lcfs=False" in tpl
+    assert "use_inverse_targets=False" in tpl
+    assert "LCFS (Forward)" in tpl
+    assert "forward_profile_source" in tpl
+    assert "inverse_dump_frozen" in tpl
+    assert "profile_trajectory" in tpl
+    assert '_plot_style = str(getattr(pres, "plot_style", "curated")' in tpl or 'plot_style", "curated"' in tpl
+    # Must not silently default Forward plots to freegsnke_native.
+    assert 'plot_style", "freegsnke_native"' not in tpl
+    assert "plot_style', 'freegsnke_native'" not in tpl
 
 
 def test_runner_pins_blas_threads_by_default() -> None:

@@ -459,14 +459,15 @@ def plot_equilibrium_curated(
     n_open_contours: int = 4,
     inverse_targets: Optional[Dict[str, Any]] = None,
     dump_lcfs: Optional[Tuple[Any, Any]] = None,
+    lcfs_label: str = "LCFS (dump polyline)",
 ) -> None:
     """Curated ψ plot: wall + nested core surfaces + LCFS + honest X/O.
 
     Avoids freegs4e default (35 global levels + all-red ×) which looks noisy
     near coils and implies secondary nulls lie on the separatrix.
     Optional ``inverse_targets`` overlays archive Inverse X/O (+/o).
-    Optional ``dump_lcfs`` (R,Z) draws the persisted Inverse polyline when
-    live primary-X ψ is missing.
+    Optional ``dump_lcfs`` (R,Z) draws a caller-supplied polyline (Inverse dump
+    or live Forward LCFS) — prefer live Forward LCFS on Forward frames.
     """
     import numpy as np
     from numpy import amax, amin, linspace
@@ -617,7 +618,7 @@ def plot_equilibrium_curated(
     drew_lcfs = False
     if dump_lcfs is not None:
         drew_lcfs = overlay_dump_lcfs(
-            ax, dump_lcfs[0], dump_lcfs[1], label="LCFS (dump polyline)"
+            ax, dump_lcfs[0], dump_lcfs[1], label=str(lcfs_label or "LCFS")
         )
     if not drew_lcfs and np.isfinite(psi_bndry):
         ax.contour(
@@ -693,27 +694,39 @@ def save_equilibrium_png(
     inverse_targets: Optional[Dict[str, Any]] = None,
     run_dir: Optional[Path] = None,
     dump_lcfs: Optional[Tuple[Any, Any]] = None,
+    use_inverse_dump_lcfs: bool = True,
+    use_inverse_targets: bool = True,
+    lcfs_label: Optional[str] = None,
 ) -> Path:
     """Save one equilibrium PNG frame (Agg-safe).
 
     Default ``plot_style=curated`` (core surfaces + LCFS). Pass
     ``plot_style='freegsnke_native'`` for example01a-style ``tokamak.plot`` +
-    ``eq.plot``. When ``run_dir`` is set, archive Inverse X/O targets and dump
-    LCFS polyline are used if present.
+    ``eq.plot``. When ``run_dir`` is set and flags allow, archive Inverse X/O
+    targets and Inverse dump LCFS are loaded. Forward callers must pass
+    ``use_inverse_dump_lcfs=False`` (and usually ``use_inverse_targets=False``)
+    so Inverse separatrix is never painted on measured-PF Forward equilibria.
     """
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    if inverse_targets is None and run_dir is not None:
+    if inverse_targets is None and use_inverse_targets and run_dir is not None:
         inverse_targets = load_inverse_null_targets(Path(run_dir))
-    if dump_lcfs is None and run_dir is not None:
+    if not use_inverse_targets:
+        inverse_targets = None
+    if dump_lcfs is None and use_inverse_dump_lcfs and run_dir is not None:
         dump_lcfs = load_dump_lcfs(Path(run_dir))
+    if not use_inverse_dump_lcfs and dump_lcfs is None:
+        # Explicit: do not fall back to Inverse dump when Forward supplies none.
+        dump_lcfs = None
 
     style = str(plot_style or ("curated" if curated else "freegsnke_native")).strip().lower()
     if style not in {"freegsnke_native", "curated"}:
         style = "curated"
+
+    label = str(lcfs_label or ("LCFS (dump polyline)" if use_inverse_dump_lcfs else "LCFS (Forward)"))
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -728,6 +741,7 @@ def save_equilibrium_png(
                 tokamak,
                 inverse_targets=inverse_targets,
                 dump_lcfs=dump_lcfs,
+                lcfs_label=label,
             )
         except Exception as e:
             plt.close(fig)
@@ -742,14 +756,14 @@ def save_equilibrium_png(
                 inverse_targets=inverse_targets,
                 profiles=profiles,
             )
-            # Native may omit LCFS when xpt empty — still show dump polyline.
+            # Native may omit LCFS when xpt empty — show caller polyline only.
             if dump_lcfs is not None:
                 try:
                     xpt = getattr(getattr(eq, "_profiles", None), "xpt", None)
                     if xpt is None or len(xpt) < 1:
-                        overlay_dump_lcfs(ax, dump_lcfs[0], dump_lcfs[1])
+                        overlay_dump_lcfs(ax, dump_lcfs[0], dump_lcfs[1], label=label)
                 except Exception:
-                    overlay_dump_lcfs(ax, dump_lcfs[0], dump_lcfs[1])
+                    overlay_dump_lcfs(ax, dump_lcfs[0], dump_lcfs[1], label=label)
         except Exception as e:
             plt.close(fig)
             raise PresentationError(f"freegsnke_native plot failed: {e}") from e

@@ -1,3 +1,21 @@
+## 11.24.0 — Forward plot honesty + profile-source authority
+
+### Presentation
+- Forward frames never auto-load Inverse dump LCFS or Inverse null targets (`use_inverse_dump_lcfs=False`, `use_inverse_targets=False`).
+- Live Forward LCFS polyline labeled **LCFS (Forward)** so Primary X sits on the drawn boundary.
+- Forward template curated fallback (no silent `freegsnke_native`).
+
+### Physics / authority
+- `solver.forward_profile_source`: default `inverse_dump_frozen`; optional `profile_trajectory` (fail-closed when policy `require`, else loud frozen fallback).
+- Persist `profile_source_requested` / `profile_source_used` on `forward_times.json`.
+
+### SUMMARY
+- `science_audit.forward_gate` + SUMMARY **Static Forward (measured-PF replay)** note: Forward ≠ Inverse DN.
+
+### Validate
+- Unit tests for presentation flags, authority default, forward template tokens, forward_gate.
+- Version **11.24.0**.
+
 ## 11.23.0 — Honest Inverse shape acceptance (no forged FreeGSNKE stop)
 
 ### Authority
