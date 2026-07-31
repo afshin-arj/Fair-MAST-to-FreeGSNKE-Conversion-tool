@@ -261,9 +261,10 @@ def test_evolutive_authority_cover_window() -> None:
     assert ea.per_step_timeout_s == 180.0
     assert ea.script_timeout_s == 2400.0
     assert ea.abort_when_ip_below_measured_frac == 0.25
-    assert ea.ic_coil_currents == "inverse_dump"
+    assert ea.ic_coil_currents == "measured_pf"
     assert ea.clamp_ip_to_measured is True
     assert ea.abort_when_axis_drift_m == 0.12
+    assert ea.authority_version == "11.31.0"
     # Shot 30201-like window ~0.177 s → ceil(0.1768/0.01)=18
     plan = resolve_n_steps(ea, t_start=0.2012, t_end=0.378)
     assert plan["mode"] == "cover_window"
@@ -315,6 +316,12 @@ def test_evolutive_template_present_and_renders(tmp_path: Path) -> None:
     assert "n_passive" in text
     assert "save_equilibrium_png" in text
     assert "attach_profiles_after_restore" in text
+    # Soft-stop before snapshot so aborting frame titles carry early_stop.
+    soft_idx = text.find("Soft-stops BEFORE snapshot")
+    snap_idx = text.find("if snap_every > 0 and (step % snap_every == 0):")
+    assert soft_idx > 0 and snap_idx > soft_idx
+    assert "[early_stop=" in text
+    assert "early_stop={early_stop}" in text or "early_stop=" in text
     gen = ScriptGenerator(templates_dir=REPO / "templates")
     gen.generate(run_dir=tmp_path, machine_dir=tmp_path / "machine", formed_frac=0.8)
     evo = (tmp_path / "evolutive_run.py").read_text(encoding="utf-8")

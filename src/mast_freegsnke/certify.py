@@ -132,6 +132,8 @@ def certify_run_dir(
         report["checks"]["science_audit"] = {
             "reconstruction_hint": rq.get("science_tier_hint"),
             "evolutive_ip_ok": evo.get("ok"),
+            "evolutive_ip_status": evo.get("status"),
+            "evolutive_raxis_status": (science.get("evolutive_raxis_drift") or {}).get("status"),
             "passive_status": passives.get("status"),
         }
         hint = rq.get("science_tier_hint")
@@ -148,6 +150,11 @@ def certify_run_dir(
         )
         if evo_hist is not None and evo_hist.exists() and not evo.get("ok"):
             report["warnings"].append("evolutive_ip_residual_unavailable")
+        if evo.get("status") == "clamp_tautology":
+            report["warnings"].append("evolutive_ip_clamp_tautology")
+        rax = science.get("evolutive_raxis_drift") or {}
+        if rax.get("status") == "early_stop_axis_drift":
+            report["warnings"].append("evolutive_early_stop_axis_drift")
         if passives.get("status") in {"awaiting_authority", "unknown"}:
             report["warnings"].append("passive_resistivity_awaiting_authority")
     elif (run_dir / "synthetic" / "synthetic_times.json").exists():

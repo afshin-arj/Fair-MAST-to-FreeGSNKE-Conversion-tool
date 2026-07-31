@@ -302,7 +302,7 @@ def main() -> None:
             raise ValueError(
                 "evolutive_authority.abort_when_ip_below_measured_frac must be in (0,1) or null"
             )
-    ic_coil_src = str(ea_evolv.get("ic_coil_currents", "inverse_dump")).strip().lower()
+    ic_coil_src = str(ea_evolv.get("ic_coil_currents", "measured_pf")).strip().lower()
     if ic_coil_src not in {"measured_pf", "inverse_dump"}:
         raise ValueError(
             "evolutive_authority.ic_coil_currents must be 'measured_pf' or 'inverse_dump' "
@@ -849,57 +849,7 @@ def main() -> None:
         _write_history_csv(OUT / "history.csv", history, coil_names)
         print(f"[OK] step {step} recorded  Ip={Ip}  Raxis={Raxis}  Zaxis={Zaxis}", flush=True)
 
-        if snap_every > 0 and (step % snap_every == 0):
-            try:
-                from mast_freegsnke.equilibrium_presentation import (
-                    attach_profiles_after_restore,
-                    save_equilibrium_png,
-                    try_load_presentation_authority,
-                )
-
-                _pres_s = try_load_presentation_authority(INPUTS)
-                _style_s = str(
-                    getattr(_pres_s, "plot_style", "curated")
-                    if _pres_s
-                    else "curated"
-                )
-                # Prefer eq1's own profiles after nlstepper; else re-bind IC profiles.
-                _prof_snap = getattr(stepping.eq1, "_profiles", None) or profiles
-                try:
-                    attach_profiles_after_restore(stepping.eq1, _prof_snap)
-                except Exception:
-                    pass
-                _live_lcfs = None
-                try:
-                    from mast_freegsnke.freegsnke_lcfs import lcfs_arrays_from_eq
-
-                    _live_lcfs = lcfs_arrays_from_eq(stepping.eq1)
-                except Exception:
-                    _live_lcfs = None
-                _title_s = f"Evolutive step {step}  t={t_abs:.4f}s  (n_passive=0 soft-stop risk)"
-                if early_stop:
-                    _title_s = (
-                        f"Evolutive step {step}  t={t_abs:.4f}s  "
-                        f"[early_stop={early_stop}]"
-                    )
-                save_equilibrium_png(
-                    tokamak=tokamak,
-                    eq=stepping.eq1,
-                    out_path=OUT / f"eq_snapshot_step{step:04d}.png",
-                    title=_title_s,
-                    dpi=120,
-                    figsize=(4.0, 8.0),
-                    run_dir=HERE,
-                    plot_style=_style_s,
-                    profiles=_prof_snap,
-                    dump_lcfs=_live_lcfs,
-                    use_inverse_dump_lcfs=False,
-                    use_inverse_targets=False,
-                    lcfs_label="LCFS (Evolutive)",
-                )
-            except Exception as e:
-                print(f"[WARN] snapshot failed at step {step}: {e}", flush=True)
-
+        # Soft-stops BEFORE snapshot so the aborting frame title carries early_stop.
         # Soft-stop before hung nlstepper: Ip collapsed vs measured (shot 30201 pattern).
         if (
             abort_ip_frac is not None
@@ -934,11 +884,11 @@ def main() -> None:
                         f"stopping before hung nlstepper; partial history retained",
                         flush=True,
                     )
-                    break
 
         # Soft-stop: magnetic axis drifted too far (no-passive Alfvén instability).
         if (
-            abort_axis_drift_m is not None
+            early_stop is None
+            and abort_axis_drift_m is not None
             and math.isfinite(Raxis)
             and math.isfinite(Zaxis)
             and math.isfinite(r_axis0)
@@ -965,7 +915,66 @@ def main() -> None:
                     f"nlstepper (no passives / Alfvén-unstable); partial history retained",
                     flush=True,
                 )
-                break
+
+        if snap_every > 0 and (step % snap_every == 0):
+            try:
+                from mast_freegsnke.equilibrium_presentation import (
+                    attach_profiles_after_restore,
+                    save_equilibrium_png,
+                    try_load_presentation_authority,
+                )
+
+                _pres_s = try_load_presentation_authority(INPUTS)
+                _style_s = str(
+                    getattr(_pres_s, "plot_style", "curated")
+                    if _pres_s
+                    else "curated"
+                )
+                # Prefer eq1's own profiles after nlstepper; else re-bind IC profiles.
+                _prof_snap = getattr(stepping.eq1, "_profiles", None) or profiles
+                try:
+                    attach_profiles_after_restore(stepping.eq1, _prof_snap)
+                except Exception:
+                    pass
+                _live_lcfs = None
+                try:
+                    from mast_freegsnke.freegsnke_lcfs import lcfs_arrays_from_eq
+
+                    _live_lcfs = lcfs_arrays_from_eq(stepping.eq1)
+                except Exception:
+                    _live_lcfs = None
+                if early_stop:
+                    _title_s = (
+                        f"Evolutive step {step}  t={t_abs:.4f}s  "
+                        f"[early_stop={early_stop}]"
+                    )
+                elif int(n_passive) == 0:
+                    _title_s = (
+                        f"Evolutive step {step}  t={t_abs:.4f}s  "
+                        f"(n_passive=0 soft-stop risk)"
+                    )
+                else:
+                    _title_s = f"Evolutive step {step}  t={t_abs:.4f}s"
+                save_equilibrium_png(
+                    tokamak=tokamak,
+                    eq=stepping.eq1,
+                    out_path=OUT / f"eq_snapshot_step{step:04d}.png",
+                    title=_title_s,
+                    dpi=120,
+                    figsize=(4.0, 8.0),
+                    run_dir=HERE,
+                    plot_style=_style_s,
+                    profiles=_prof_snap,
+                    dump_lcfs=_live_lcfs,
+                    use_inverse_dump_lcfs=False,
+                    use_inverse_targets=False,
+                    lcfs_label="LCFS (Evolutive)",
+                )
+            except Exception as e:
+                print(f"[WARN] snapshot failed at step {step}: {e}", flush=True)
+
+        if early_stop:
+            break
 
     # Final CSV + meta (history already flushed incrementally)
     hist_df = pd.read_csv(OUT / "history.csv") if (OUT / "history.csv").exists() else pd.DataFrame()
@@ -1105,7 +1114,26 @@ def main() -> None:
         axs[1, 0].set_ylabel("elongation"); axs[1, 0].set_xlabel("t [s]"); axs[1, 0].grid(True)
         axs[1, 1].plot(hist_df["t_abs"], hist_df["triangularity"])
         axs[1, 1].set_ylabel("triangularity"); axs[1, 1].set_xlabel("t [s]"); axs[1, 1].grid(True)
-        fig.suptitle("Evolutive forward (FAIR-MAST voltages + ohmic I×R)")
+        _ov_bits = [
+            "Evolutive (FAIR-MAST V + ohmic I×R)",
+            f"steps {len(history['t_abs'])}/{n_steps}",
+            f"ic={ic_coil_src}",
+            f"n_passive={int(n_passive)}",
+        ]
+        if early_stop:
+            _ov_bits.append(f"early_stop={early_stop}")
+            _es_t = None
+            if isinstance(early_stop_detail, dict):
+                try:
+                    _es_t = float(early_stop_detail.get("t_abs"))
+                except Exception:
+                    _es_t = None
+            if _es_t is not None and math.isfinite(_es_t):
+                for _ax in axs.ravel():
+                    _ax.axvline(_es_t, color="C3", ls="--", lw=1.0, alpha=0.8)
+        if clamp_ip:
+            _ov_bits.append("clamp_ip (Ip residual tautology)")
+        fig.suptitle(" | ".join(_ov_bits), fontsize=10)
         fig.tight_layout()
         fig.savefig(OUT / "history_overview.png", dpi=150, bbox_inches="tight")
         plt.close(fig)
@@ -1124,6 +1152,16 @@ def main() -> None:
                 _frames,
                 OUT / "evolutive_equilibria.gif",
                 fps=float(_pres.gif_fps),
+            )
+            _gif_rep["early_stop"] = early_stop
+            _gif_rep["n_steps_requested"] = int(n_steps)
+            _gif_rep["n_steps_recorded"] = int(len(history["t_abs"]))
+            _gif_rep["n_passive"] = int(n_passive)
+            _gif_rep["ic_coil_currents"] = ic_coil_src
+            _gif_rep["caption"] = (
+                f"Evolutive {len(history['t_abs'])}/{n_steps} steps"
+                + (f"; early_stop={early_stop}" if early_stop else "")
+                + ("; n_passive=0" if int(n_passive) == 0 else "")
             )
             (OUT / "evolutive_gif_report.json").write_text(
                 json.dumps(_gif_rep, indent=2) + "\n", encoding="utf-8"

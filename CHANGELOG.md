@@ -1,3 +1,16 @@
+## 11.31.0 — Evolutive feed default measured_pf + scorecard honesty
+
+### Evolutive (nlstepper)
+- Default `ic_coil_currents=measured_pf` so experimental PF currents and measured voltages are consistent at t₀ (`inverse_dump` remains DEMO/shape-IC).
+- Soft-stop gates run **before** equilibrium snapshots so the aborting frame title carries `[early_stop=…]`.
+- `history_overview.png` / GIF report caption stamp `early_stop`, step counts, `n_passive`, `clamp_ip`.
+- Science audit: Ip residual `status=clamp_tautology` when `clamp_ip_to_measured`; new `evolutive_raxis_drift` soft metric (`raxis_drift.csv`).
+- SUMMARY / certify surface clamp tautology and axis-drift early_stop honestly.
+
+### Validate
+- Unit tests for authority default, clamp tautology, Raxis drift, template soft-stop order.
+- Version **11.31.0**.
+
 ## 11.30.0 — Structure-masked open-field contours (Inverse/Forward/Evolutive)
 
 ### Presentation

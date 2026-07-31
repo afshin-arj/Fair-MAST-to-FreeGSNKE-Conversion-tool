@@ -1,44 +1,22 @@
 {
-
   "authority_name": "freegsnke_evolutive_authority",
-
-  "authority_version": "11.21.0",
-
+  "authority_version": "11.31.0",
   "full_timestep_s": 0.01,
-
   "cover_window": true,
-
   "max_steps": 200,
-
   "linear_only": true,
-
   "scale_paxis_with_ip": false,
-
   "plasma_resistivity_ohm_m": 1.0e-6,
-
   "max_solving_iterations": 50,
-
   "max_mode_frequency": 316.22776601683796,
-
   "script_timeout_s": 2400.0,
-
   "per_step_timeout_s": 180.0,
-
   "abort_when_ip_below_measured_frac": 0.25,
-
-  "ic_coil_currents": "inverse_dump",
-
+  "ic_coil_currents": "measured_pf",
   "clamp_ip_to_measured": true,
-
   "abort_when_axis_drift_m": 0.12,
-
   "snapshot_equilibria_every_n": 1,
-
   "min_dIy_dI": 0.01,
-
   "n_steps": null,
-
-  "notes": "Declared evolutive numerics for FreeGSNKE nl_solver/nlstepper on classic MAST (not MAST-U). v11.21.0: default ic_coil_currents=inverse_dump (prefer converged Inverse IC; measured_pf remains an explicit authority choice); n_passive=0 loud honesty (example05-class stability not expected). Passives still awaiting cited resistivity. FAIR-MAST Level-2 measured voltages p1/p2/p4/p5 primary; P3/P6 from_current_ohmic. ADR-004 profile_trajectory overrides scale_paxis_with_ip when present."
-
+  "notes": "Declared evolutive numerics for FreeGSNKE nl_solver/nlstepper on classic MAST (not MAST-U). v11.31.0: default ic_coil_currents=measured_pf (experimental I+V consistency at t0; inverse_dump remains DEMO/shape-IC). clamp_ip_to_measured=true → Ip residual is a clamp tautology (prefer Raxis drift). n_passive=0 loud honesty (example05-class stability not expected). Passives still awaiting cited resistivity. FAIR-MAST Level-2 measured voltages p1/p2/p4/p5 primary; P3/P6 from_current_ohmic. ADR-004 profile_trajectory overrides scale_paxis_with_ip when present."
 }
-

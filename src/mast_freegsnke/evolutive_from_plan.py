@@ -158,8 +158,28 @@ def score_evolutive_ip_at(
         "mae_A": None,
         "max_abs_A": None,
         "rms_rel": None,
+        "status": None,
+        "clamp_ip_to_measured": None,
         "errors": [],
     }
+    meta_path = run_dir / evolutive_relpath / "evolutive_meta.json"
+    if not meta_path.is_file() and evolutive_relpath.endswith("_plan"):
+        meta_path = run_dir / evolutive_relpath / "evolutive_from_plan_meta.json"
+    clamp_ip = None
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            if isinstance(meta, dict) and "clamp_ip_to_measured" in meta:
+                clamp_ip = bool(meta.get("clamp_ip_to_measured"))
+            if isinstance(meta, dict):
+                report["early_stop"] = meta.get("early_stop")
+                report["n_steps_recorded"] = meta.get("n_steps_recorded")
+                report["n_steps_requested"] = meta.get("n_steps_requested")
+                report["ic_coil_currents"] = meta.get("ic_coil_currents")
+        except Exception:
+            pass
+    report["clamp_ip_to_measured"] = clamp_ip
+
     out_csv = run_dir / evolutive_relpath / "ip_residual.csv"
     # Prefer already-written residual CSV (UI tab switches) — avoid re-scoring every open.
     if out_csv.is_file():
@@ -179,6 +199,7 @@ def score_evolutive_ip_at(
                     max_abs = float(np.max(np.abs(resid)))
                     scale = float(np.mean(np.abs(ip_meas)))
                     rms_rel = float(rms / scale) if scale > 0.0 else None
+                    status = "clamp_tautology" if clamp_ip is True else "ok"
                     report.update(
                         {
                             "ok": True,
@@ -187,6 +208,7 @@ def score_evolutive_ip_at(
                             "mae_A": mae,
                             "max_abs_A": max_abs,
                             "rms_rel": rms_rel,
+                            "status": status,
                             "residual_csv": f"{evolutive_relpath}/ip_residual.csv",
                             "from_cached_csv": True,
                         }
@@ -252,6 +274,7 @@ def score_evolutive_ip_at(
             "residual_A": resid,
         }
     ).to_csv(out_csv, index=False)
+    status = "clamp_tautology" if clamp_ip is True else "ok"
     report.update(
         {
             "ok": True,
@@ -260,6 +283,7 @@ def score_evolutive_ip_at(
             "mae_A": mae,
             "max_abs_A": max_abs,
             "rms_rel": rms_rel,
+            "status": status,
             "residual_csv": f"{evolutive_relpath}/ip_residual.csv",
         }
     )

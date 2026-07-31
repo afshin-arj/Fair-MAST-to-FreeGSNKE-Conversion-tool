@@ -21,7 +21,7 @@ _KNOWN_LIMITATIONS = [
     "P3 and P6: no usable measured PF voltage in public L1/L2 -> from_current_ohmic (I*R with FreeGSNKE coil_resist after load) — treat as declared uncertainty, not measured V.",
     "Active-coil resistivity is FreeGSNKE copper default 1.55e-8 (declared material constant; Level-2 does not publish coil resistivity).",
     "Profile alpha_m/alpha_n/fvac are held from the inverse IC; optional scale_paxis_with_ip is a declared Ip scaling law (default off) — never invented profile numbers.",
-    "Evolutive default: ic_coil_currents=inverse_dump + clamp_ip_to_measured — prefer converged Inverse IC; measured_pf remains an explicit evolutive_authority choice. n_passive=0 → example05-class stability not expected (do not invent ρ).",
+    "Evolutive default: ic_coil_currents=measured_pf + clamp_ip_to_measured (experimental I+V at t0); inverse_dump remains DEMO/shape-IC. Under clamp_ip, Ip residual is a tautology — prefer Raxis drift / early_stop. n_passive=0 → example05-class stability not expected (do not invent ρ).",
     "Contract residual metrics score only families with honest channel identity + units; uncalibrated mirnov/saddle/omaha stay audit-only until calibration authority is populated.",
     "FreeGSNKE Inverse stops on GS residual / relative ψ update only; constraint loss and DN X/O placement are scored by declared inverse_shape_acceptance (not a FreeGSNKE stop). GS ok ≠ automatic DN success.",
     "Static Forward: t0 uses Inverse dump currents (+ dump ψ IC by default); window uses solver.forward_window_currents (default measured_pf; optional inverse_dump_currents = shape DEMO only). Forward plots must use live Forward LCFS (never Inverse dump LCFS); measured-PF Forward is not Inverse DN success. Live LCFS polylines are clipped to the GS domain (R>Rmin, R>0) so separatrix rays through the solenoid are not drawn as plasma. n_converged counts tol-met GS only.",
@@ -182,15 +182,36 @@ def write_shot_expert_overlay(
     meas_v = ", ".join(ohmic.get("measured_voltage_circuits") or []) or "(none)"
 
     evo_ip_lines = [
+        f"| status | {evo_ip.get('status', '—')} | clamp_tautology = not circuit validation |",
         f"| ok | {evo_ip.get('ok')} | |",
         f"| n | {evo_ip.get('n', '—')} | valid evolutive steps |",
+        f"| steps | {evo_ip.get('n_steps_recorded', '—')}/{evo_ip.get('n_steps_requested', '—')} | recorded/requested |",
+        f"| early_stop | {evo_ip.get('early_stop', '—')} | |",
+        f"| ic_coil_currents | {evo_ip.get('ic_coil_currents', '—')} | |",
         f"| RMS [A] | {evo_ip.get('rms_A', '—')} | vs measured ip.csv |",
         f"| MAE [A] | {evo_ip.get('mae_A', '—')} | |",
         f"| max‖res‖ [A] | {evo_ip.get('max_abs_A', '—')} | |",
         f"| RMS rel | {evo_ip.get('rms_rel', '—')} | RMS / mean‖Ip_meas‖ |",
     ]
+    if evo_ip.get("status") == "clamp_tautology":
+        evo_ip_lines.append(
+            "| note | Ip residual near zero is expected under clamp_ip — not voltage fidelity | |"
+        )
     if evo_ip.get("errors"):
         evo_ip_lines.append(f"| errors | {'; '.join(evo_ip['errors'])} | |")
+
+    evo_ax = science_audit.get("evolutive_raxis_drift") or {}
+    evo_ax_lines = [
+        f"| status | {evo_ax.get('status', '—')} | preferred soft metric when Ip is clamped |",
+        f"| ok | {evo_ax.get('ok')} | |",
+        f"| n | {evo_ax.get('n', '—')} | |",
+        f"| max drift [m] | {evo_ax.get('max_drift_m', '—')} | vs IC axis |",
+        f"| final drift [m] | {evo_ax.get('final_drift_m', '—')} | |",
+        f"| threshold [m] | {evo_ax.get('threshold_m', '—')} | abort_when_axis_drift_m |",
+        f"| early_stop drift [m] | {evo_ax.get('early_stop_drift_m', '—')} | |",
+    ]
+    if evo_ax.get("errors"):
+        evo_ax_lines.append(f"| errors | {'; '.join(evo_ax['errors'])} | |")
 
     readme = "\n".join(
         [
@@ -304,6 +325,12 @@ def write_shot_expert_overlay(
             "|----------|-------|-------|",
             *evo_ip_lines,
             "",
+            "### Evolutive Raxis drift (soft physics metric)",
+            "",
+            "| Quantity | Value | Notes |",
+            "|----------|-------|-------|",
+            *evo_ax_lines,
+            "",
             "### Ohmic / measured voltage drive inventory",
             "",
             f"- **Measured V circuits:** {meas_v}",
@@ -337,6 +364,7 @@ def write_shot_expert_overlay(
             "| PF voltages (mapped) | `inputs/pf_voltages.csv` |",
             "| Metrics | `03_reconstruction/metrics/reconstruction_metrics.json` |",
             "| Evolutive Ip residual | `03_reconstruction/evolutive/ip_residual.csv` |",
+            "| Evolutive Raxis drift | `03_reconstruction/evolutive/raxis_drift.csv` |",
             "| Inverse dump | `inverse_dump.pkl` (run root) |",
             "| Measured data | `02_measured_data/` |",
             "| Authorities | `06_authorities/` |",

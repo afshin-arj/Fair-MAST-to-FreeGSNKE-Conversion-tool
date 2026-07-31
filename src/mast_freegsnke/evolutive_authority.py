@@ -5,7 +5,7 @@ Profile shape parameters (alpha_m/alpha_n/fvac) are held from the inverse IC
 or ADR-004 profile_trajectory. Declared laws (never invent metrology):
 
 - ``scale_paxis_with_ip`` — scale paxis with measured Ip(t)/Ip(t0)
-- ``ic_coil_currents`` — inverse_dump (default) | measured_pf for voltage-consistent IC
+- ``ic_coil_currents`` — measured_pf (science default) | inverse_dump (DEMO/shape-IC)
 - ``clamp_ip_to_measured`` — pin Ip to FAIR-MAST ip.csv each step (replay law)
 """
 
@@ -51,10 +51,10 @@ class EvolutiveAuthority:
     # abort cleanly (write meta/GIF) instead of burning per_step_timeout_s.
     # null disables. Declared gate — never invents Ip.
     abort_when_ip_below_measured_frac: Optional[float] = 0.25
-    # IC coil currents for voltage-driven evolution. Default inverse_dump uses
-    # converged Inverse currents (example05-style IC). measured_pf is an explicit
-    # authority choice that uses inputs/pf_currents.csv at t_drive0 so V≈IR.
-    ic_coil_currents: str = "inverse_dump"
+    # IC coil currents for voltage-driven evolution. Default measured_pf uses
+    # inputs/pf_currents.csv at t_drive0 so experimental I and V are consistent
+    # (V≈IR). inverse_dump is DEMO/shape-IC (converged Inverse currents).
+    ic_coil_currents: str = "measured_pf"
     # Replay law: pin currents_vec[-1] / profiles.Ip to measured ip.csv each step.
     # FreeGSNKE linear stepper has forcing[-1]=0 (no Ip drive); without a clamp,
     # Ip rides mutual inductance as coils unload under measured V.
@@ -216,7 +216,7 @@ def load_evolutive_authority(path: Path) -> EvolutiveAuthority:
             if obj.get("abort_when_ip_below_measured_frac", 0.25) is None
             else float(obj.get("abort_when_ip_below_measured_frac", 0.25))
         ),
-        ic_coil_currents=str(obj.get("ic_coil_currents", "inverse_dump")),
+        ic_coil_currents=str(obj.get("ic_coil_currents", "measured_pf")),
         clamp_ip_to_measured=bool(obj.get("clamp_ip_to_measured", True)),
         abort_when_axis_drift_m=(
             None

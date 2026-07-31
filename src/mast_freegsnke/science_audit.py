@@ -33,6 +33,8 @@ def score_evolutive_ip(run_dir: Path) -> Dict[str, Any]:
     """Compare evolutive history Ip(t) to measured inputs/ip.csv (interpolated).
 
     Fail-closed soft: missing files → ok=False with reason (not a fabricated score).
+    When clamp_ip_to_measured is true (meta), status is clamp_tautology — near-zero
+    residual is expected by construction, not circuit validation.
     """
     run_dir = Path(run_dir)
     report: Dict[str, Any] = {
@@ -42,9 +44,24 @@ def score_evolutive_ip(run_dir: Path) -> Dict[str, Any]:
         "mae_A": None,
         "max_abs_A": None,
         "rms_rel": None,
+        "status": None,
+        "clamp_ip_to_measured": None,
         "errors": [],
     }
     from .shot_layout import evolutive_dir, resolve_run_path
+
+    evo_meta = None
+    for cand in (
+        run_dir / "03_reconstruction" / "evolutive" / "evolutive_meta.json",
+        run_dir / "evolutive" / "evolutive_meta.json",
+    ):
+        evo_meta = _safe_json(cand)
+        if isinstance(evo_meta, dict):
+            break
+    clamp_ip = None
+    if isinstance(evo_meta, dict) and "clamp_ip_to_measured" in evo_meta:
+        clamp_ip = bool(evo_meta.get("clamp_ip_to_measured"))
+    report["clamp_ip_to_measured"] = clamp_ip
 
     hist = resolve_run_path(
         run_dir, "evolutive/history.csv", "03_reconstruction/evolutive/history.csv"
@@ -107,6 +124,18 @@ def score_evolutive_ip(run_dir: Path) -> Dict[str, Any]:
         residual_rel = str(out_csv.resolve().relative_to(Path(run_dir).resolve())).replace("\\", "/")
     except Exception:
         residual_rel = "evolutive/ip_residual.csv"
+    status = "ok"
+    note = (
+        "Ip_measured is FAIR-MAST Level-2 ip.csv interpolated to evolutive t_abs; "
+        "not an invented metrology channel."
+    )
+    if clamp_ip is True:
+        status = "clamp_tautology"
+        note = (
+            "clamp_ip_to_measured=true: Ip is pinned to ip.csv each step — residual "
+            "near zero is expected by construction (not circuit / voltage validation). "
+            "Prefer evolutive_raxis_drift / early_stop for soft physics honesty."
+        )
     report.update(
         {
             "ok": True,
@@ -116,9 +145,136 @@ def score_evolutive_ip(run_dir: Path) -> Dict[str, Any]:
             "max_abs_A": max_abs,
             "rms_rel": rms_rel,
             "residual_csv": residual_rel,
+            "status": status,
+            "note": note,
+        }
+    )
+    if isinstance(evo_meta, dict):
+        report["early_stop"] = evo_meta.get("early_stop")
+        report["n_steps_recorded"] = evo_meta.get("n_steps_recorded")
+        report["n_steps_requested"] = evo_meta.get("n_steps_requested")
+        report["ic_coil_currents"] = evo_meta.get("ic_coil_currents")
+        report["n_passive"] = evo_meta.get("n_passive")
+    return report
+
+
+def score_evolutive_raxis_drift(run_dir: Path) -> Dict[str, Any]:
+    """Magnetic-axis drift vs IC from evolutive history / early_stop_detail.
+
+    Honest soft metric when clamp_ip makes Ip residual a tautology. Never invents
+    passives or ρ — reports observed drift only.
+    """
+    run_dir = Path(run_dir)
+    report: Dict[str, Any] = {
+        "ok": False,
+        "n": 0,
+        "Raxis0_m": None,
+        "Zaxis0_m": None,
+        "max_drift_m": None,
+        "final_drift_m": None,
+        "early_stop": None,
+        "early_stop_drift_m": None,
+        "threshold_m": None,
+        "status": None,
+        "errors": [],
+    }
+    from .shot_layout import evolutive_dir, resolve_run_path
+
+    evo_meta = None
+    for cand in (
+        run_dir / "03_reconstruction" / "evolutive" / "evolutive_meta.json",
+        run_dir / "evolutive" / "evolutive_meta.json",
+    ):
+        evo_meta = _safe_json(cand)
+        if isinstance(evo_meta, dict):
+            break
+    if isinstance(evo_meta, dict):
+        report["early_stop"] = evo_meta.get("early_stop")
+        report["n_steps_recorded"] = evo_meta.get("n_steps_recorded")
+        report["n_steps_requested"] = evo_meta.get("n_steps_requested")
+        report["n_passive"] = evo_meta.get("n_passive")
+        thr = evo_meta.get("abort_when_axis_drift_m")
+        if thr is not None:
+            try:
+                report["threshold_m"] = float(thr)
+            except (TypeError, ValueError):
+                pass
+        detail = evo_meta.get("early_stop_detail")
+        if isinstance(detail, dict) and detail.get("drift_m") is not None:
+            try:
+                report["early_stop_drift_m"] = float(detail["drift_m"])
+            except (TypeError, ValueError):
+                pass
+            if detail.get("Raxis0") is not None:
+                try:
+                    report["Raxis0_m"] = float(detail["Raxis0"])
+                    report["Zaxis0_m"] = float(detail["Zaxis0"])
+                except (TypeError, ValueError):
+                    pass
+
+    hist = resolve_run_path(
+        run_dir, "evolutive/history.csv", "03_reconstruction/evolutive/history.csv"
+    )
+    if hist is None or not hist.exists():
+        report["errors"].append("missing_evolutive_history_csv")
+        return report
+    try:
+        hdf = pd.read_csv(hist)
+    except Exception as e:
+        report["errors"].append(f"csv_read_failed:{type(e).__name__}:{e}")
+        return report
+    if "Raxis" not in hdf.columns or "Zaxis" not in hdf.columns:
+        report["errors"].append("history_missing_Raxis_or_Zaxis")
+        return report
+    r = hdf["Raxis"].to_numpy(dtype=float)
+    z = hdf["Zaxis"].to_numpy(dtype=float)
+    mask = np.isfinite(r) & np.isfinite(z)
+    if "step_ok" in hdf.columns:
+        mask = mask & np.asarray([bool(x) for x in hdf["step_ok"].to_numpy()])
+    r, z = r[mask], z[mask]
+    if r.size < 1:
+        report["errors"].append("no_valid_axis_samples")
+        return report
+    r0 = float(report["Raxis0_m"]) if report["Raxis0_m"] is not None else float(r[0])
+    z0 = float(report["Zaxis0_m"]) if report["Zaxis0_m"] is not None else float(z[0])
+    drift = np.hypot(r - r0, z - z0)
+    max_drift = float(np.max(drift))
+    final_drift = float(drift[-1])
+    evo_root = evolutive_dir(run_dir)
+    evo_root.mkdir(parents=True, exist_ok=True)
+    t_col = hdf["t_abs"].to_numpy(dtype=float)[mask] if "t_abs" in hdf.columns else np.arange(r.size)
+    out_csv = evo_root / "raxis_drift.csv"
+    pd.DataFrame(
+        {
+            "t_abs": t_col,
+            "Raxis": r,
+            "Zaxis": z,
+            "drift_from_ic_m": drift,
+        }
+    ).to_csv(out_csv, index=False)
+    try:
+        residual_rel = str(out_csv.resolve().relative_to(Path(run_dir).resolve())).replace("\\", "/")
+    except Exception:
+        residual_rel = "evolutive/raxis_drift.csv"
+    status = "ok"
+    if report.get("early_stop") == "axis_drift":
+        status = "early_stop_axis_drift"
+    elif report.get("threshold_m") is not None and max_drift > float(report["threshold_m"]):
+        status = "exceeded_threshold"
+    report.update(
+        {
+            "ok": True,
+            "n": int(r.size),
+            "Raxis0_m": r0,
+            "Zaxis0_m": z0,
+            "max_drift_m": max_drift,
+            "final_drift_m": final_drift,
+            "status": status,
+            "drift_csv": residual_rel,
             "note": (
-                "Ip_measured is FAIR-MAST Level-2 ip.csv interpolated to evolutive t_abs; "
-                "not an invented metrology channel."
+                "Drift from IC magnetic axis (history R/Z vs first finite sample or "
+                "early_stop_detail). Preferred soft metric when clamp_ip_to_measured "
+                "makes Ip residual a tautology. n_passive=0 soft-stop is honesty."
             ),
         }
     )
@@ -637,13 +793,30 @@ def presentation_advisories(run_dir: Path) -> Dict[str, Any]:
     if isinstance(evo_meta, dict) and evo_meta.get("early_stop"):
         es = str(evo_meta.get("early_stop"))
         expect_mismatch = True
+        n_rec = evo_meta.get("n_steps_recorded")
+        n_req = evo_meta.get("n_steps_requested")
+        steps_bit = ""
+        if n_rec is not None and n_req is not None:
+            steps_bit = f" ({n_rec}/{n_req} steps)"
         if es == "axis_drift":
             items.append(
-                "Evolutive early_stop=axis_drift (n_passive=0 soft-stop common) — "
+                f"Evolutive early_stop=axis_drift{steps_bit} (n_passive=0 soft-stop common) — "
                 "short GIF is honesty, not an Ip-collapse claim."
             )
         else:
-            items.append(f"Evolutive early_stop={es} — see evolutive_meta.json / limitations.")
+            items.append(
+                f"Evolutive early_stop={es}{steps_bit} — see evolutive_meta.json / limitations."
+            )
+    if isinstance(evo_meta, dict) and evo_meta.get("clamp_ip_to_measured") is True:
+        items.append(
+            "Evolutive clamp_ip_to_measured=true: Ip residual is a clamp tautology — "
+            "prefer Raxis drift / early_stop for soft physics honesty."
+        )
+    if isinstance(evo_meta, dict) and str(evo_meta.get("ic_coil_currents") or "") == "inverse_dump":
+        items.append(
+            "Evolutive ic_coil_currents=inverse_dump (DEMO/shape-IC) — measured V may "
+            "disagree with shape-optimised I at t0; science default is measured_pf."
+        )
     return {
         "available": bool(items),
         "n": len(items),
@@ -668,21 +841,23 @@ def build_science_audit(run_dir: Path) -> Dict[str, Any]:
     """Write 01_summary/science_audit.json and return the audit object."""
     run_dir = Path(run_dir)
     audit: Dict[str, Any] = {
-        "version": "1.4",
+        "version": "1.5",
         "reconstruction_quality": reconstruct_quality(run_dir),
         "inverse_shape_gate": inverse_shape_gate_summary(run_dir),
         "forward_gate": forward_gate_summary(run_dir),
         "profile_trajectory": profile_trajectory_audit(run_dir),
         "presentation_advisories": presentation_advisories(run_dir),
         "evolutive_ip": score_evolutive_ip(run_dir),
+        "evolutive_raxis_drift": score_evolutive_raxis_drift(run_dir),
         "ohmic_drive": ohmic_drive_inventory(run_dir),
         "phase_timeline": phase_timeline_from_window(run_dir),
         "passive_resistivity": passive_resistivity_status(run_dir),
         "presentation_note": (
             "Equilibrium GIFs under 03_reconstruction/presentation/ and "
             "03_reconstruction/evolutive/ (or legacy presentation/, evolutive/) are annex visuals; "
-            "scientific review should start from residuals, Ip match, solve_mode, "
-            "inverse_shape_gate, and forward_gate (measured-PF Forward ≠ Inverse DN)."
+            "scientific review should start from residuals, Ip match (or Raxis drift when "
+            "clamp_ip tautology), solve_mode, inverse_shape_gate, and forward_gate "
+            "(measured-PF Forward ≠ Inverse DN)."
         ),
     }
     # Persist phase timeline under inputs for tooling
