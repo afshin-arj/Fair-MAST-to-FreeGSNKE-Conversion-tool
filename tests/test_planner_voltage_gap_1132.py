@@ -40,20 +40,63 @@ def test_voltages_from_dynamics_gap_identity() -> None:
         I_plan=I,
         I_meas=I,
         V_plan=V,
-        V_obs=V + 50.0,  # terminal offset → large ΔV, tiny plan−dyn
+        V_obs=V - 50.0,  # plan ahead of terminal → +50 V mean bias; tiny plan−dyn
         V_dyn=V,
         V_IxR=R * I,
         R_ohm=R,
+        L_henry=L,
+        dt=dt,
     )
     assert gap["overall_status"] == "model_gap_expected"
+    assert gap["version"] == "1.1"
+    assert int(gap["n_same_sign_model_gap"]) >= 2  # constant channel has no corr
     for row in gap["circuits"]:
         assert row["i_track_rms_A"] == pytest.approx(0.0, abs=1e-9)
         assert row["rms_plan_minus_dyn_V"] == pytest.approx(0.0, abs=1e-9)
         assert row["rms_plan_minus_meas_V"] == pytest.approx(50.0, rel=1e-6)
+        assert row["mean_bias_plan_minus_meas_V"] == pytest.approx(50.0, rel=1e-6)
+        assert row["rms_RI_V"] is not None and row["rms_RI_V"] > 0.0
+        assert row["rms_L_dI_V"] is not None
         assert row["gap_status"] == "model_gap_expected"
+        if row.get("corr_dyn_meas") is not None and float(row["corr_dyn_meas"]) > 0.0:
+            assert row["same_sign_model_gap"] is True
+            assert "NOT a polarity" in (row.get("honesty") or "")
+    assert "auto_flip_solenoid_p1" in gap["do_not"]
+    assert "fit_CS_R_to_measured_V" in gap["do_not"]
 
 
-def test_polarity_suspect_classification() -> None:
+def test_solenoid_like_gap_annex_fields() -> None:
+    """Solenoid-like channel: bias / RI / L dI annex present; same-sign honesty."""
+    n_t = 21
+    t = np.linspace(0.0, 0.2, n_t)
+    dt = float(t[1] - t[0])
+    I = (1.0e5 + 5.0e3 * np.sin(30 * t)).reshape(-1, 1)
+    R = np.array([0.045])
+    L = np.array([[0.003]])
+    V_dyn = voltages_from_dynamics(I, R=R, L=L, dt=dt)
+    V_obs = V_dyn - 70.0  # plan−meas ≈ +70 V same-sign bias when V_plan=V_dyn
+    gap = build_voltage_model_gap(
+        circuit_order=["Solenoid"],
+        drive_labels={"Solenoid": "measured_fairmast_V"},
+        I_plan=I,
+        I_meas=I,
+        V_plan=V_dyn,
+        V_obs=V_obs,
+        V_dyn=V_dyn,
+        V_IxR=R * I,
+        R_ohm=R,
+        L_henry=L,
+        dt=dt,
+    )
+    row = gap["circuits"][0]
+    assert row["gap_status"] == "model_gap_expected"
+    assert row["same_sign_model_gap"] is True
+    assert row["mean_bias_plan_minus_meas_V"] == pytest.approx(70.0, rel=1e-5)
+    assert row["rms_RI_V"] == pytest.approx(float(np.sqrt(np.mean((R[0] * I[:, 0]) ** 2))), rel=1e-5)
+    assert row["rms_L_dI_V"] is not None and np.isfinite(row["rms_L_dI_V"])
+    assert gap["n_same_sign_model_gap"] == 1
+    assert "p1" in (row.get("honesty") or "").lower() or "polarity" in (row.get("honesty") or "").lower()
+
     assert (
         _classify_voltage_gap_status(
             drive_label="measured_fairmast_V",
@@ -254,6 +297,11 @@ def test_run_planner_stage_writes_gap_and_finite_ohmic(tmp_path: Path) -> None:
     assert gap_path.is_file()
     resid = pd.read_csv(run_dir / "07_planner" / "planning_residual_vs_measured_V.csv")
     assert "gap_status" in resid.columns
+    assert "mean_bias_plan_minus_meas_V" in resid.columns
+    assert "rms_RI_V" in resid.columns
+    assert "rms_L_dI_V" in resid.columns
+    sol = resid[resid["circuit"] == "Solenoid"].iloc[0]
+    assert sol["gap_status"] in ("model_gap_expected", "i_track_ok", "unknown")
     p3 = resid[resid["circuit"] == "P3"].iloc[0]
     assert p3["residual_compare_class"] == "deferred_ohmic_synthetic"
     assert np.isfinite(float(p3["rms_V"]))

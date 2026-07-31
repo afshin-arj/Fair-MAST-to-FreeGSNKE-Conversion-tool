@@ -1,3 +1,18 @@
+## 11.33.0 — Pre-peak window trim + Solenoid gap annex
+
+### Window
+- Default `window_end_policy=ip_prepeak_floor` (keep `window_end_ip_frac=0.90`): `t_end` is the last sample **before** |Ip| peak with `|Ip| < frac × Ip_peak`, excluding the pre-disruption Ip spike. Provenance in `window.json` (`ip_peak_t`, `t_end_cut`, …).
+- `ip_peak_then_floor` remains a supported alternate (post-peak cut).
+
+### Planner honesty
+- Voltage model-gap annex: per-circuit `mean_bias_plan_minus_meas_V`, `rms_RI_V`, `rms_L_dI_V`, `same_sign_model_gap`.
+- Loud note: Solenoid/CS same-sign offset is `model_gap_expected` (active-only RI+L dI/dt vs terminal V) — **not** a p1 / polarity flip; window trim does **not** close CS ΔV.
+- No auto-flip of `voltage_map` / Solenoid; no CS R fit to measured V; no invented ρ.
+
+### Validate
+- Unit tests for `ip_prepeak_floor` vs `ip_peak_then_floor`, gap annex fields.
+- Version **11.33.0**.
+
 ## 11.32.0 — Planner voltage model-gap honesty
 
 ### Planner (ADR-004)

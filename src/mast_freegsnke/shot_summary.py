@@ -220,8 +220,9 @@ def write_shot_expert_overlay(
         f"| I-track RMS [A] | {pvg.get('mean_i_track_rms_A', '—')} | primary planner success metric |",
         f"| plan−dyn RMS [V] | {pvg.get('mean_rms_plan_minus_dyn_V', '—')} | ≪ ΔV ⇒ model gap |",
         f"| ΔV RMS measured [V] | {pvg.get('residual_rms_mean_measured_V', '—')} | annex (not I-plan failure) |",
-        f"| n polarity_suspect | {pvg.get('n_polarity_suspect', '—')} | |",
-        f"| n model_gap_expected | {pvg.get('n_model_gap_expected', '—')} | |",
+        f"| n polarity_suspect | {pvg.get('n_polarity_suspect', '—')} | YELLOW only — no auto-flip |",
+        f"| n model_gap_expected | {pvg.get('n_model_gap_expected', '—')} | active-only vs terminal V |",
+        f"| n same_sign_model_gap | {pvg.get('n_same_sign_model_gap', '—')} | Solenoid ≠ polarity flip |",
     ]
 
     readme = "\n".join(

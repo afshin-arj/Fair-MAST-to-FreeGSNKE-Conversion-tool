@@ -62,11 +62,14 @@ Products are labeled `method=gspulse_python` (not upstream MATLAB/MEQ GSPulse). 
    violate **fixed** cited plant V bounds after projection are **fail-closed**. Under
    `measured_peak_margin`, I boxes stay hard; V overshoot vs the 1.2× engineering envelope is
    reported as `voltage_exceeds_measured_peak_margin` (loud, not silent).
-   **Voltage residual honesty (v11.32):** planned V is post-map \(V=RI+L\dot{I}\) from the
+   **Voltage residual honesty (v11.32 / v11.33):** planned V is post-map \(V=RI+L\dot{I}\) from the
    I-primary QP — not a least-squares fit to FAIR-MAST terminal V. Prefer
    `mean_i_track_rms_A` and `rms_plan_minus_dyn` / `voltage_model_gap.json` over raw ΔV.
-   `polarity_suspect` is YELLOW only (never auto-flip `voltage_map` without citation).
+   Annex fields: `mean_bias_plan_minus_meas_V`, `rms_RI_V`, `rms_L_dI_V`. Solenoid/CS
+   same-sign bias is `model_gap_expected` (not a polarity / p1 flip). `polarity_suspect`
+   is YELLOW only (never auto-flip `voltage_map` without citation).
    Deferred ohmic (P3/P6) residuals score vs I×R_cited, not NaN.
+   Default window end is `ip_prepeak_floor` (exclude pre-disruption Ip spike); does not close CS ΔV.
 4. **Picard** (Path B3): optional outer loop — FreeGSNKE forward GS → freeze plasma ψ/B
    offsets → re-QP. Soft-skip when GS/profile inputs missing (`require_picard=false`).
 5. **ψ_bry** (Path B4): archive boundary flux / Vloop integrate / Ejima only when **cited**

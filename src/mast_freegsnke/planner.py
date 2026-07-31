@@ -471,6 +471,24 @@ def _classify_voltage_gap_status(
     return "unknown"
 
 
+def _finite_mean_bias(a: np.ndarray, b: np.ndarray) -> Optional[float]:
+    """mean(a − b) over finite pairs."""
+    a = np.asarray(a, dtype=float).reshape(-1)
+    b = np.asarray(b, dtype=float).reshape(-1)
+    mask = np.isfinite(a) & np.isfinite(b)
+    if int(np.count_nonzero(mask)) < 1:
+        return None
+    return float(np.mean(a[mask] - b[mask]))
+
+
+def _finite_rms_abs(a: np.ndarray) -> Optional[float]:
+    a = np.asarray(a, dtype=float).reshape(-1)
+    mask = np.isfinite(a)
+    if int(np.count_nonzero(mask)) < 1:
+        return None
+    return float(np.sqrt(np.mean(a[mask] ** 2)))
+
+
 def build_voltage_model_gap(
     *,
     circuit_order: Sequence[str],
@@ -482,6 +500,8 @@ def build_voltage_model_gap(
     V_dyn: np.ndarray,
     V_IxR: np.ndarray,
     R_ohm: np.ndarray,
+    L_henry: Optional[np.ndarray] = None,
+    dt: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Decompose planned-vs-measured V into I-track + dynamics model gap + polarity.
 
@@ -490,9 +510,26 @@ def build_voltage_model_gap(
     """
     order = [str(c) for c in circuit_order]
     R = np.asarray(R_ohm, dtype=float).reshape(-1)
+    I_m = np.asarray(I_meas, dtype=float)
+    n_t, n = I_m.shape
+    V_RI = np.zeros_like(I_m)
+    V_LdI = np.zeros_like(I_m)
+    for i in range(min(n, R.size)):
+        V_RI[:, i] = float(R[i]) * I_m[:, i]
+    if L_henry is not None and dt is not None and float(dt) > 0.0:
+        L = np.asarray(L_henry, dtype=float).reshape(n, n)
+        dI = np.diff(I_m, axis=0) / float(dt)
+        for k in range(n_t - 1):
+            V_LdI[k] = L @ dI[k]
+        V_LdI[-1] = L @ dI[-1]
+    else:
+        # Fallback: inductive remainder of dyn vs ohmic drop
+        V_LdI = np.asarray(V_dyn, dtype=float) - V_RI
+
     circuits: List[Dict[str, Any]] = []
     n_polarity = 0
     n_model_gap = 0
+    n_same_sign_model_gap = 0
     i_track_vals: List[float] = []
     for i, c in enumerate(order):
         dlab = str(drive_labels.get(c) or "unknown")
@@ -505,6 +542,9 @@ def build_voltage_model_gap(
         rms_plan_ixr = _finite_rms(V_plan[:, i], V_IxR[:, i])
         corr_dm = _finite_corr(V_dyn[:, i], V_obs[:, i])
         corr_dnm = _finite_corr(V_dyn[:, i], -np.asarray(V_obs[:, i], dtype=float))
+        bias = _finite_mean_bias(V_plan[:, i], V_obs[:, i])
+        rms_ri = _finite_rms_abs(V_RI[:, i])
+        rms_ldi = _finite_rms_abs(V_LdI[:, i])
         status = _classify_voltage_gap_status(
             drive_label=dlab,
             i_track_rms_A=i_rms,
@@ -513,10 +553,29 @@ def build_voltage_model_gap(
             corr_dyn_meas=corr_dm,
             corr_dyn_neg_meas=corr_dnm,
         )
+        same_sign_model_gap = bool(
+            status == "model_gap_expected"
+            and corr_dm is not None
+            and float(corr_dm) > 0.0
+        )
         if status == "polarity_suspect":
             n_polarity += 1
         if status == "model_gap_expected":
             n_model_gap += 1
+        if same_sign_model_gap:
+            n_same_sign_model_gap += 1
+        honesty = None
+        if same_sign_model_gap:
+            honesty = (
+                "same_sign_model_gap: terminal-V / missing passives-plasma coupling "
+                "(active-only RI+L dI/dt) — NOT a polarity flip candidate "
+                "(do not auto-flip voltage_map / p1)."
+            )
+        elif status == "polarity_suspect":
+            honesty = (
+                "polarity_suspect: YELLOW only — cite FAIR-MAST convention before "
+                "any voltage_map sign change."
+            )
         circuits.append(
             {
                 "circuit": c,
@@ -528,9 +587,14 @@ def build_voltage_model_gap(
                 "rms_dyn_minus_meas_V": rms_dyn_meas,
                 "rms_plan_minus_dyn_V": rms_plan_dyn,
                 "rms_plan_minus_IxR_V": rms_plan_ixr,
+                "mean_bias_plan_minus_meas_V": bias,
+                "rms_RI_V": rms_ri,
+                "rms_L_dI_V": rms_ldi,
                 "corr_dyn_meas": corr_dm,
                 "corr_dyn_neg_meas": corr_dnm,
                 "gap_status": status,
+                "same_sign_model_gap": same_sign_model_gap,
+                "honesty": honesty,
             }
         )
     mean_i = float(np.mean(i_track_vals)) if i_track_vals else None
@@ -540,15 +604,19 @@ def build_voltage_model_gap(
     elif n_model_gap > 0:
         overall = "model_gap_expected"
     return {
-        "version": "1.0",
+        "version": "1.1",
         "overall_status": overall,
         "n_polarity_suspect": int(n_polarity),
         "n_model_gap_expected": int(n_model_gap),
+        "n_same_sign_model_gap": int(n_same_sign_model_gap),
         "mean_i_track_rms_A": mean_i,
         "circuits": circuits,
         "note": (
             "Planned V = R I + L dI/dt (I-primary QP). "
             "rms_plan_minus_dyn ≪ rms_plan_minus_meas ⇒ model/terminal-V gap, not failed I-plan. "
+            "Solenoid (CS) same-sign bias is expected under active-only dynamics "
+            "(passives/plasma coupling awaiting citation) — not a p1 polarity bug; "
+            "window trim does not close CS ΔV. "
             "polarity_suspect: corr(V_dyn,V_meas)<−0.7 and corr(V_dyn,−V_meas)>0.7 — "
             "YELLOW only; do not auto-flip voltage_map without citation. "
             "deferred_ohmic_ixr uses cited circuit_dynamics R (not invented); "
@@ -556,6 +624,8 @@ def build_voltage_model_gap(
         ),
         "do_not": [
             "auto_flip_voltage_map_sign",
+            "auto_flip_solenoid_p1",
+            "fit_CS_R_to_measured_V",
             "invent_passive_resistivity",
             "invent_P3_P6_measured_V",
         ],
@@ -1270,6 +1340,8 @@ def run_planner_stage(
         V_dyn=V_dyn,
         V_IxR=V_IxR,
         R_ohm=R_vec,
+        L_henry=circuit_dynamics.L_henry,
+        dt=dt,
     )
     gap_by_c = {str(r["circuit"]): r for r in gap.get("circuits") or []}
 
@@ -1316,6 +1388,10 @@ def run_planner_stage(
                 "rms_plan_minus_IxR_V": g.get("rms_plan_minus_IxR_V"),
                 "corr_dyn_meas": g.get("corr_dyn_meas"),
                 "corr_dyn_neg_meas": g.get("corr_dyn_neg_meas"),
+                "mean_bias_plan_minus_meas_V": g.get("mean_bias_plan_minus_meas_V"),
+                "rms_RI_V": g.get("rms_RI_V"),
+                "rms_L_dI_V": g.get("rms_L_dI_V"),
+                "same_sign_model_gap": g.get("same_sign_model_gap"),
                 "gap_status": g.get("gap_status"),
             }
         )
@@ -1629,6 +1705,7 @@ def run_planner_stage(
             "P3/P6 deferred_ohmic_synthetic scored vs I×R_cited (not measured-V fits); dual-R vs FreeGSNKE coil_resist possible",
             "Planned V is circuit-dynamics RI+L dI/dt; weight_V≪weight_I so large ΔV≠failed I-plan",
             "voltage_model_gap: polarity_suspect is YELLOW diagnostic only — never auto-flip voltage_map without citation",
+            "Solenoid/CS same-sign model_gap ≠ polarity flip — do not auto-flip p1 / voltage_map; do not fit CS R to V",
             "Never invents coil I/V limits — citation required",
             "Voltage box limits are fail-closed: over-limit plans raise PlannerError",
             "Ejima ψ_bry requires cited R_p + L_I (never invent / never silent li→L_I)",
@@ -1652,9 +1729,17 @@ def run_planner_stage(
         f"- status: **{status}**",
         f"- voltage_model_gap: **{gap.get('overall_status')}** "
         f"(polarity_suspect={gap.get('n_polarity_suspect')}, "
-        f"model_gap_expected={gap.get('n_model_gap_expected')})",
+        f"model_gap_expected={gap.get('n_model_gap_expected')}, "
+        f"same_sign_model_gap={gap.get('n_same_sign_model_gap')})",
         f"- mean I-track RMS: {mean_i_track} A",
         f"- mean rms(plan−dyn) measured channels: {mean_rms_plan_minus_dyn} V",
+        (
+            "- **Solenoid honesty:** same-sign plan−meas bias on CS is "
+            "`model_gap_expected` (active-only RI+L dI/dt vs terminal V; passives/plasma "
+            "awaiting) — **not** a polarity / p1 flip candidate; window trim does not close CS ΔV."
+            if int(gap.get("n_same_sign_model_gap") or 0) > 0
+            else "- Solenoid honesty: no same-sign model_gap channels this run."
+        ),
         f"- method: `gspulse_python` v1.5 (solver={planner_auth.qp_solver}, "
         f"picard={bool(picard_used)}, "
         f"isoflux_cost={bool(isoflux_used)}, psi_bry={bool(psi_bry_used)}, "
@@ -1680,6 +1765,8 @@ def run_planner_stage(
             f"{r.get('gap_status')}): rms={r['rms_V']} V "
             f"(I_rms={r.get('i_track_rms_A')} A; "
             f"plan−dyn={r.get('rms_plan_minus_dyn_V')} V; "
+            f"bias={r.get('mean_bias_plan_minus_meas_V')} V; "
+            f"rms_RI={r.get('rms_RI_V')} V; rms_L_dI={r.get('rms_L_dI_V')} V; "
             f"corr_dyn_meas={r.get('corr_dyn_meas')})"
         )
     md.append("")

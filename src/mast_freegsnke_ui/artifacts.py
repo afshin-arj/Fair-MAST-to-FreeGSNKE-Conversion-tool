@@ -865,6 +865,8 @@ def load_planner_info(run_dir: Path) -> Dict[str, Any]:
             if isinstance(meta.get("voltage_model_gap"), dict)
             else None
         )
+        gap_blk = meta.get("voltage_model_gap") if isinstance(meta.get("voltage_model_gap"), dict) else {}
+        out["n_same_sign_model_gap"] = gap_blk.get("n_same_sign_model_gap")
         out["n_voltage_violations_raw"] = meta.get("n_voltage_violations_raw")
         out["method"] = meta.get("method") or "gspulse_python"
         out["method_version"] = meta.get("method_version")
@@ -965,6 +967,12 @@ def load_planner_info(run_dir: Path) -> Dict[str, Any]:
                     out["residual_rows"].append(dict(row))
         except Exception:
             out["residual_rows"] = []
+    gap_file = _safe_json(run_dir / "07_planner" / "voltage_model_gap.json")
+    if isinstance(gap_file, dict):
+        if out.get("voltage_model_gap_overall") is None:
+            out["voltage_model_gap_overall"] = gap_file.get("overall_status")
+        if out.get("n_same_sign_model_gap") is None:
+            out["n_same_sign_model_gap"] = gap_file.get("n_same_sign_model_gap")
     try:
         gifs = gif_paths(run_dir)[:6]
         out["gif_rels"] = []

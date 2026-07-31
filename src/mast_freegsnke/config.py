@@ -78,9 +78,12 @@ class AppConfig:
     batch_abort_on_failure: bool
     # Gate shots before download/execute: MastApp + required L2 availability (or cache).
     enable_shot_suitability_gate: bool
-    # Declared window-end refine after formed-plasma start (none | ip_peak_then_floor).
-    window_end_policy: str = "ip_peak_then_floor"
-    # For ip_peak_then_floor: cut t_end at first post-peak |Ip| < frac×Ip_peak.
+    # Declared window-end refine after formed-plasma start
+    # (none | ip_peak_then_floor | ip_prepeak_floor).
+    window_end_policy: str = "ip_prepeak_floor"
+    # For ip_*_floor policies: floor = frac × |Ip|_peak (measured Ip only).
+    # ip_prepeak_floor cuts before the peak (excludes pre-disruption spike);
+    # ip_peak_then_floor cuts after the peak.
     window_end_ip_frac: float = 0.90
     # Number of deterministic window sample times for multi-time synthetic
     # diagnostics / residual scoring (rule: linspace_window_inclusive).
@@ -146,17 +149,23 @@ class AppConfig:
         runs_dir = Path(obj.get("runs_dir", "SHOT"))
         cache_dir = Path(obj.get("cache_dir", "data_cache"))
         formed_plasma_frac = float(obj.get("formed_plasma_frac", 0.80))
-        window_end_policy = str(obj.get("window_end_policy", "ip_peak_then_floor")).strip()
+        window_end_policy = str(obj.get("window_end_policy", "ip_prepeak_floor")).strip()
         window_end_ip_frac = float(obj.get("window_end_ip_frac", 0.90))
         if not (0.0 < window_end_ip_frac <= 1.0):
             raise ValueError(
                 f"window_end_ip_frac must be in (0, 1] (got {window_end_ip_frac})"
             )
         _wep = window_end_policy.lower()
-        if _wep not in ("none", "threshold_end", "formed_threshold", "ip_peak_then_floor"):
+        if _wep not in (
+            "none",
+            "threshold_end",
+            "formed_threshold",
+            "ip_peak_then_floor",
+            "ip_prepeak_floor",
+        ):
             raise ValueError(
-                f"window_end_policy must be none|threshold_end|ip_peak_then_floor "
-                f"(got {window_end_policy!r})"
+                f"window_end_policy must be none|threshold_end|ip_peak_then_floor|"
+                f"ip_prepeak_floor (got {window_end_policy!r})"
             )
         allow_missing_geometry = bool(obj.get("allow_missing_geometry", False))
 

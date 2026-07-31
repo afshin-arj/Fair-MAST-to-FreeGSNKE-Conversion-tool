@@ -845,6 +845,17 @@ def presentation_advisories(run_dir: Path) -> Dict[str, Any]:
                 "Planner voltage_model_gap=model_gap_expected: V_plan≈V_dyn(I_meas) but "
                 "differs from FAIR-MAST terminal V (active-only R/L; passives ρ awaiting)."
             )
+        n_same = pvg.get("n_same_sign_model_gap")
+        try:
+            n_same_i = int(n_same) if n_same is not None else 0
+        except (TypeError, ValueError):
+            n_same_i = 0
+        if n_same_i > 0:
+            items.append(
+                "Same-sign model_gap (e.g. Solenoid/CS): terminal-V / missing "
+                "passives-plasma coupling — NOT a polarity / p1 flip candidate; "
+                "window trim does not close CS ΔV."
+            )
     return {
         "available": bool(items),
         "n": len(items),
@@ -876,9 +887,11 @@ def planner_voltage_gap_audit(run_dir: Path) -> Dict[str, Any]:
         "residual_rms_mean_measured_V": None,
         "n_polarity_suspect": None,
         "n_model_gap_expected": None,
+        "n_same_sign_model_gap": None,
         "note": (
             "Planned V = RI+L dI/dt; prefer I-track and plan−dyn over raw ΔV. "
-            "polarity_suspect is YELLOW only — never auto-flip voltage_map without citation."
+            "polarity_suspect is YELLOW only — never auto-flip voltage_map without citation. "
+            "Solenoid same-sign bias is model_gap_expected, not a p1 flip."
         ),
     }
     gap = _safe_json(run_dir / "07_planner" / "voltage_model_gap.json")
@@ -889,6 +902,7 @@ def planner_voltage_gap_audit(run_dir: Path) -> Dict[str, Any]:
         out["mean_i_track_rms_A"] = gap.get("mean_i_track_rms_A")
         out["n_polarity_suspect"] = gap.get("n_polarity_suspect")
         out["n_model_gap_expected"] = gap.get("n_model_gap_expected")
+        out["n_same_sign_model_gap"] = gap.get("n_same_sign_model_gap")
         out["circuits"] = gap.get("circuits")
         if gap.get("note"):
             out["note"] = gap.get("note")

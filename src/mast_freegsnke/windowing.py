@@ -205,14 +205,18 @@ def apply_window_end_policy(
     ``ip_peak_then_floor``: keep ``t_start``; set ``t_end`` to the first sample *after*
     the |Ip| peak where ``|Ip| < end_ip_frac * Ip_peak``, clamped to the prior ``t_end``.
     If no post-peak floor crossing exists, keep the prior ``t_end``.
+
+    ``ip_prepeak_floor``: keep ``t_start``; set ``t_end`` to the last sample *before*
+    the |Ip| peak where ``|Ip| < end_ip_frac * Ip_peak``, clamped to the prior ``t_end``.
+    Excludes the rise into a pre-disruption Ip spike (measured-Ip only).
     """
     pol = str(policy or "none").strip().lower()
     if pol in ("", "none", "threshold_end", "formed_threshold"):
         return window
-    if pol != "ip_peak_then_floor":
+    if pol not in ("ip_peak_then_floor", "ip_prepeak_floor"):
         raise ValueError(
             f"Unknown window_end_policy={policy!r} "
-            "(supported: none|threshold_end|ip_peak_then_floor)"
+            "(supported: none|threshold_end|ip_peak_then_floor|ip_prepeak_floor)"
         )
     frac = float(end_ip_frac)
     if not (0.0 < frac <= 1.0):
@@ -220,7 +224,7 @@ def apply_window_end_policy(
 
     loaded = _load_ip_series(Path(inputs_dir))
     if loaded is None:
-        note = (window.note or "") + "|window_end_policy=ip_peak_then_floor:no_ip_series"
+        note = (window.note or "") + f"|window_end_policy={pol}:no_ip_series"
         return TimeWindow(
             t_start=window.t_start,
             t_end=window.t_end,
@@ -237,7 +241,7 @@ def apply_window_end_policy(
         if yi is not None and not (isinstance(yi, float) and math.isnan(yi))
     ]
     if not pairs:
-        note = (window.note or "") + "|window_end_policy=ip_peak_then_floor:empty_ip"
+        note = (window.note or "") + f"|window_end_policy={pol}:empty_ip"
         return TimeWindow(
             t_start=window.t_start,
             t_end=window.t_end,
@@ -254,21 +258,32 @@ def apply_window_end_policy(
     floor = frac * ip_peak
     t_end_new = float(window.t_end)
     cut = False
-    for ti, yi in pairs:
-        if ti <= t_peak:
-            continue
-        if abs(yi) < floor:
-            t_end_new = float(ti)
-            cut = True
-            break
+    if pol == "ip_peak_then_floor":
+        for ti, yi in pairs:
+            if ti <= t_peak:
+                continue
+            if abs(yi) < floor:
+                t_end_new = float(ti)
+                cut = True
+                break
+    else:
+        # ip_prepeak_floor: last sample strictly before peak below floor
+        for ti, yi in reversed(pairs):
+            if ti >= t_peak:
+                continue
+            if abs(yi) < floor:
+                t_end_new = float(ti)
+                cut = True
+                break
     # Never extend past the formed-threshold end; never before t_start
     t_end_new = min(float(window.t_end), max(float(window.t_start), t_end_new))
     prov = (
-        f"window_end_policy=ip_peak_then_floor"
+        f"window_end_policy={pol}"
         f";window_end_ip_frac={frac:g}"
         f";ip_peak_t={t_peak:.6g}"
         f";ip_peak_abs={ip_peak:.6g}"
         f";floor={floor:.6g}"
+        f";t_end_cut={t_end_new:.6g}"
         f";cut={'yes' if cut else 'no'}"
         f";ip_source={ip_label}:{ip_col}"
     )
