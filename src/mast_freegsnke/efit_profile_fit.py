@@ -480,6 +480,7 @@ def build_profile_trajectory_from_efit(
                     alpha_m=float(am),
                     alpha_n=float(an),
                     residual={
+                        "alphas_source": "efit_pprime_fit",
                         "pprime_rms_norm": float(rms),
                         **({"ffprime_rms": float(ff_rms)} if ff_rms is not None else {}),
                     },

@@ -112,6 +112,9 @@ class AppConfig:
     # ADR-004 Path B1: EFIT++ shape targets for future isoflux/Picard.
     shape_targets_authority_path: Optional[str] = None
     build_shape_targets: bool = False
+    # ADR-006: optional GSFit live reconstruction peer (gated until calib + Green’s).
+    execute_gsfit: bool = False
+    gsfit_authority_path: Optional[str] = None
     # Hard wall-clock limit for each FreeGSNKE script (seconds). None disables.
     # Protects the pipeline from FreeGSNKE's uncapped residual-resize hang.
     freegsnke_script_timeout_s: Optional[float] = 3600.0
@@ -288,6 +291,14 @@ class AppConfig:
                 "execute_evolutive_from_plan=true requires execute_planner=true "
                 "(planned_voltages from 07_planner)"
             )
+        execute_gsfit = bool(obj.get("execute_gsfit", False))
+        gsfit_authority_path = (
+            str(obj["gsfit_authority_path"]) if obj.get("gsfit_authority_path") else None
+        )
+        if execute_gsfit and not gsfit_authority_path:
+            raise ValueError(
+                "execute_gsfit=true requires gsfit_authority_path (ADR-006 fail-closed)"
+            )
         # Ensure equilibrium group is downloaded when EFIT compare is enabled
         if compare_efit_archive and "equilibrium" not in optional_groups:
             optional_groups = list(optional_groups) + ["equilibrium"]
@@ -365,6 +376,8 @@ class AppConfig:
             build_profile_trajectory=build_profile_trajectory,
             shape_targets_authority_path=shape_targets_authority_path,
             build_shape_targets=build_shape_targets,
+            execute_gsfit=execute_gsfit,
+            gsfit_authority_path=gsfit_authority_path,
             freegsnke_script_timeout_s=freegsnke_script_timeout_s,
         )
 

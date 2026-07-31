@@ -62,7 +62,7 @@ class ProfileTrajectoryPolicy:
     """Config-side policy for building / requiring a trajectory (not the knots themselves)."""
 
     authority_name: str = "profile_trajectory"
-    authority_version: str = "1.0.0"
+    authority_version: str = "1.1.0"
     enabled: bool = True
     require: bool = False
     source: str = "fairmast_level2_equilibrium"

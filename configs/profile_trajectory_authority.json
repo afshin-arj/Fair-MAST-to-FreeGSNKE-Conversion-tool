@@ -1,19 +1,19 @@
-{
-  "authority_name": "profile_trajectory",
-  "authority_version": "1.0.0",
-  "enabled": true,
-  "require": false,
-  "source": "fairmast_level2_equilibrium",
-  "equilibrium_group": "equilibrium",
-  "basis_type": "ConstrainPaxisIp",
-  "fit_mode": "auto",
-  "knot_policy": "linspace_window_inclusive",
-  "n_knots": 21,
-  "interpolation": "linear",
-  "wmhd_var": "wmhd",
-  "pprime_vars": ["pprime", "p_prime", "p'"],
-  "ffprime_vars": ["ffprime", "ff_prime", "ff'"],
-  "psi_n_vars": ["psi_n", "psin", "normalized_poloidal_flux"],
-  "scalar_bridge_formula": "paxis(t)=paxis_ref*wmhd(t)/wmhd_ref",
-  "notes": "ADR-004 Phase 1. Builds declared ConstrainPaxisIp trajectory from FAIR-MAST EFIT++ archive. require=false soft-skips when archive lacks wmhd/pprime; evolutive then holds IC. Never invents coefficients. Trajectory overrides scale_paxis_with_ip when both would apply."
-}
+{
+  "authority_name": "profile_trajectory",
+  "authority_version": "1.1.0",
+  "enabled": true,
+  "require": false,
+  "source": "fairmast_level2_equilibrium",
+  "equilibrium_group": "equilibrium",
+  "basis_type": "ConstrainPaxisIp",
+  "fit_mode": "auto",
+  "knot_policy": "linspace_window_inclusive",
+  "n_knots": 21,
+  "interpolation": "linear",
+  "wmhd_var": "wmhd",
+  "pprime_vars": ["pprime", "p_prime", "p'"],
+  "ffprime_vars": ["ffprime", "ff_prime", "ff'"],
+  "psi_n_vars": ["psi_n", "psin", "normalized_poloidal_flux"],
+  "scalar_bridge_formula": "paxis(t)=paxis_ref*wmhd(t)/wmhd_ref",
+  "notes": "ADR-004 Phase 1 / v1.1. auto prefers archive_profiles when EFIT++ pprime exists (α fitted to cited p′; fvac held from execution_authority; ffprime residual recorded only). Else scalar_bridge scales paxis∝wmhd with authority α held — never invent α. require=false soft-skips when archive lacks wmhd/pprime."
+}

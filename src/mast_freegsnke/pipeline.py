@@ -841,6 +841,39 @@ class ShotPipeline:
             else:
                 _stage("efit_compare_authority", True, note="compare_efit_archive=false")
 
+            # ADR-006: GSFit live peer authority snapshot (fail-closed if path missing when enabled)
+            if self.cfg.execute_gsfit:
+                from .gsfit_stage import (
+                    GsfitAuthorityError,
+                    load_gsfit_authority,
+                    write_gsfit_authority,
+                )
+
+                gs_path = _resolve_config_path(self.cfg.gsfit_authority_path, repo_root)
+                if gs_path is None or not gs_path.exists():
+                    blocking_errors.append(
+                        "gsfit_authority_required: set gsfit_authority_path "
+                        "when execute_gsfit=true (ADR-006 fail-closed)"
+                    )
+                    _stage("gsfit_authority", False, note="missing_path")
+                else:
+                    try:
+                        gs_auth = load_gsfit_authority(gs_path)
+                        gs_out = write_gsfit_authority(inputs_dir, gs_auth)
+                        _stage(
+                            "gsfit_authority",
+                            True,
+                            path=str(gs_out),
+                            status=str(gs_auth.status),
+                        )
+                    except Exception as e:
+                        blocking_errors.append(
+                            f"gsfit_authority_failed: {type(e).__name__}: {e}"
+                        )
+                        _stage("gsfit_authority", False, error=str(e))
+            else:
+                _stage("gsfit_authority", True, note="execute_gsfit=false")
+
             # ADR-004 Phase 2: always snapshot planner/coil_limits/circuit_dynamics when paths set
             # (UI visibility); execute_planner=true additionally fail-closes on awaiting limits.
             from .coil_limits import CoilLimitsError, load_coil_limits, write_coil_limits
@@ -1719,6 +1752,78 @@ class ShotPipeline:
                     note="compare_efit_archive=false_or_no_cache",
                 )
 
+            # ADR-006: GSFit live peer (after FreeGSNKE + EFIT archive compare; soft-skip while awaiting)
+            gsfit_report: Optional[Dict[str, Any]] = None
+            if self.cfg.execute_gsfit:
+                try:
+                    from .gsfit_stage import load_gsfit_authority, run_gsfit_stage
+
+                    gs_snap = inputs_dir / "gsfit_authority" / "gsfit_authority.json"
+                    if not gs_snap.exists():
+                        raise FileNotFoundError("gsfit_authority snapshot missing")
+                    gs_auth = load_gsfit_authority(gs_snap)
+                    gsr = run_gsfit_stage(
+                        run_dir,
+                        shot=int(shot),
+                        auth=gs_auth,
+                        repo_root=repo_root,
+                    )
+                    gsfit_report = gsr.to_dict()
+                    if gsr.ok:
+                        _stage(
+                            "gsfit",
+                            True,
+                            status=gsr.status,
+                            output_dir=gsr.output_dir,
+                        )
+                    elif gsr.status in {
+                        "awaiting_authority",
+                        "blocked_import",
+                        "adapter_incomplete",
+                    }:
+                        # Soft-skip / honest incomplete — not a pipeline failure unless require
+                        _stage(
+                            "gsfit",
+                            True,
+                            note=gsr.status,
+                            fix_hint=gsr.fix_hint,
+                            errors=list(gsr.errors)[:5],
+                        )
+                        if gs_auth.require:
+                            blocking_errors.append(
+                                "gsfit_required_but_not_ok: "
+                                + ("; ".join(gsr.errors) or gsr.status)
+                                + (f" | {gsr.fix_hint}" if gsr.fix_hint else "")
+                            )
+                    else:
+                        _stage(
+                            "gsfit",
+                            False,
+                            status=gsr.status,
+                            errors=list(gsr.errors)[:5],
+                            fix_hint=gsr.fix_hint,
+                        )
+                        if gs_auth.require:
+                            blocking_errors.append(
+                                "gsfit_failed: "
+                                + ("; ".join(gsr.errors) or gsr.status)
+                            )
+                except Exception as e:
+                    _stage("gsfit", False, error=str(e))
+                    gsfit_report = {"ok": False, "errors": [str(e)], "status": "failed"}
+                    try:
+                        from .gsfit_stage import load_gsfit_authority
+
+                        gs_snap = inputs_dir / "gsfit_authority" / "gsfit_authority.json"
+                        if gs_snap.exists() and load_gsfit_authority(gs_snap).require:
+                            blocking_errors.append(
+                                f"gsfit_exception: {type(e).__name__}: {e}"
+                            )
+                    except Exception:
+                        pass
+            else:
+                _stage("gsfit", True, note="execute_gsfit=false")
+
             # ADR-004 Path B1: shape_targets already ran pre-execute (needed for
             # Inverse boundary remap). Only run here as defensive fallback.
             _st_early = inputs_dir / "shape_targets_authority" / "shape_targets.json"
@@ -2077,6 +2182,7 @@ class ShotPipeline:
                     "reconstruction_metrics": metrics_summary,
                     "science_audit": science_audit,
                     "efit_compare": efit_compare_report,
+                    "gsfit": gsfit_report,
                     "machine_authority_snapshot": machine_snapshot,
                     "diagnostic_calibration_snapshot": calibration_snapshot,
                     "diagnostic_calibration_apply": calibration_apply,
@@ -2149,6 +2255,7 @@ class ShotPipeline:
                     "reconstruction_metrics": metrics_summary,
                     "science_audit": science_audit,
                     "efit_compare": efit_compare_report,
+                    "gsfit": gsfit_report,
                     "machine_authority_snapshot": machine_snapshot,
                     "diagnostic_calibration_snapshot": calibration_snapshot,
                     "diagnostic_calibration_apply": calibration_apply,

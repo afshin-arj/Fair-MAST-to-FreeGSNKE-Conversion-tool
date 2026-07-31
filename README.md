@@ -6,10 +6,11 @@ Classic MAST Level-2 data → FreeGSNKE equilibrium reconstruction → residuals
 
 | | |
 |---|---|
-| **Version** | **11.25.0** |
+| **Version** | **11.28.0** |
 | **Machine** | Classic MAST (not MAST-U) |
 | **Solver** | [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke) only |
-| **EFIT** | Archive compare only — not live EFIT++ / Py-EFIT / efit-ai |
+| **EFIT** | Archive compare (ADR-002) — not live EFIT++ / Py-EFIT / efit-ai |
+| **GSFit** | Optional live peer (ADR-006) — soft-skips until calib + Green’s cited |
 
 ```mermaid
 flowchart LR
@@ -83,9 +84,10 @@ flowchart TB
 | Stage | What it does |
 |-------|----------------|
 | **Inverse** | Static GS with declared shape targets; shape gate ≠ FreeGSNKE GS stop |
-| **Forward** | Dump-current t0 + measured-PF window; live LCFS plots; optional profile trajectory |
-| **Evolutive** | Time-dependent nlstepper from Inverse IC + FAIR-MAST voltages |
+| **Forward** | Dump-current t0 + measured-PF window; live LCFS; ≠ Inverse DN |
+| **Evolutive** | nlstepper from Inverse IC + voltages; live LCFS; soft-stop honesty |
 | **EFIT compare** | FreeGSNKE vs archived FAIR-MAST EFIT++ |
+| **GSFit peer** | Optional live fit (ADR-006); soft-skips while awaiting |
 
 ---
 
@@ -100,6 +102,7 @@ SHOT/<N>/
 ├── 04_efit_compare/     vs EFIT++ archive
 ├── 06_authorities/      snapshotted JSON + hashes
 ├── 07_planner/          optional GSPulse-method planner
+├── 08_gsfit/            GSFit live peer (ADR-006; often awaiting)
 └── manifest.json
 ```
 
@@ -109,6 +112,7 @@ flowchart LR
   pack --> m[Measured]
   pack --> r[Reconstruction]
   pack --> e[EFIT]
+  pack --> g[GSFit]
   pack --> a[Authorities]
 ```
 
@@ -134,7 +138,9 @@ flowchart LR
 
 - Classic MAST only · no FreeGSNKE passives until cited ρ exists  
 - P3/P6 use declared `I×R` ohmic drive (no public PF V)  
-- EFIT tab = archive compare, not a live reconstruction engine  
+- EFIT tab = archive compare, not a live reconstruction engine
+- GSFit tab = live peer scaffold (ADR-006); awaiting until calib + Green’s cited
+- Planner (`07_planner/`, GSPulse-method Python) never invents passives/ρ — YELLOW until cited resistivity  
 
 ---
 

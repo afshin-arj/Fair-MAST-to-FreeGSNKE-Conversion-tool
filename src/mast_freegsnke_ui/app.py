@@ -488,7 +488,7 @@ def create_app(
                     ),
                     html.Div(
                         "Open = browse  ·  Reconstruct = pipeline  ·  / shot  ·  1–9 tabs  ·  r refresh  ·  "
-                        "EFIT = archive (ADR-002)  ·  copy buttons = clipboard",
+                        "EFIT = archive (ADR-002)  ·  GSFit = live peer (ADR-006)  ·  copy buttons = clipboard",
                         className="fg-footer-keys",
                     ),
                 ],
@@ -1120,12 +1120,12 @@ def create_app(
             fp = art.results_fingerprint(run_dir) if run_dir else ""
             cache_key = f"{tid}|{shot_i}|{fp}|{refresh_sig}"
             # Cache heavy tabs; Overview is cheap but still cached for snappy return.
-            if tid in {"planner", "efit", "compare", "gifs", "residuals", "auth", "level2", "overview", "files"}:
+            if tid in {"planner", "efit", "gsfit", "compare", "gifs", "residuals", "auth", "level2", "overview", "files"}:
                 cached = _tab_body_cache_get(cache_key)
                 if cached is not None:
                     return heading, cached
             body = panels.fill_one_tab(tid, shot_i, run_dir, repo_root=repo_root)
-            if tid in {"planner", "efit", "gifs", "residuals", "auth", "level2", "overview", "files"}:
+            if tid in {"planner", "efit", "gsfit", "gifs", "residuals", "auth", "level2", "overview", "files"}:
                 _tab_body_cache_put(cache_key, body)
         return heading, body
 

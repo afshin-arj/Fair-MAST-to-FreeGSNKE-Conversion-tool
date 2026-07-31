@@ -153,6 +153,36 @@ def certify_run_dir(
     elif (run_dir / "synthetic" / "synthetic_times.json").exists():
         report["warnings"].append("science_audit_missing")
 
+    # ADR-006: GSFit live peer awaiting or incomplete → YELLOW (not red unless require)
+    gsfit_json = run_dir / "08_gsfit" / "GSFIT.json"
+    if gsfit_json.is_file():
+        try:
+            gs = json.loads(gsfit_json.read_text(encoding="utf-8"))
+        except Exception:
+            gs = None
+        if isinstance(gs, dict):
+            report["checks"]["gsfit"] = {
+                "ok": gs.get("ok"),
+                "status": gs.get("status"),
+                "require": gs.get("require"),
+                "authority_version": gs.get("authority_version"),
+            }
+            st = str(gs.get("status") or "")
+            if st in {"awaiting_authority", "blocked_import", "adapter_incomplete"} or not gs.get(
+                "ok"
+            ):
+                if st == "awaiting_authority" or (
+                    isinstance(gs.get("readiness"), dict)
+                    and gs["readiness"].get("status") == "awaiting_authority"
+                ):
+                    report["warnings"].append("gsfit_awaiting_authority")
+                elif st in {"blocked_import", "adapter_incomplete"}:
+                    report["warnings"].append(f"gsfit_{st}")
+                elif gs.get("require") and not gs.get("ok"):
+                    report["blocking"].append("gsfit_required_but_not_ok")
+                elif not gs.get("ok") and st not in {"", "execute_gsfit=false"}:
+                    report["warnings"].append(f"gsfit_not_ok:{st or 'failed'}")
+
     # Path B0/B2: GSPulse-method planner incomplete (no Picard; isoflux soft-skip) → YELLOW
     planner_json = run_dir / "07_planner" / "PLANNER.json"
     if planner_json.is_file():

@@ -13,6 +13,7 @@ DEFAULT_ITEMS = [
     "01_summary",
     "02_measured_data",
     "04_efit_compare",
+    "08_gsfit",
     "probe_geometry_report.json",
     "magnetic_probes.pickle",
     "magnetic_probes.json",
@@ -86,6 +87,7 @@ This folder is a self-contained export of a single MAST -> FreeGSNKE reconstruct
 - `manifest.json`: pipeline manifest (v1 schema, human-readable)
 - `01_summary/`: science residuals + SUMMARY
 - `04_efit_compare/`: FAIR-MAST EFIT++ archive compare (ADR-002) when enabled
+- `08_gsfit/`: GSFit live peer (ADR-006) — often awaiting_authority until calib/Green’s cited
 - `provenance/manifest_v2.json`: reproducibility manifest (v2 schema, hash-based)
 - `machine_authority_snapshot/`: frozen machine authority used for this run
 - `contracts/`: resolved diagnostic contracts and coil maps

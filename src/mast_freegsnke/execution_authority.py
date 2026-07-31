@@ -329,6 +329,8 @@ class SolverSpec:
     forward_profile_source: str = "profile_trajectory_if_ok"
     # t0 Forward ψ IC: restore Inverse dump plasma_psi (default) or cold adaptive centre.
     forward_ic_psi: str = "inverse_dump"
+    # Window PF currents: measured_pf (science default) | inverse_dump_currents (shape DEMO only).
+    forward_window_currents: str = "measured_pf"
 
     def validate(self) -> None:
         for name, val in [
@@ -350,6 +352,11 @@ class SolverSpec:
         _require(
             self.forward_ic_psi in {"inverse_dump", "default"},
             "SolverSpec: forward_ic_psi must be 'inverse_dump' or 'default'",
+        )
+        _require(
+            self.forward_window_currents in {"measured_pf", "inverse_dump_currents"},
+            "SolverSpec: forward_window_currents must be "
+            "'measured_pf' (science) or 'inverse_dump_currents' (shape DEMO only)",
         )
 
 
@@ -479,11 +486,12 @@ def default_execution_authority_bundle(metrics_n_times: int = 21) -> ExecutionAu
         ),
         forward_profile_source="profile_trajectory_if_ok",
         forward_ic_psi="inverse_dump",
+        forward_window_currents="measured_pf",
     )
 
     return ExecutionAuthorityBundle(
         authority_name="freegsnke_execution_authority",
-        authority_version="11.25.0",
+        authority_version="11.28.0",
         grid=grid,
         profile=profile,
         profile_basis=profile_basis,
@@ -563,6 +571,9 @@ def load_execution_authority_bundle(bundle_path: Path) -> ExecutionAuthorityBund
         or "profile_trajectory_if_ok"
     )
     fwd_ic = str(obj["solver"].get("forward_ic_psi", "inverse_dump") or "inverse_dump")
+    fwd_win = str(
+        obj["solver"].get("forward_window_currents", "measured_pf") or "measured_pf"
+    )
     solver = SolverSpec(
         inverse_target_relative_tolerance=obj["solver"]["inverse_target_relative_tolerance"],
         inverse_target_relative_psit_update=obj["solver"]["inverse_target_relative_psit_update"],
@@ -573,6 +584,7 @@ def load_execution_authority_bundle(bundle_path: Path) -> ExecutionAuthorityBund
         inverse_shape_retry=retry,
         forward_profile_source=fwd_src,
         forward_ic_psi=fwd_ic,
+        forward_window_currents=fwd_win,
     )
     passive = PassiveStructureSpec(**obj.get("passive_structure", {}))
     metrics_timebase = MetricsTimebaseSpec(**obj.get("metrics_timebase", {}))

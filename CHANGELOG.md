@@ -1,3 +1,53 @@
+## 11.28.0 — ADR-006: GSFit live peer scaffold
+
+### Authority / GSFit
+- Optional stage `gsfit` → `SHOT/<N>/08_gsfit/` (live Grad-Shafranov fit peer — not EFIT++ / efit-ai).
+- `configs/gsfit_authority.json` ships `status=awaiting_authority`; soft-skip with checklist until calib + Green’s + settings cited.
+- Fail-closed when `execute_gsfit=true` and authority missing, or status ready but `gsfit` not installed.
+- Does **not** replace ADR-002 EFIT++ archive compare or ADR-004 archive-derived targets.
+- UI: GSFit tab + stage strip; three-way ready when products exist.
+- Optional install: `requirements-gsfit.txt` (`pip install -r requirements-gsfit.txt`).
+
+### Validate
+- Unit tests for readiness gate, awaiting soft-skip, fail-closed, certify warning.
+- Windows cp1252-safe suitability advisories + `console_print` (no UnicodeEncodeError on `≠`).
+- Version **11.28.0**.
+
+## 11.27.0 — Forward current mode + GIF-expectation advisories
+
+### Authority / Forward
+- Declared `solver.forward_window_currents`: **`measured_pf`** (science default) vs **`inverse_dump_currents`** (shape DEMO only — loud titles/WARN).
+- `forward_times.json` / `forward_gate` record `window_currents`.
+
+### Suitability / SUMMARY
+- Suitable shots carry non-blocking `advisories` (Inverse DN ≠ measured-PF GIF ≠ archive EFIT DN).
+- `presentation_advisories.expect_gif_mismatch_vs_archive_dn` + `profile_trajectory` audit (α from cited p′ vs scalar_bridge).
+
+### Profile trajectory
+- Policy **1.1.0**: `auto` prefers `archive_profiles` when EFIT++ pprime exists; knot residuals mark `alphas_source=efit_pprime_fit`; never invent α.
+
+### Also includes 11.26.0
+- Equal-aspect `adjustable="box"`, Evolutive live LCFS honesty, axis_drift vs Ip text.
+
+### Validate
+- Unit tests for current mode, advisories, trajectory audit.
+- Version **11.27.0**.
+
+## 11.26.0 — Forward/Evolutive plot honesty + aspect fix
+
+### Presentation
+- Equal R–Z aspect: limits first, then `adjustable="box"` (`apply_equal_aspect_rz`) — silences Matplotlib “Ignoring fixed x limits…” spam in EFIT side-by-side / curated plots.
+- Evolutive frames match Forward honesty: live LCFS only (`use_inverse_dump_lcfs=False`, `use_inverse_targets=False`), label **LCFS (Evolutive)**, curated default.
+- Forward frame titles: measured-PF replay **— not Inverse DN**.
+- Evolutive `early_stop` limitations text distinguishes `axis_drift` vs Ip collapse (no blanket “Ip diverged”).
+
+### SUMMARY
+- `science_audit.presentation_advisories` + SUMMARY **Presentation advisories** when Inverse shape_unverified, high EFIT LCFS residual, or Evolutive soft-stop.
+
+### Validate
+- Unit tests for aspect helper, Evolutive template tokens, advisories, SUMMARY banner.
+- Version **11.26.0**.
+
 ## 11.25.0 — Forward FreeGSNKE solve: dump ψ IC + trajectory-if-ok + honest convergence
 
 ### Solve

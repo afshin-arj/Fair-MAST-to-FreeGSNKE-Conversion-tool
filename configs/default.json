@@ -59,6 +59,8 @@
   "plasma_scalars_authority_path": "configs/plasma_scalars_authority.json",
   "coil_limits_authority_path": "configs/coil_limits_authority.json",
   "circuit_dynamics_authority_path": "configs/circuit_dynamics_authority.json",
+  "execute_gsfit": true,
+  "gsfit_authority_path": "configs/gsfit_authority.json",
   "freegsnke_script_timeout_s": 3600,
   "machine_authority_dir": "machine_authority",
   "require_machine_authority": true,

@@ -841,7 +841,9 @@ def run_efit_compare(
             ax.plot(rr, zz, "k-", lw=1.5, label="EFIT++ LCFS (archive)")
             if fg is not None:
                 ax.plot(fg[0], fg[1], "r--", lw=1.3, label="FreeGSNKE boundary")
-            ax.set_aspect("equal", adjustable="datalim")
+            from mast_freegsnke.equilibrium_presentation import apply_equal_aspect_rz
+
+            apply_equal_aspect_rz(ax)
             ax.set_xlabel("R (m)")
             ax.set_ylabel("Z (m)")
             _title = f"Shot {shot}: LCFS compare"

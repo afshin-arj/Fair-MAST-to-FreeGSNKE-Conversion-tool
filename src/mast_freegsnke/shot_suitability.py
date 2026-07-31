@@ -27,6 +27,8 @@ class ShotSuitability:
     reasons: List[str] = field(default_factory=list)
     checks: Dict[str, Any] = field(default_factory=dict)
     hints: List[str] = field(default_factory=list)
+    # Non-blocking expectation notes (never flip suitable→False).
+    advisories: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -35,7 +37,18 @@ class ShotSuitability:
             "reasons": list(self.reasons),
             "checks": dict(self.checks),
             "hints": list(self.hints),
+            "advisories": list(self.advisories),
         }
+
+
+# Pre-run expectation pack (suitable shots still get this).
+# ASCII-only: Windows consoles often use cp1252 and crash on ≠.
+_GIF_EXPECTATION_ADVISORIES = [
+    "Even when Level-2 data is suitable: Inverse DN != measured-PF Forward GIF != archive EFIT DN.",
+    "Forward window defaults to measured PF/Ip (science). Optional solver.forward_window_currents=inverse_dump_currents is a shape DEMO only.",
+    "Evolutive stays soft-stop until cited passive resistivity exists (do not invent rho).",
+    "After the run, read 01_summary/SUMMARY.md -> Presentation advisories.",
+]
 
 
 def format_unsuitable_message(report: ShotSuitability) -> str:
@@ -114,6 +127,7 @@ def assess_shot_suitability(
                 suitable=True,
                 checks=checks,
                 hints=[],
+                advisories=list(_GIF_EXPECTATION_ADVISORIES),
             )
 
     # MastApp listing (best-effort network)
@@ -199,4 +213,10 @@ def assess_shot_suitability(
         )
 
     checks["decision"] = "mastapp_ok_and_required_groups_present"
-    return ShotSuitability(shot=shot_i, suitable=True, checks=checks, hints=[])
+    return ShotSuitability(
+        shot=shot_i,
+        suitable=True,
+        checks=checks,
+        hints=[],
+        advisories=list(_GIF_EXPECTATION_ADVISORIES),
+    )

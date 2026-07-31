@@ -420,15 +420,16 @@ def forward_gate_summary(run_dir: Path) -> Dict[str, Any]:
         "n_skipped": None,
         "n_times": None,
         "ic_psi_used": None,
+        "window_currents": None,
         "profile_source_requested": None,
         "profile_sources_used": [],
         "forward_png_present": (run_dir / "forward_equilibrium.png").is_file(),
         "note": (
             "Static Forward: t0 GS on Inverse dump currents (optional dump ψ IC); "
-            "window = measured PF/Ip. Default profile_trajectory_if_ok when cited "
-            "trajectory exists. Plots must use live Forward LCFS (not Inverse dump "
-            "LCFS). n_converged = tol-met only; measured-PF Forward is not Inverse "
-            "shape acceptance."
+            "window = solver.forward_window_currents (default measured_pf). Default "
+            "profile_trajectory_if_ok when cited trajectory exists. Plots must use live "
+            "Forward LCFS (not Inverse dump LCFS). n_converged = tol-met only; "
+            "measured-PF Forward is not Inverse shape acceptance."
         ),
     }
     ft = None
@@ -481,6 +482,7 @@ def forward_gate_summary(run_dir: Path) -> Dict[str, Any]:
             "n_times": n_times,
             "solve_mode": ft.get("solve_mode"),
             "ic_psi_used": ft.get("ic_psi_used"),
+            "window_currents": ft.get("window_currents") or "measured_pf",
             "profile_source_requested": ft.get("profile_source_requested"),
             "profile_sources_used": list(srcs),
             "forward_note": ft.get("note"),
@@ -489,14 +491,189 @@ def forward_gate_summary(run_dir: Path) -> Dict[str, Any]:
     return out
 
 
+def profile_trajectory_audit(run_dir: Path) -> Dict[str, Any]:
+    """Surface ADR-004 trajectory fit mode (cited EFIT p′/ff′ vs scalar bridge)."""
+    run_dir = Path(run_dir)
+    out: Dict[str, Any] = {
+        "available": False,
+        "status": None,
+        "fit_mode_used": None,
+        "alphas_from_pprime": False,
+        "n_knots": 0,
+        "note": (
+            "Richer α only when FAIR-MAST equilibrium supplies pprime (archive_profiles); "
+            "scalar_bridge holds authority α and scales paxis∝wmhd — never invent α."
+        ),
+    }
+    traj = None
+    for cand in (
+        run_dir / "inputs" / "profile_trajectory_authority" / "profile_trajectory.json",
+        run_dir / "06_authorities" / "profile_trajectory_authority" / "profile_trajectory.json",
+    ):
+        traj = _safe_json(cand)
+        if isinstance(traj, dict):
+            try:
+                out["path"] = str(cand.resolve().relative_to(run_dir.resolve())).replace(
+                    "\\", "/"
+                )
+            except Exception:
+                out["path"] = str(cand)
+            break
+    if not isinstance(traj, dict):
+        return out
+    prov = traj.get("provenance") if isinstance(traj.get("provenance"), dict) else {}
+    mode = str(traj.get("fit_mode_used") or prov.get("fit_mode_used") or "")
+    knots = traj.get("knots") if isinstance(traj.get("knots"), list) else []
+    alphas_from_pp = mode == "archive_profiles" and bool(knots)
+    if not alphas_from_pp and knots:
+        # Inspect residual provenance on first knot
+        k0 = knots[0] if isinstance(knots[0], dict) else {}
+        res = k0.get("residual") if isinstance(k0.get("residual"), dict) else {}
+        if res.get("alphas_source") == "efit_pprime_fit" or "pprime_rms_norm" in res:
+            alphas_from_pp = True
+    out.update(
+        {
+            "available": True,
+            "status": traj.get("status"),
+            "fit_mode_used": mode or None,
+            "alphas_from_pprime": bool(alphas_from_pp),
+            "n_knots": len(knots),
+            "pprime_var": prov.get("pprime_var"),
+            "ffprime_var": prov.get("ffprime_var"),
+        }
+    )
+    if mode == "scalar_bridge":
+        out["note"] = (
+            "scalar_bridge: paxis∝wmhd with authority α held fixed — archive lacked usable "
+            "pprime for α fit (not invented)."
+        )
+    elif alphas_from_pp:
+        out["note"] = (
+            "archive_profiles: α_m/α_n fitted to cited EFIT++ pprime; fvac held from "
+            "execution_authority (ffprime residual recorded, not used to invent fvac)."
+        )
+    return out
+
+
+def presentation_advisories(run_dir: Path) -> Dict[str, Any]:
+    """Loud but non-blocking advisories when GIFs ≠ Inverse/EFIT DN is expected.
+
+    Advisory only — never hard-fails a shot that has equilibrium data.
+    """
+    run_dir = Path(run_dir)
+    items: List[str] = []
+    expect_mismatch = False
+    shape_gate = inverse_shape_gate_summary(run_dir)
+    n_unv = int(shape_gate.get("n_gs_ok_shape_unverified") or 0)
+    t0 = shape_gate.get("t0") or {}
+    t0_st = str(t0.get("status") or t0.get("shape_status") or "")
+    if n_unv > 0 or "shape_unverified" in t0_st:
+        expect_mismatch = True
+        items.append(
+            "Inverse shape_unverified (or DN X/O not accepted): expect Forward measured-PF "
+            "and Evolutive GIFs ≠ Inverse DN / archive DN — physics mismatch, not missing data."
+        )
+    fwd = forward_gate_summary(run_dir)
+    win_curr = str(fwd.get("window_currents") or "measured_pf")
+    if fwd.get("available"):
+        if win_curr == "inverse_dump_currents":
+            items.append(
+                "Forward window_currents=inverse_dump_currents (SHAPE DEMO) — not science "
+                "measured-PF; frames may look closer to Inverse but are not a matched archive drive."
+            )
+        else:
+            expect_mismatch = True
+            items.append(
+                "Static Forward window = measured PF/Ip replay (not Inverse-optimized currents); "
+                "expect GIFs ≠ Inverse DN / archive DN."
+            )
+    # High LCFS residual vs EFIT++ archive (advisory threshold declared here).
+    lcfs_m: Optional[float] = None
+    for cand in (
+        run_dir / "04_efit_compare" / "shape_scorecard.json",
+        run_dir / "shape_scorecard.json",
+    ):
+        sc = _safe_json(cand)
+        if not isinstance(sc, dict):
+            continue
+        dist = sc.get("lcfs_distance") or {}
+        if isinstance(dist, dict) and dist.get("mean_nn_symmetric_m") is not None:
+            try:
+                lcfs_m = float(dist["mean_nn_symmetric_m"])
+            except (TypeError, ValueError):
+                lcfs_m = None
+            break
+        for row in sc.get("rows") or []:
+            if isinstance(row, dict) and row.get("metric") == "lcfs_mean_nn_symmetric":
+                try:
+                    lcfs_m = float(row.get("freegsnke"))
+                except (TypeError, ValueError):
+                    lcfs_m = None
+                break
+        if lcfs_m is not None:
+            break
+    high_lcfs = False
+    if lcfs_m is not None and lcfs_m >= 0.05:
+        high_lcfs = True
+        expect_mismatch = True
+        items.append(
+            f"EFIT++ LCFS mean nearest-neighbour residual ≈ {lcfs_m:.3f} m (≥0.05 m): "
+            "Forward/Evolutive frames will not match archive DN; see 04_efit_compare/."
+        )
+    traj = profile_trajectory_audit(run_dir)
+    if traj.get("available") and traj.get("fit_mode_used") == "scalar_bridge":
+        items.append(
+            "profile_trajectory used scalar_bridge (α held from authority; paxis∝wmhd) — "
+            "not a full EFIT p′ shape match."
+        )
+    evo_meta = None
+    for cand in (
+        run_dir / "03_reconstruction" / "evolutive" / "evolutive_meta.json",
+        run_dir / "evolutive" / "evolutive_meta.json",
+    ):
+        evo_meta = _safe_json(cand)
+        if isinstance(evo_meta, dict):
+            break
+    if isinstance(evo_meta, dict) and evo_meta.get("early_stop"):
+        es = str(evo_meta.get("early_stop"))
+        expect_mismatch = True
+        if es == "axis_drift":
+            items.append(
+                "Evolutive early_stop=axis_drift (n_passive=0 soft-stop common) — "
+                "short GIF is honesty, not an Ip-collapse claim."
+            )
+        else:
+            items.append(f"Evolutive early_stop={es} — see evolutive_meta.json / limitations.")
+    return {
+        "available": bool(items),
+        "n": len(items),
+        "items": items,
+        "expect_gif_mismatch_vs_archive_dn": expect_mismatch,
+        "lcfs_mean_nn_symmetric_m": lcfs_m,
+        "high_lcfs_residual": high_lcfs,
+        "forward_window_currents": win_curr if fwd.get("available") else None,
+        "profile_trajectory": {
+            "fit_mode_used": traj.get("fit_mode_used"),
+            "alphas_from_pprime": traj.get("alphas_from_pprime"),
+            "status": traj.get("status"),
+        },
+        "note": (
+            "Presentation / GIF-expectation advisories only; do not invent ρ/passives "
+            "to force DN visuals. Evolutive stays soft-stop until cited resistivity exists."
+        ),
+    }
+
+
 def build_science_audit(run_dir: Path) -> Dict[str, Any]:
     """Write 01_summary/science_audit.json and return the audit object."""
     run_dir = Path(run_dir)
     audit: Dict[str, Any] = {
-        "version": "1.2",
+        "version": "1.4",
         "reconstruction_quality": reconstruct_quality(run_dir),
         "inverse_shape_gate": inverse_shape_gate_summary(run_dir),
         "forward_gate": forward_gate_summary(run_dir),
+        "profile_trajectory": profile_trajectory_audit(run_dir),
+        "presentation_advisories": presentation_advisories(run_dir),
         "evolutive_ip": score_evolutive_ip(run_dir),
         "ohmic_drive": ohmic_drive_inventory(run_dir),
         "phase_timeline": phase_timeline_from_window(run_dir),

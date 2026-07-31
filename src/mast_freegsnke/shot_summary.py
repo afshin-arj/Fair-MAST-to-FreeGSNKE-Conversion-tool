@@ -24,7 +24,9 @@ _KNOWN_LIMITATIONS = [
     "Evolutive default: ic_coil_currents=inverse_dump + clamp_ip_to_measured — prefer converged Inverse IC; measured_pf remains an explicit evolutive_authority choice. n_passive=0 → example05-class stability not expected (do not invent ρ).",
     "Contract residual metrics score only families with honest channel identity + units; uncalibrated mirnov/saddle/omaha stay audit-only until calibration authority is populated.",
     "FreeGSNKE Inverse stops on GS residual / relative ψ update only; constraint loss and DN X/O placement are scored by declared inverse_shape_acceptance (not a FreeGSNKE stop). GS ok ≠ automatic DN success.",
-    "Static Forward: t0 uses Inverse dump currents (+ dump ψ IC by default); window uses measured PF/Ip with profile_trajectory_if_ok when cited trajectory exists (else frozen Inverse profile shape). Forward plots must use live Forward LCFS (never Inverse dump LCFS); measured-PF Forward is not Inverse DN success. n_converged counts tol-met GS only.",
+    "Static Forward: t0 uses Inverse dump currents (+ dump ψ IC by default); window uses solver.forward_window_currents (default measured_pf; optional inverse_dump_currents = shape DEMO only). Forward plots must use live Forward LCFS (never Inverse dump LCFS); measured-PF Forward is not Inverse DN success. n_converged counts tol-met GS only.",
+    "Evolutive frames use live Evolutive LCFS only (never Inverse dump LCFS / Inverse null targets). early_stop=axis_drift is not an Ip-collapse claim (n_passive=0 soft-stop common). Evolutive stays soft-stop until cited ρ exists.",
+    "profile_trajectory: richer α only from cited EFIT++ pprime (archive_profiles); scalar_bridge holds authority α — never invent α.",
     "Equilibrium GIFs are presentation annexes — not a substitute for residual metrics or Ip match. Curated plots omit open-field ψ through PF coils by default (vacuum ψ ≠ plasma).",
     "04_efit_compare uses FAIR-MAST Level-2 EFIT++ archive products — not a live efit-ai Fortran solve.",
 ]
@@ -135,6 +137,15 @@ def write_shot_expert_overlay(
     passives = science_audit.get("passive_resistivity") or {}
     shape_gate = science_audit.get("inverse_shape_gate") or {}
     fwd_gate = science_audit.get("forward_gate") or {}
+    advisories = science_audit.get("presentation_advisories") or {}
+    if not advisories.get("items"):
+        # Best-effort recompute if audit was written before v1.3
+        try:
+            from .science_audit import presentation_advisories as _pres_adv
+
+            advisories = _pres_adv(run_dir)
+        except Exception:
+            advisories = {"available": False, "items": []}
 
     # Authority hashes (best-effort)
     auth_lines: List[str] = []
@@ -203,6 +214,8 @@ def write_shot_expert_overlay(
             "  04_efit_compare/                vs FAIR-MAST EFIT++ archive (ADR-002)",
             "  05_downstream/                  optional TORAX GEQDSK (ADR-001)",
             "  06_authorities/                 contracts + provenance",
+            "  07_planner/                     optional GSPulse-style planner (ADR-004)",
+            "  08_gsfit/                       optional GSFit live peer (ADR-006)",
             "  inputs/                         tooling CSVs (FreeGSNKE scripts)",
             "  manifest.json                   stage log + blocking_errors",
             "",
@@ -246,7 +259,16 @@ def write_shot_expert_overlay(
             f"max_iter={fwd_gate.get('n_completed_max_iter', '—')}, "
             f"skipped={fwd_gate.get('n_skipped', '—')}) "
             f"ic_psi={fwd_gate.get('ic_psi_used') or '—'} "
+            f"window_currents={fwd_gate.get('window_currents') or '—'} "
             f"profile={fwd_gate.get('profile_source_requested') or (fwd_gate.get('profile_sources_used') or ['—'])}",
+            "",
+            "## Presentation advisories",
+            "",
+            *(
+                [f"- {it}" for it in (advisories.get("items") or [])]
+                if advisories.get("items")
+                else ["- (none — Inverse shape accepted and no high EFIT LCFS residual flagged)"]
+            ),
             "",
             "## Science residuals (primary)",
             "",

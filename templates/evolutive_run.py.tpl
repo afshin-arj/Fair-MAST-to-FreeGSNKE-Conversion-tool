@@ -859,9 +859,9 @@ def main() -> None:
 
                 _pres_s = try_load_presentation_authority(INPUTS)
                 _style_s = str(
-                    getattr(_pres_s, "plot_style", "freegsnke_native")
+                    getattr(_pres_s, "plot_style", "curated")
                     if _pres_s
-                    else "freegsnke_native"
+                    else "curated"
                 )
                 # Prefer eq1's own profiles after nlstepper; else re-bind IC profiles.
                 _prof_snap = getattr(stepping.eq1, "_profiles", None) or profiles
@@ -869,16 +869,33 @@ def main() -> None:
                     attach_profiles_after_restore(stepping.eq1, _prof_snap)
                 except Exception:
                     pass
+                _live_lcfs = None
+                try:
+                    from mast_freegsnke.freegsnke_lcfs import lcfs_arrays_from_eq
+
+                    _live_lcfs = lcfs_arrays_from_eq(stepping.eq1)
+                except Exception:
+                    _live_lcfs = None
+                _title_s = f"Evolutive step {step}  t={t_abs:.4f}s  (n_passive=0 soft-stop risk)"
+                if early_stop:
+                    _title_s = (
+                        f"Evolutive step {step}  t={t_abs:.4f}s  "
+                        f"[early_stop={early_stop}]"
+                    )
                 save_equilibrium_png(
                     tokamak=tokamak,
                     eq=stepping.eq1,
                     out_path=OUT / f"eq_snapshot_step{step:04d}.png",
-                    title=f"evolutive step {step}  t={t_abs:.4f}s",
+                    title=_title_s,
                     dpi=120,
                     figsize=(4.0, 8.0),
                     run_dir=HERE,
                     plot_style=_style_s,
                     profiles=_prof_snap,
+                    dump_lcfs=_live_lcfs,
+                    use_inverse_dump_lcfs=False,
+                    use_inverse_targets=False,
+                    lcfs_label="LCFS (Evolutive)",
                 )
             except Exception as e:
                 print(f"[WARN] snapshot failed at step {step}: {e}", flush=True)
@@ -1057,10 +1074,22 @@ def main() -> None:
             "n_passive=0 preflight: do not claim full-window evolutive without cited passives",
         )
     if early_stop:
-        meta["limitations"].append(
-            f"early_stop={early_stop}: evolutive Ip diverged from measured "
-            f"(see early_stop_detail); remaining steps not run"
-        )
+        if early_stop == "axis_drift":
+            meta["limitations"].append(
+                f"early_stop=axis_drift: magnetic axis drifted beyond "
+                f"abort_when_axis_drift_m (see early_stop_detail); remaining steps not run. "
+                f"Common with n_passive=0 — not an Ip-collapse claim."
+            )
+        elif early_stop == "ip_below_measured_frac":
+            meta["limitations"].append(
+                f"early_stop=ip_below_measured_frac: evolutive Ip fell below measured frac "
+                f"(see early_stop_detail); remaining steps not run"
+            )
+        else:
+            meta["limitations"].append(
+                f"early_stop={early_stop}: soft-stop fired (see early_stop_detail); "
+                f"remaining steps not run"
+            )
     (OUT / "evolutive_meta.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 
     # Quick plots

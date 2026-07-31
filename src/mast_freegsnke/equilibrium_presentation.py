@@ -16,6 +16,30 @@ class PresentationError(ValueError):
     pass
 
 
+def apply_equal_aspect_rz(
+    ax: Any,
+    *,
+    xlim: Optional[Tuple[float, float]] = None,
+    ylim: Optional[Tuple[float, float]] = None,
+) -> None:
+    """Equal R–Z aspect without Matplotlib 'Ignoring fixed x limits' spam.
+
+    Set data limits first (optional), then ``adjustable='box'`` so the axes
+    box absorbs aspect — never ``datalim`` after fixed ``set_xlim``.
+    """
+    try:
+        if xlim is not None:
+            ax.set_xlim(float(xlim[0]), float(xlim[1]))
+        if ylim is not None:
+            ax.set_ylim(float(ylim[0]), float(ylim[1]))
+        ax.set_aspect("equal", adjustable="box")
+    except Exception:
+        try:
+            ax.set_aspect("equal")
+        except Exception:
+            pass
+
+
 @dataclass(frozen=True)
 class PresentationAuthority:
     """Declared presentation knobs (snapshotted under inputs/)."""
@@ -435,7 +459,7 @@ def plot_equilibrium_freegsnke_native(
 
     overlay_inverse_targets(ax, inverse_targets)
     try:
-        ax.set_aspect("equal")
+        apply_equal_aspect_rz(ax)
     except Exception:
         pass
     try:
@@ -662,7 +686,7 @@ def plot_equilibrium_curated(
 
     overlay_honest_xpoints(ax, eq)
     overlay_inverse_targets(ax, inverse_targets)
-    ax.set_aspect("equal")
+    apply_equal_aspect_rz(ax)
     ax.grid(alpha=0.25)
     ax.set_xlabel("Major radius [m]")
     ax.set_ylabel("Height [m]")

@@ -34,6 +34,7 @@ No interactive prompts for config paths, geometry paths, execute y/n, or metrics
 | 003 | Reject Py-EFIT / efit-ai on Windows happy path |
 | 004 | Profile trajectory + Phase 2b Python GSPulse-method planner (isoflux/Picard/ψ_bry; no MATLAB; passives blocked) |
 | 005 | Classic-MAST passive ρ citation (Path B5 wiring; ρ awaiting) |
+| 006 | GSFit live reconstruction peer (scaffold; gated until calib + Green’s) |
 
 ## Skills
 
@@ -59,6 +60,7 @@ using shipped `configs/default.json` + populated `machine_authority/` + contract
 
 - **Solver:** FreeGSNKE only (shot-only happy path).
 - **EFIT insight:** FAIR-MAST Level-2 `equilibrium` archive compare (ADR-002) — labeled FreeGSNKE vs archived EFIT++, not a live EFIT++ run.
+- **Live EFIT-like peer (optional):** GSFit stage `08_gsfit/` (ADR-006) — authority-gated; soft-skips until diagnostic calibration + Green’s + settings are cited. Does **not** replace FreeGSNKE or the EFIT++ archive.
 - **Do not** add Py-EFIT, efit-ai Fortran, or OMFIT-EFIT to the Windows happy path (ADR-003). `eqtools` is a g/a-file reader, not a reconstruction engine.
 
 ## Out of scope unless asked

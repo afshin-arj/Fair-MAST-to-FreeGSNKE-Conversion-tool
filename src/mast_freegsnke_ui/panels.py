@@ -105,6 +105,7 @@ def overview_quick_links(shot: int, run_dir: Path) -> Any:
         ("01_summary/SUMMARY.md", "SUMMARY"),
         ("03_reconstruction/metrics/reconstruction_metrics.json", "metrics"),
         ("04_efit_compare/COMPARE.json", "COMPARE"),
+        ("08_gsfit/GSFIT.json", "GSFit"),
         ("07_planner/PLANNER.json", "planner"),
     ):
         if art.safe_resolve_under(run_dir, rel):
@@ -207,6 +208,8 @@ def stage_timeline(progress: Optional[Dict[str, Any]], running: bool) -> Any:
         "plasma_scalars_authority": "Plasma scalars authority",
         "profile_trajectory": "Profile trajectory",
         "efit_compare": "EFIT++ archive compare",
+        "gsfit": "GSFit live peer",
+        "gsfit_authority": "GSFit authority",
         "execute_inverse": "Inverse GS",
         "execute_forward": "Forward GS",
         "execute_evolutive": "Evolutive",
@@ -1451,6 +1454,174 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
                             "No EFIT compare plots yet.",
                         ),
                         True,
+                    ),
+                ]
+            ),
+        ]
+    )
+
+
+def gsfit_panel(shot: int, run_dir: Path) -> Any:
+    """ADR-006: GSFit live peer — readiness checklist until calib/Green’s cited."""
+    html, _, dbc = _require()
+    gs = art.load_gsfit(run_dir)
+    status = gs.get("status") if isinstance(gs, dict) else None
+    ok = gs.get("ok") if isinstance(gs, dict) else None
+    readiness = gs.get("readiness") if isinstance(gs, dict) else None
+    lead = html.Div(
+        [
+            chip("ADR-006", "GSFit peer"),
+            chip("live EFIT++", "no", tone="warn"),
+            chip("ok", ok, tone=ui_kit.status_tone(ok)),
+            chip(
+                "status",
+                status or "—",
+                tone=ui_kit.status_tone(
+                    "awaiting_authority" if status == "awaiting_authority" else ok
+                ),
+            ),
+            chip(
+                "gsfit pkg",
+                (readiness or {}).get("gsfit_installed") if isinstance(readiness, dict) else None,
+            ),
+        ],
+        className="compare-chip-row mb-2",
+    )
+    checklist_body: Any = html.P(
+        "No 08_gsfit/GSFIT.json yet — run with execute_gsfit=true.",
+        className="small text-muted mb-0",
+    )
+    checks_body: Any = None
+    three_way: Any = None
+    if isinstance(gs, dict):
+        items = []
+        if isinstance(readiness, dict):
+            for c in readiness.get("checklist") or []:
+                items.append(html.Li(str(c)))
+            check_rows = []
+            for ch in readiness.get("checks") or []:
+                if not isinstance(ch, dict):
+                    continue
+                check_rows.append(
+                    html.Tr(
+                        [
+                            html.Td(html.Code(str(ch.get("id") or ""))),
+                            html.Td(str(ch.get("status") or "")),
+                            html.Td("OK" if ch.get("ok") else "BLOCK"),
+                            html.Td(str(ch.get("detail") or "")[:160]),
+                        ]
+                    )
+                )
+            if check_rows:
+                checks_body = dbc.Table(
+                    [
+                        html.Thead(
+                            html.Tr(
+                                [
+                                    html.Th("Check"),
+                                    html.Th("Status"),
+                                    html.Th("Gate"),
+                                    html.Th("Detail"),
+                                ]
+                            )
+                        ),
+                        html.Tbody(check_rows),
+                    ],
+                    bordered=False,
+                    size="sm",
+                    responsive=True,
+                    className="fg-scorecard",
+                )
+        if items:
+            checklist_body = html.Ul(items, className="small mb-0")
+        elif gs.get("fix_hint"):
+            checklist_body = html.P(str(gs.get("fix_hint")), className="small mb-0")
+
+        # Three-way placeholder when GSFit ok — FreeGSNKE | EFIT++ | GSFit
+        efit = art.load_efit_compare(run_dir) or {}
+        three_way = dbc.Table(
+            [
+                html.Thead(
+                    html.Tr(
+                        [
+                            html.Th("Source"),
+                            html.Th("Role"),
+                            html.Th("ok"),
+                        ]
+                    )
+                ),
+                html.Tbody(
+                    [
+                        html.Tr(
+                            [
+                                html.Td("FreeGSNKE"),
+                                html.Td("Happy-path solver"),
+                                html.Td("see 03_reconstruction"),
+                            ]
+                        ),
+                        html.Tr(
+                            [
+                                html.Td("FAIR-MAST EFIT++ archive"),
+                                html.Td("Institutional reference (ADR-002)"),
+                                html.Td(str(efit.get("ok"))),
+                            ]
+                        ),
+                        html.Tr(
+                            [
+                                html.Td("GSFit (live)"),
+                                html.Td("EFIT-like peer (ADR-006)"),
+                                html.Td(str(ok)),
+                            ]
+                        ),
+                    ]
+                ),
+            ],
+            bordered=False,
+            size="sm",
+            responsive=True,
+            className="fg-scorecard",
+        )
+
+    links = []
+    for rel in ("08_gsfit/GSFIT.json", "08_gsfit/GSFIT.md", "08_gsfit/init_context.json"):
+        if art.safe_resolve_under(run_dir, rel):
+            links.append(
+                html.A(
+                    f"Download {Path(rel).name}",
+                    href=art.file_url(shot, rel, download=True),
+                    className="compare-file-chip",
+                )
+            )
+
+    return html.Div(
+        [
+            tab_banner(
+                "GSFit live peer",
+                "Optional Grad-Shafranov fit from FAIR-MAST magnetics (ADR-006). "
+                "Scaffold soft-skips while diagnostic_calibration / Green’s / settings await. "
+                "Not a live EFIT++ / efit-ai / Py-EFIT solve. Does not replace archive compare.",
+            ),
+            lead,
+            ui_kit.section(
+                "Activation checklist",
+                "Populate cited authorities, then set gsfit_authority.status=ready.",
+                checklist_body,
+            ),
+            accordion(
+                [
+                    ("Readiness checks", checks_body or html.P("No checks yet.", className="small text-muted"), True),
+                    (
+                        "Three-way roles",
+                        three_way
+                        or html.P("Run a shot to populate FreeGSNKE / EFIT / GSFit status.", className="small text-muted"),
+                        True,
+                    ),
+                    (
+                        "Downloads",
+                        html.Div(links, className="compare-file-chip-row")
+                        if links
+                        else html.P("No 08_gsfit artifacts yet.", className="small text-muted"),
+                        False,
                     ),
                 ]
             ),
@@ -3077,6 +3248,7 @@ TAB_DEFS = (
     ("planner", "Planner"),
     ("compare", "Compare"),
     ("efit", "EFIT"),
+    ("gsfit", "GSFit"),
     ("gifs", "Equilibria"),
     ("auth", "Authorities"),
     ("files", "Files"),
@@ -3090,6 +3262,7 @@ TAB_META = {
     "planner": "GSPulse-method feedforward (Path B6-full): I/V, ΔV/shape RMS, Picard, ψ_bry, authority hashes.",
     "compare": "Browse-only A|B — KPIs, Level-2, residuals, planner ΔI/ΔV, and GIFs.",
     "efit": "Archive shape scorecard first (ADR-002) — not a live EFIT solve.",
+    "gsfit": "Live GSFit peer (ADR-006) — soft-skips until calib + Green’s + settings cited.",
     "gifs": "Inverse / forward / evolutive equilibrium GIFs with mode badges.",
     "auth": "Authority matrix + profile trajectory + planner snapshot — never invent metrology.",
     "files": "Grouped, filterable artifact downloads + copy path.",
@@ -3162,6 +3335,8 @@ def fill_one_tab(
         return planner_panel(shot_i, run_dir, repo_root=repo_root)
     if tid == "efit":
         return efit_panel(shot_i, run_dir)
+    if tid == "gsfit":
+        return gsfit_panel(shot_i, run_dir)
     if tid == "gifs":
         gifs = art.gif_paths(run_dir)[:_MAX_GIFS]
         return html.Div(

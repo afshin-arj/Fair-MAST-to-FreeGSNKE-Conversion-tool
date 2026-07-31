@@ -19,6 +19,7 @@ from .shot_suitability import (
     format_unsuitable_message,
 )
 from .config import AppConfig, run_dir_for_shot
+from .console_io import console_print
 from .contracts_status import contract_metrics_status_line
 from .download import BulkDownloader
 from .mastapp import MastAppClient
@@ -238,6 +239,16 @@ def main(argv=None) -> int:
         "--no-compare-efit-archive",
         action="store_true",
         help="Disable ADR-002 FAIR-MAST EFIT++ compare stage",
+    )
+    r.add_argument(
+        "--execute-gsfit",
+        action="store_true",
+        help="ADR-006: enable GSFit live peer stage (soft-skips while awaiting_authority)",
+    )
+    r.add_argument(
+        "--no-execute-gsfit",
+        action="store_true",
+        help="Disable ADR-006 GSFit live peer stage",
     )
 
     plan = sub.add_parser(
@@ -1147,6 +1158,16 @@ def main(argv=None) -> int:
                 )
         if getattr(args, "no_compare_efit_archive", False):
             object.__setattr__(cfg, "compare_efit_archive", False)
+        if getattr(args, "execute_gsfit", False):
+            object.__setattr__(cfg, "execute_gsfit", True)
+            if not cfg.gsfit_authority_path:
+                object.__setattr__(
+                    cfg,
+                    "gsfit_authority_path",
+                    "configs/gsfit_authority.json",
+                )
+        if getattr(args, "no_execute_gsfit", False):
+            object.__setattr__(cfg, "execute_gsfit", False)
 
         status_line = contract_metrics_status_line(cfg)
         if status_line:
@@ -1233,6 +1254,12 @@ def main(argv=None) -> int:
                     "Interactive launcher will ask again."
                 )
                 return EXIT_UNSUITABLE
+            if rep.advisories:
+                console_print(
+                    f"[ADVISORY] Shot {shot_one}: "
+                    + " | ".join(rep.advisories[:2]),
+                    flush=True,
+                )
         return _run_one(shot_one)
 
     return 1

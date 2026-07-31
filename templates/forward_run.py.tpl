@@ -139,6 +139,32 @@ def _forward_ic_psi(solv: dict) -> str:
     return src
 
 
+def _forward_window_currents(solv: dict) -> str:
+    """Window PF drive: measured_pf (science) or inverse_dump_currents (shape DEMO)."""
+    src = str(
+        (solv or {}).get("forward_window_currents", "measured_pf") or "measured_pf"
+    ).strip().lower()
+    if src not in {"measured_pf", "inverse_dump_currents"}:
+        raise ValueError(
+            f"unsupported solver.forward_window_currents={src!r} "
+            "(use measured_pf|inverse_dump_currents)"
+        )
+    return src
+
+
+def _window_pf_currents(mode: str, t_i: float, dump: dict) -> dict:
+    if mode == "inverse_dump_currents":
+        raw = dict(dump.get("coil_currents") or {})
+        missing = [c for c in ACTIVE_CIRCUITS if c not in raw]
+        if missing:
+            raise RuntimeError(
+                "forward_window_currents=inverse_dump_currents but Inverse dump "
+                f"coil_currents missing: {', '.join(missing)}"
+            )
+        return {c: float(raw[c]) for c in ACTIVE_CIRCUITS}
+    return load_pf_currents(float(t_i))
+
+
 def _apply_forward_ic_psi(eq, dump: dict, grid: dict, ic_mode: str) -> str:
     """Seed t0 Forward ψ from Inverse dump when declared. Never invent ψ."""
     if ic_mode == "default":
@@ -622,9 +648,10 @@ def main():
         t0 = dump.get("t0")
         Ip = dump.get("Ip")
         _title = (
-            f"Forward GS (dump currents) t0={float(t0):.4f}s Ip={float(Ip)/1e6:.3f}MA"
+            f"Forward GS (dump currents) t0={float(t0):.4f}s Ip={float(Ip)/1e6:.3f}MA "
+            f"— Inverse IC currents (not measured-PF window)"
             if t0 is not None and Ip is not None
-            else "Forward GS (dump currents)"
+            else "Forward GS (dump currents) — Inverse IC currents (not measured-PF window)"
         )
         _save_forward_png(
             tokamak=tokamak,
@@ -666,14 +693,21 @@ def main():
             n_skip = 0
             _plot_style = str(getattr(pres, "plot_style", "curated") or "curated")
             _src_req = _forward_profile_source(solv)
+            _curr_mode = _forward_window_currents(solv)
             _src_used_rollup = set()
+            if _curr_mode == "inverse_dump_currents":
+                print(
+                    "[WARN] forward_window_currents=inverse_dump_currents — "
+                    "SHAPE DEMO ONLY (not science measured-PF replay)",
+                    flush=True,
+                )
             # Continue from the t0 forward solution (cold-start each sample can hang).
             if not mt_spec["continuation"]:
                 eq.plasma_psi = eq.create_psi_plasma_default(adaptive_centre=True)
                 eq.solved = False
 
             for t_i in times:
-                pf_i = load_pf_currents(float(t_i))
+                pf_i = _window_pf_currents(_curr_mode, float(t_i), dump)
                 ip_i = interp_at_time(ip_df, float(t_i), "ip")
                 pk_i, src_used = _resolve_forward_profile_kwargs(
                     dump_profile_kwargs=profile_kwargs,
@@ -686,7 +720,7 @@ def main():
                     eq.solved = False
                 print(
                     f"[..] forward window sample t={float(t_i):.6f}s Ip={ip_i/1e6:.3f}MA "
-                    f"profile_source={src_used} "
+                    f"currents={_curr_mode} profile_source={src_used} "
                     f"(timeout={mt_spec['per_time_timeout_s']}s, "
                     f"max_iter={mt_spec['max_solving_iterations']})",
                     flush=True,
@@ -715,6 +749,7 @@ def main():
                     "error": result.get("error"),
                     "profile_source_requested": _src_req,
                     "profile_source_used": src_used,
+                    "window_currents": _curr_mode,
                 }
                 if result.get("ok"):
                     n_produced += 1
@@ -731,16 +766,25 @@ def main():
                         entry["shape_audit"] = {"error": str(_sae)}
                     if pres.write_eq_frames:
                         tag = f"eq_t{float(t_i):.6f}".replace(".", "p")
+                        if _curr_mode == "inverse_dump_currents":
+                            _ftitle = (
+                                f"Forward GS DEMO Inverse-dump currents "
+                                f"(not science measured-PF) "
+                                f"t={float(t_i):.4f}s Ip={ip_i/1e6:.3f}MA"
+                                + (f" [{st}]" if st == "completed_max_iter" else "")
+                            )
+                        else:
+                            _ftitle = (
+                                f"Forward GS measured-PF replay — not Inverse DN "
+                                f"t={float(t_i):.4f}s Ip={ip_i/1e6:.3f}MA"
+                                + (f" [{st}]" if st == "completed_max_iter" else "")
+                            )
                         png = _save_forward_png(
                             tokamak=tokamak,
                             eq=eq,
                             profiles=_prof_i,
                             out_path=frames_dir / f"{tag}.png",
-                            title=(
-                                f"Forward GS measured-PF replay "
-                                f"t={float(t_i):.4f}s Ip={ip_i/1e6:.3f}MA"
-                                + (f" [{st}]" if st == "completed_max_iter" else "")
-                            ),
+                            title=_ftitle,
                             dpi=int(pres.gif_dpi),
                             figsize=(4.0, 8.0),
                             plot_style=_plot_style,
@@ -783,18 +827,23 @@ def main():
                         "multitime_authority": mt_spec,
                         "profile_source_requested": _src_req,
                         "profile_sources_used": sorted(_src_used_rollup),
+                        "window_currents": _curr_mode,
                         "note": (
-                            "Multi-time forward uses measured PF/Ip at each window sample "
-                            "(not Inverse dump currents). Default profile source is "
-                            "profile_trajectory_if_ok (use cited ADR-004 trajectory when ok; "
-                            "else freeze Inverse dump paxis/α). t0 IC defaults to Inverse dump "
-                            "plasma_psi (forward_ic_psi=inverse_dump). Plots use live Forward "
-                            "LCFS — never Inverse dump LCFS / Inverse null targets "
-                            "(measured-PF Forward is not Inverse shape acceptance; SN-vs-DN vs "
-                            "Inverse is expected). n_converged counts tol-met GS only; "
-                            "completed_max_iter still writes frames but is not full success. "
-                            "psi continuation from t0 (unless continuation=false); hard "
-                            "per_time_timeout_s kill. Skipped times omit frames; never fabricate."
+                            (
+                                "DEMO: window PF = Inverse dump coil_currents (frozen across "
+                                "samples) — not science measured-PF replay. "
+                                if _curr_mode == "inverse_dump_currents"
+                                else "Multi-time forward uses measured PF/Ip at each window sample "
+                                "(not Inverse dump currents). "
+                            )
+                            + "Default profile source is profile_trajectory_if_ok (cited ADR-004 "
+                            "trajectory when ok; else freeze Inverse dump paxis/α). t0 IC defaults "
+                            "to Inverse dump plasma_psi (forward_ic_psi=inverse_dump). Plots use "
+                            "live Forward LCFS — never Inverse dump LCFS / Inverse null targets. "
+                            "n_converged counts tol-met GS only; completed_max_iter still writes "
+                            "frames but is not full success. psi continuation from t0 (unless "
+                            "continuation=false); hard per_time_timeout_s kill. Skipped times "
+                            "omit frames; never fabricate."
                         ),
                     },
                     indent=2,

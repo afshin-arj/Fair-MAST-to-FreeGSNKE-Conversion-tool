@@ -1,0 +1,21 @@
+{
+  "status": "awaiting_authority",
+  "authority_version": "1.0",
+  "device": "classic_mast",
+  "notes": "ADR-006 GSFit settings pack placeholder. Populate sensor inclusion lists, weights, p_prime/ff_prime degrees of freedom, iteration limits, and database_reader=fairmast only with cited MAST values. Mirror the conceptual layout of GSFit python/gsfit/settings/default/ — never invent probe σ or DoF counts. Until status≠awaiting_authority the gsfit stage soft-skips.",
+  "database_reader": "fairmast",
+  "sensors": {
+    "bp_probes": {"include": [], "weights": {}, "awaiting": "cited Mirnov names + weights after diagnostic_calibration"},
+    "flux_loops": {"include": [], "weights": {}, "awaiting": "cited FL names + weights (Wb)"},
+    "rogowski_coils": {"include": [], "weights": {}, "awaiting": "cited Rogowski / Ip channels"}
+  },
+  "plasma": {
+    "p_prime_dof": null,
+    "ff_prime_dof": null,
+    "awaiting": "cited profile basis DoF"
+  },
+  "solver": {
+    "max_iterations": null,
+    "awaiting": "cited iteration / tolerance policy"
+  }
+}

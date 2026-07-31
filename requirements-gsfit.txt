@@ -1,0 +1,12 @@
+# Optional GSFit dependency (ADR-006)
+
+Install only when enabling a live GSFit solve (after calib + Green’s + settings are cited):
+
+```
+pip install -r requirements-gsfit.txt
+```
+
+Windows/macOS/Linux wheels are published on PyPI. Not required for the FreeGSNKE happy path
+or FAIR-MAST EFIT++ archive compare while `gsfit_authority.status=awaiting_authority`.
+
+gsfit>=0.0.8

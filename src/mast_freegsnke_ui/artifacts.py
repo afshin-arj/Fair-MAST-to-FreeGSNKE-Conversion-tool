@@ -93,6 +93,11 @@ def load_efit_compare(run_dir: Path) -> Optional[Dict[str, Any]]:
     return None
 
 
+def load_gsfit(run_dir: Path) -> Optional[Dict[str, Any]]:
+    """ADR-006 GSFit live peer report under 08_gsfit/."""
+    return _safe_json(Path(run_dir) / "08_gsfit" / "GSFIT.json")
+
+
 def load_shape_scorecard(run_dir: Path) -> Optional[Dict[str, Any]]:
     return _safe_json(Path(run_dir) / "04_efit_compare" / "shape_scorecard.json")
 
@@ -1225,6 +1230,8 @@ _PREFERRED_DOWNLOADS = (
     "04_efit_compare/COMPARE.md",
     "04_efit_compare/shape_scorecard.json",
     "04_efit_compare/shape_scorecard.csv",
+    "08_gsfit/GSFIT.json",
+    "08_gsfit/GSFIT.md",
     "inputs/profile_trajectory_authority/profile_trajectory.json",
     "inputs/profile_trajectory_authority/profile_trajectory_authority.json",
     "03_reconstruction/evolutive/evolutive_meta.json",
@@ -1377,6 +1384,7 @@ def results_fingerprint(run_dir: Optional[Path]) -> str:
         "07_planner/PLANNER.json",
         "04_efit_compare/COMPARE.json",
         "04_efit_compare/shape_scorecard.json",
+        "08_gsfit/GSFIT.json",
         "03_reconstruction/metrics/reconstruction_metrics.json",
         "03_reconstruction/evolutive/evolutive_meta.json",
         "03_reconstruction/evolutive_plan/evolutive_from_plan_meta.json",

@@ -15,6 +15,7 @@ from .batch import run_shot_batch
 from .config import AppConfig
 from .contracts_status import contract_metrics_status_line, diagnostic_calibration_status_line
 from .shot_suitability import assess_shot_suitability, format_unsuitable_message
+from .console_io import console_print
 
 
 _SHOT_TOKEN = re.compile(r"^[0-9]+$")
@@ -83,6 +84,12 @@ def filter_suitable_shots(
             rep = assess_shot_suitability(cfg, shot)
             if rep.suitable:
                 suitable.append(shot)
+                if rep.advisories:
+                    console_print(
+                        f"[ADVISORY] Shot {shot}: "
+                        + " | ".join(rep.advisories[:2]),
+                        flush=True,
+                    )
                 continue
             print(format_unsuitable_message(rep))
             if len(shots) == 1:

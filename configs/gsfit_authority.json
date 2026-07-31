@@ -1,0 +1,32 @@
+{
+  "authority_name": "gsfit",
+  "authority_version": "1.0",
+  "status": "awaiting_authority",
+  "label": "GSFit live reconstruction peer (not EFIT++ / efit-ai / Py-EFIT)",
+  "source": "https://github.com/tokamak-energy/gsfit",
+  "citation": "P. F. Buxton, GSFit, https://github.com/tokamak-energy/gsfit, 2025",
+  "require": false,
+  "feed_targets_from_gsfit": false,
+  "optional_dependency": "gsfit",
+  "psi_convention_gsfit": "Wb",
+  "psi_convention_scorecard": "Wb_per_2pi",
+  "psi_to_scorecard_factor": 6.283185307179586,
+  "cocos": 13,
+  "output_relpath": "08_gsfit",
+  "time_policy": "window_linspace",
+  "n_times": 5,
+  "settings_pack_path": "machine_authority/gsfit_settings",
+  "greens_authority_path": "machine_authority/gsfit_greens",
+  "diagnostic_calibration_path": "configs/diagnostic_calibration.json",
+  "probe_geometry_path": "machine_authority/probe_geometry.json",
+  "passive_resistivity_path": "configs/passive_resistivity.json",
+  "awaiting": [
+    "Populate configs/diagnostic_calibration.json channels with cited V→T / V→Wb (never invent)",
+    "Cite Green’s tables under machine_authority/gsfit_greens/ with provenance.json source + hashes",
+    "Fill machine_authority/gsfit_settings/ sensor lists, weights, and p'/ff' DoF",
+    "Optionally cite classic-MAST passive ρ (ADR-005) if vessel currents enter the fit",
+    "pip install gsfit (see requirements-gsfit.txt)",
+    "Set status to ready (or populated) in this file"
+  ],
+  "notes": "ADR-006. Scaffold only while status=awaiting_authority — stage soft-skips and does not call GSFit. Does not replace FAIR-MAST EFIT++ archive (ADR-002) or FreeGSNKE. feed_targets_from_gsfit stays false until a future ADR revisits target provenance."
+}

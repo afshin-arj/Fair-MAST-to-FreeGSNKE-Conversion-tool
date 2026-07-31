@@ -396,7 +396,6 @@ def write_freegsnke_efit_side_by_side_gif(
                 fontsize=7,
                 color="0.35",
             )
-        ax_l.set_aspect("equal", adjustable="datalim")
         ax_l.set_xlabel("R (m)")
         ax_l.set_ylabel("Z (m)")
         ax_l.grid(True, alpha=0.25)
@@ -458,13 +457,15 @@ def write_freegsnke_efit_side_by_side_gif(
                 label="FreeGSNKE (overlay)",
                 zorder=6,
             )
-        ax_r.set_aspect("equal", adjustable="datalim")
         ax_r.set_xlabel("R (m)")
         ax_r.set_ylabel("Z (m)")
         ax_r.grid(True, alpha=0.25)
         ax_r.legend(loc="best", fontsize=7, frameon=False)
 
-        # Shared axis limits from LCFS geometry (primary compare)
+        # Shared axis limits first, then equal aspect with adjustable="box"
+        # (never datalim+set_xlim — that spams Matplotlib aspect warnings).
+        from mast_freegsnke.equilibrium_presentation import apply_equal_aspect_rz
+
         xs: List[float] = []
         ys: List[float] = []
         for ax in (ax_l, ax_r):
@@ -477,9 +478,13 @@ def write_freegsnke_efit_side_by_side_gif(
         if xs and ys:
             pad_x = 0.05 * (max(xs) - min(xs) + 1e-3)
             pad_y = 0.05 * (max(ys) - min(ys) + 1e-3)
+            xlim = (min(xs) - pad_x, max(xs) + pad_x)
+            ylim = (min(ys) - pad_y, max(ys) + pad_y)
             for ax in (ax_l, ax_r):
-                ax.set_xlim(min(xs) - pad_x, max(xs) + pad_x)
-                ax.set_ylim(min(ys) - pad_y, max(ys) + pad_y)
+                apply_equal_aspect_rz(ax, xlim=xlim, ylim=ylim)
+        else:
+            for ax in (ax_l, ax_r):
+                apply_equal_aspect_rz(ax)
 
         footer = (
             f"Shot {shot}  ·  t = {t_efit:.4f} s  ·  "
