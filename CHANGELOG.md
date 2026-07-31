@@ -1,3 +1,17 @@
+## 11.29.0 — LCFS domain hygiene (no solenoid-crossing red beaks)
+
+### Presentation / extract
+- `sanitize_lcfs_polyline`: drop R≤0 and points outside GS grid (`Rmin`/`Rmax`/`Zmin`/`Zmax`); keep longest contiguous run — never invent replacement geometry.
+- `lcfs_arrays_from_eq` always sanitizes (fixes FreeGSNKE `separatrix` R≈−0.1 artifacts drawn through the CS).
+- Curated Forward/Evolutive plots: no solid ψ=ψ_bndry contour fallback when Inverse dump LCFS is disabled (that contour snakes through coils).
+
+### Honesty unchanged
+- Forward still uses live measured-PF LCFS (not Inverse dump cosplay). Measured-PF ≠ Inverse DN remains expected physics.
+
+### Validate
+- Unit tests for sanitize / extract / Forward honesty tokens.
+- Version **11.29.0**.
+
 ## 11.28.0 — ADR-006: GSFit live peer scaffold
 
 ### Authority / GSFit

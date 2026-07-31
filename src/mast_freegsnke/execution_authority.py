@@ -491,7 +491,7 @@ def default_execution_authority_bundle(metrics_n_times: int = 21) -> ExecutionAu
 
     return ExecutionAuthorityBundle(
         authority_name="freegsnke_execution_authority",
-        authority_version="11.28.0",
+        authority_version="11.29.0",
         grid=grid,
         profile=profile,
         profile_basis=profile_basis,

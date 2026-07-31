@@ -210,21 +210,28 @@ def overlay_dump_lcfs(
     lcfs_z: Any,
     *,
     label: str = "LCFS (dump polyline)",
+    r_min: Optional[float] = None,
+    r_max: Optional[float] = None,
+    z_min: Optional[float] = None,
+    z_max: Optional[float] = None,
 ) -> bool:
-    """Draw persisted Inverse dump LCFS when live xpt/red contour is missing."""
-    import numpy as np
+    """Draw an LCFS polyline after domain sanitization (never invent points)."""
+    from mast_freegsnke.freegsnke_lcfs import sanitize_lcfs_polyline
 
-    try:
-        rr = np.asarray(lcfs_r, dtype=float).ravel()
-        zz = np.asarray(lcfs_z, dtype=float).ravel()
-    except Exception:
+    cleaned = sanitize_lcfs_polyline(
+        lcfs_r,
+        lcfs_z,
+        r_min=r_min,
+        r_max=r_max,
+        z_min=z_min,
+        z_max=z_max,
+    )
+    if cleaned is None:
         return False
-    m = np.isfinite(rr) & np.isfinite(zz)
-    if int(m.sum()) < 3:
-        return False
+    rr, zz = cleaned
     ax.plot(
-        rr[m],
-        zz[m],
+        rr,
+        zz,
         "r-",
         lw=2.0,
         zorder=5,
@@ -484,6 +491,7 @@ def plot_equilibrium_curated(
     inverse_targets: Optional[Dict[str, Any]] = None,
     dump_lcfs: Optional[Tuple[Any, Any]] = None,
     lcfs_label: str = "LCFS (dump polyline)",
+    allow_psi_bndry_lcfs_fallback: bool = True,
 ) -> None:
     """Curated ψ plot: wall + nested core surfaces + LCFS + honest X/O.
 
@@ -492,9 +500,14 @@ def plot_equilibrium_curated(
     Optional ``inverse_targets`` overlays archive Inverse X/O (+/o).
     Optional ``dump_lcfs`` (R,Z) draws a caller-supplied polyline (Inverse dump
     or live Forward LCFS) — prefer live Forward LCFS on Forward frames.
+    LCFS polylines are sanitized to the GS domain (no R≤0 / R<Rmin beaks).
+    When ``allow_psi_bndry_lcfs_fallback=False`` (Forward/Evolutive), never
+    substitute a full ψ=ψ_bndry contour that snakes through the solenoid.
     """
     import numpy as np
     from numpy import amax, amin, linspace
+
+    from mast_freegsnke.freegsnke_lcfs import grid_bounds_from_eq
 
     try:
         psi = np.asarray(eq.psi(), dtype=float)
@@ -636,15 +649,27 @@ def plot_equilibrium_curated(
                 linestyles=":",
             )
 
-    # Separatrix / LCFS: prefer persisted dump polyline (honest closed boundary).
+    # Separatrix / LCFS: prefer sanitized polyline (honest closed boundary).
     # Contouring ψ=ψ_bndry draws the full isoflux including private-flux legs that
     # often snake through the solenoid on coarse grids — looks like "LCFS in coils".
+    bounds = grid_bounds_from_eq(eq)
     drew_lcfs = False
     if dump_lcfs is not None:
         drew_lcfs = overlay_dump_lcfs(
-            ax, dump_lcfs[0], dump_lcfs[1], label=str(lcfs_label or "LCFS")
+            ax,
+            dump_lcfs[0],
+            dump_lcfs[1],
+            label=str(lcfs_label or "LCFS"),
+            r_min=bounds.get("Rmin"),
+            r_max=bounds.get("Rmax"),
+            z_min=bounds.get("Zmin"),
+            z_max=bounds.get("Zmax"),
         )
-    if not drew_lcfs and np.isfinite(psi_bndry):
+    if (
+        not drew_lcfs
+        and allow_psi_bndry_lcfs_fallback
+        and np.isfinite(psi_bndry)
+    ):
         ax.contour(
             R,
             Z,
@@ -751,6 +776,8 @@ def save_equilibrium_png(
         style = "curated"
 
     label = str(lcfs_label or ("LCFS (dump polyline)" if use_inverse_dump_lcfs else "LCFS (Forward)"))
+    # Forward/Evolutive: never substitute ψ=ψ_bndry contour (snakes through CS).
+    allow_psi_fallback = bool(use_inverse_dump_lcfs)
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -766,6 +793,7 @@ def save_equilibrium_png(
                 inverse_targets=inverse_targets,
                 dump_lcfs=dump_lcfs,
                 lcfs_label=label,
+                allow_psi_bndry_lcfs_fallback=allow_psi_fallback,
             )
         except Exception as e:
             plt.close(fig)
@@ -783,9 +811,21 @@ def save_equilibrium_png(
             # Native may omit LCFS when xpt empty — show caller polyline only.
             if dump_lcfs is not None:
                 try:
+                    from mast_freegsnke.freegsnke_lcfs import grid_bounds_from_eq
+
+                    b = grid_bounds_from_eq(eq)
                     xpt = getattr(getattr(eq, "_profiles", None), "xpt", None)
                     if xpt is None or len(xpt) < 1:
-                        overlay_dump_lcfs(ax, dump_lcfs[0], dump_lcfs[1], label=label)
+                        overlay_dump_lcfs(
+                            ax,
+                            dump_lcfs[0],
+                            dump_lcfs[1],
+                            label=label,
+                            r_min=b.get("Rmin"),
+                            r_max=b.get("Rmax"),
+                            z_min=b.get("Zmin"),
+                            z_max=b.get("Zmax"),
+                        )
                 except Exception:
                     overlay_dump_lcfs(ax, dump_lcfs[0], dump_lcfs[1], label=label)
         except Exception as e:

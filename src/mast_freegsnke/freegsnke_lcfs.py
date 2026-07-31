@@ -10,8 +10,118 @@ import numpy as np
 import pandas as pd
 
 
+def grid_bounds_from_eq(eq: Any) -> Dict[str, Optional[float]]:
+    """Read computational domain bounds from a FreeGSNKE/freegs Equilibrium."""
+    out: Dict[str, Optional[float]] = {
+        "Rmin": None,
+        "Rmax": None,
+        "Zmin": None,
+        "Zmax": None,
+    }
+    for key in ("Rmin", "Rmax", "Zmin", "Zmax"):
+        for src in (eq, getattr(eq, "grid", None), getattr(eq, "_grid", None)):
+            if src is None:
+                continue
+            val = getattr(src, key, None)
+            if val is None and isinstance(src, dict):
+                val = src.get(key)
+            try:
+                if val is not None and np.isfinite(float(val)):
+                    out[key] = float(val)
+                    break
+            except (TypeError, ValueError):
+                continue
+    # Mesh arrays as fallback
+    try:
+        R = np.asarray(getattr(eq, "R"), dtype=float)
+        Z = np.asarray(getattr(eq, "Z"), dtype=float)
+        if out["Rmin"] is None and R.size:
+            out["Rmin"] = float(np.nanmin(R))
+        if out["Rmax"] is None and R.size:
+            out["Rmax"] = float(np.nanmax(R))
+        if out["Zmin"] is None and Z.size:
+            out["Zmin"] = float(np.nanmin(Z))
+        if out["Zmax"] is None and Z.size:
+            out["Zmax"] = float(np.nanmax(Z))
+    except Exception:
+        pass
+    return out
+
+
+def sanitize_lcfs_polyline(
+    r: Any,
+    z: Any,
+    *,
+    r_min: Optional[float] = None,
+    r_max: Optional[float] = None,
+    z_min: Optional[float] = None,
+    z_max: Optional[float] = None,
+    absolute_r_floor: float = 0.0,
+) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    """Drop domain-exterior / unphysical LCFS points; keep longest contiguous run.
+
+    FreeGSNKE ``eq.separatrix(ntheta=…)`` can emit R≈−0.1 (outside grid Rmin),
+    which matplotlib then draws as a red beak through the solenoid. Never invent
+    replacement geometry — only discard invalid samples.
+    """
+    try:
+        rr = np.asarray(r, dtype=float).ravel()
+        zz = np.asarray(z, dtype=float).ravel()
+    except Exception:
+        return None
+    if rr.size < 3 or zz.size != rr.size:
+        return None
+
+    # Absolute cylindrical floor (tokamak major radius cannot be ≤ 0).
+    lo_r = float(absolute_r_floor)
+    if r_min is not None and np.isfinite(float(r_min)):
+        lo_r = max(lo_r, float(r_min))
+    hi_r = float(r_max) if r_max is not None and np.isfinite(float(r_max)) else None
+    lo_z = float(z_min) if z_min is not None and np.isfinite(float(z_min)) else None
+    hi_z = float(z_max) if z_max is not None and np.isfinite(float(z_max)) else None
+
+    # Small pad so boundary-grid points are kept.
+    eps_r = 1.0e-6
+    eps_z = 1.0e-6
+    ok = np.isfinite(rr) & np.isfinite(zz) & (rr > lo_r + eps_r)
+    if hi_r is not None:
+        ok &= rr < hi_r + eps_r
+    if lo_z is not None:
+        ok &= zz >= lo_z - eps_z
+    if hi_z is not None:
+        ok &= zz <= hi_z + eps_z
+
+    if int(ok.sum()) < 3:
+        return None
+
+    # Longest contiguous True run (separatrix rays outside domain leave gaps).
+    best_slice: Optional[slice] = None
+    best_n = 0
+    i = 0
+    n = int(ok.size)
+    while i < n:
+        if not bool(ok[i]):
+            i += 1
+            continue
+        j = i + 1
+        while j < n and bool(ok[j]):
+            j += 1
+        if (j - i) > best_n:
+            best_n = j - i
+            best_slice = slice(i, j)
+        i = j
+    if best_slice is None or best_n < 3:
+        return None
+    return rr[best_slice].copy(), zz[best_slice].copy()
+
+
 def lcfs_arrays_from_eq(eq: Any) -> Optional[Tuple[np.ndarray, np.ndarray]]:
-    """Best-effort LCFS (R, Z) from a solved FreeGSNKE/freegs Equilibrium."""
+    """Best-effort LCFS (R, Z) from a solved FreeGSNKE/freegs Equilibrium.
+
+    Always sanitizes against the equilibrium grid (and R>0) so domain-exterior
+    separatrix samples are never returned as an LCFS polyline.
+    """
+    raw: Optional[Tuple[np.ndarray, np.ndarray]] = None
     for r_name, z_name in (
         ("rboundary", "zboundary"),
         ("Rbound", "Zbound"),
@@ -25,32 +135,45 @@ def lcfs_arrays_from_eq(eq: Any) -> Optional[Tuple[np.ndarray, np.ndarray]]:
         zz = np.asarray(z, dtype=float).ravel()
         m = np.isfinite(rr) & np.isfinite(zz)
         if int(m.sum()) >= 3:
-            return rr[m], zz[m]
+            raw = (rr[m], zz[m])
+            break
 
-    sep = getattr(eq, "separatrix", None)
-    if callable(sep):
-        for kwargs in ({"ntheta": 201}, {}):
-            try:
-                raw = sep(**kwargs) if kwargs else sep()
-            except TypeError:
+    if raw is None:
+        sep = getattr(eq, "separatrix", None)
+        if callable(sep):
+            for kwargs in ({"ntheta": 201}, {}):
                 try:
-                    raw = sep()
+                    got = sep(**kwargs) if kwargs else sep()
+                except TypeError:
+                    try:
+                        got = sep()
+                    except Exception:
+                        continue
                 except Exception:
                     continue
-            except Exception:
-                continue
-            arr = np.asarray(raw, dtype=float)
-            if arr.ndim == 2 and arr.shape[0] == 2 and arr.shape[1] >= 3:
-                rr, zz = arr[0], arr[1]
-            elif arr.ndim == 2 and arr.shape[1] == 2 and arr.shape[0] >= 3:
-                rr, zz = arr[:, 0], arr[:, 1]
-            else:
-                continue
-            m = np.isfinite(rr) & np.isfinite(zz)
-            if int(m.sum()) >= 3:
-                return rr[m], zz[m]
-    return None
+                arr = np.asarray(got, dtype=float)
+                if arr.ndim == 2 and arr.shape[0] == 2 and arr.shape[1] >= 3:
+                    rr, zz = arr[0], arr[1]
+                elif arr.ndim == 2 and arr.shape[1] == 2 and arr.shape[0] >= 3:
+                    rr, zz = arr[:, 0], arr[:, 1]
+                else:
+                    continue
+                m = np.isfinite(rr) & np.isfinite(zz)
+                if int(m.sum()) >= 3:
+                    raw = (rr[m], zz[m])
+                    break
 
+    if raw is None:
+        return None
+    bounds = grid_bounds_from_eq(eq)
+    return sanitize_lcfs_polyline(
+        raw[0],
+        raw[1],
+        r_min=bounds.get("Rmin"),
+        r_max=bounds.get("Rmax"),
+        z_min=bounds.get("Zmin"),
+        z_max=bounds.get("Zmax"),
+    )
 
 def write_freegsnke_lcfs_csv(
     path: Path,
@@ -105,12 +228,8 @@ def lcfs_from_dump_dict(dump: Dict[str, Any]) -> Optional[Tuple[np.ndarray, np.n
     z = dump.get("lcfs_Z")
     if r is None or z is None:
         return None
-    rr = np.asarray(r, dtype=float).ravel()
-    zz = np.asarray(z, dtype=float).ravel()
-    m = np.isfinite(rr) & np.isfinite(zz)
-    if int(m.sum()) < 3:
-        return None
-    return rr[m], zz[m]
+    # Sanitize with absolute R>0; dump usually already domain-valid.
+    return sanitize_lcfs_polyline(r, z)
 
 
 def psi_pack_from_dump(dump: Dict[str, Any]) -> Optional[Dict[str, Any]]:
