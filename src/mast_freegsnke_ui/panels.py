@@ -833,7 +833,11 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
     )
 
     gate_chips = [
+        chip("I_track_rms", pinfo.get("mean_i_track_rms_A")),
+        chip("plan_minus_dyn", pinfo.get("mean_rms_plan_minus_dyn_V")),
+        chip("V_gap", pinfo.get("voltage_model_gap_overall")),
         chip("rms_meas_V", pinfo.get("residual_rms_mean_measured_V")),
+        chip("rms_ohmic_IxR", pinfo.get("residual_rms_mean_deferred_ohmic_V")),
         chip("rms_V_mixed", pinfo.get("residual_rms_mean_V")),
         chip("isoflux_rms", pinfo.get("isoflux_rms_mean")),
         chip("xpoint_B_rms", pinfo.get("xpoint_B_rms_mean")),
@@ -848,7 +852,16 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
     resid_table: Any = html.P("No ΔV residual CSV.", className="text-muted small mb-0")
     resid_rows = pinfo.get("residual_rows") or []
     if resid_rows:
-        headers = ["circuit", "drive_label", "rms_V", "mae_V", "max_abs_V", "n"]
+        headers = [
+            "circuit",
+            "drive_label",
+            "gap_status",
+            "rms_V",
+            "i_track_rms_A",
+            "rms_plan_minus_dyn_V",
+            "corr_dyn_meas",
+            "n",
+        ]
         body_rows = [
             html.Tr([html.Td(str(r.get(h, "—")), className="small") for h in headers])
             for r in resid_rows
@@ -2012,6 +2025,9 @@ def auth_panel(shot: int, run_dir: Path) -> Any:
         chip("status", pinfo.get("status") or "—"),
         chip("knots", pinfo.get("n_knots")),
         chip("margin", pinfo.get("margin_factor")),
+        chip("I_track_rms", pinfo.get("mean_i_track_rms_A")),
+        chip("plan_minus_dyn", pinfo.get("mean_rms_plan_minus_dyn_V")),
+        chip("V_gap", pinfo.get("voltage_model_gap_overall")),
         chip("rms_meas_V", pinfo.get("residual_rms_mean_measured_V")),
         chip("rms_V_mixed", pinfo.get("residual_rms_mean_V")),
         chip("V_viol", pinfo.get("n_voltage_violations_raw")),

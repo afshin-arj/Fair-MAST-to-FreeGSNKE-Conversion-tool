@@ -251,6 +251,9 @@ def run_planner_stage_via_freegsnke_python(
         or meta.get("residual_rms_mean_V"),
         "residual_rms_mean_measured_V": parsed.get("residual_rms_mean_measured_V")
         or meta.get("residual_rms_mean_measured_V"),
+        "mean_i_track_rms_A": meta.get("mean_i_track_rms_A"),
+        "mean_rms_plan_minus_dyn_V": meta.get("mean_rms_plan_minus_dyn_V"),
+        "voltage_model_gap_overall": meta.get("voltage_model_gap_overall"),
         "n_voltage_violations_raw": parsed.get("n_voltage_violations_raw")
         or meta.get("n_voltage_violations_raw"),
         "meta": meta,

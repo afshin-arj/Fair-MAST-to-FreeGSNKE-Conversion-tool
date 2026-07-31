@@ -1,3 +1,15 @@
+## 11.32.0 — Planner voltage model-gap honesty
+
+### Planner (ADR-004)
+- Decompose planned vs measured V: `V_dyn(I_meas)`, I-track RMS, `plan−dyn`, polarity correlation → `07_planner/voltage_model_gap.json`.
+- P3/P6 deferred ohmic residuals score vs **I×R_cited** (finite), not NaN vs missing FAIR-MAST V; dual-R vs FreeGSNKE coil_resist called out.
+- Primary KPIs / certify / SUMMARY prefer I-track + model-gap; `polarity_suspect` is YELLOW only (never auto-flip `voltage_map`).
+- Keep I-primary QP (`weight_V≪weight_track_I`); raw ΔV remains annex.
+
+### Validate
+- Unit tests for gap identity, ohmic IxR residual, polarity classify, certify warning.
+- Version **11.32.0**.
+
 ## 11.31.0 — Evolutive feed default measured_pf + scorecard honesty
 
 ### Evolutive (nlstepper)

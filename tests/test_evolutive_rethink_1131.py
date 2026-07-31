@@ -80,7 +80,7 @@ def test_score_evolutive_ip_clamp_tautology(tmp_path: Path) -> None:
     assert (evo / "raxis_drift.csv").exists()
 
     audit = build_science_audit(tmp_path)
-    assert audit["version"] == "1.5"
+    assert audit["version"] == "1.6"
     assert audit["evolutive_ip"]["status"] == "clamp_tautology"
     assert audit["evolutive_raxis_drift"]["ok"] is True
     adv = audit["presentation_advisories"]

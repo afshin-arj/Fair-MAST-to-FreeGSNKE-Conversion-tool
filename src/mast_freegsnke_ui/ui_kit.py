@@ -349,8 +349,29 @@ def kpi_scorecard_rows(kpis: Dict[str, Any]) -> List[Dict[str, Any]]:
             "tone": planner_status_tone(planner_val),
         },
         {
+            "key": "planner_i_track_rms_A",
+            "label": "Planner I-track RMS [A]",
+            "value": kpis.get("planner_i_track_rms_A"),
+        },
+        {
+            "key": "planner_plan_minus_dyn_V",
+            "label": "Planner plan−dyn RMS [V]",
+            "value": kpis.get("planner_plan_minus_dyn_V"),
+        },
+        {
+            "key": "planner_voltage_gap",
+            "label": "Planner V gap status",
+            "value": kpis.get("planner_voltage_gap"),
+            "tone": (
+                "warn"
+                if kpis.get("planner_voltage_gap")
+                in {"polarity_suspect", "model_gap_expected"}
+                else ""
+            ),
+        },
+        {
             "key": "planner_rms_V",
-            "label": "Planner ΔV RMS [V]",
+            "label": "Planner ΔV RMS [V] (annex)",
             "value": kpis.get("planner_rms_V"),
         },
         {

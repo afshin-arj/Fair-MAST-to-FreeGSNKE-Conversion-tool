@@ -817,6 +817,34 @@ def presentation_advisories(run_dir: Path) -> Dict[str, Any]:
             "Evolutive ic_coil_currents=inverse_dump (DEMO/shape-IC) — measured V may "
             "disagree with shape-optimised I at t0; science default is measured_pf."
         )
+    pvg = None
+    for cand in (
+        run_dir / "07_planner" / "voltage_model_gap.json",
+        run_dir / "07_planner" / "PLANNER.json",
+    ):
+        obj = _safe_json(cand)
+        if not isinstance(obj, dict):
+            continue
+        if cand.name == "voltage_model_gap.json":
+            pvg = obj
+            break
+        if obj.get("voltage_model_gap_overall") or obj.get("voltage_model_gap"):
+            pvg = obj.get("voltage_model_gap") if isinstance(obj.get("voltage_model_gap"), dict) else obj
+            break
+    if isinstance(pvg, dict):
+        overall = pvg.get("overall_status") or pvg.get("voltage_model_gap_overall")
+        if overall == "polarity_suspect":
+            expect_mismatch = True
+            items.append(
+                "Planner voltage_model_gap=polarity_suspect (corr(V_dyn,V_meas) strongly "
+                "negative on some measured circuits) — YELLOW only; do not auto-flip "
+                "voltage_map without citation. Prefer I-track / plan−dyn over raw ΔV."
+            )
+        elif overall == "model_gap_expected":
+            items.append(
+                "Planner voltage_model_gap=model_gap_expected: V_plan≈V_dyn(I_meas) but "
+                "differs from FAIR-MAST terminal V (active-only R/L; passives ρ awaiting)."
+            )
     return {
         "available": bool(items),
         "n": len(items),
@@ -837,11 +865,52 @@ def presentation_advisories(run_dir: Path) -> Dict[str, Any]:
     }
 
 
+def planner_voltage_gap_audit(run_dir: Path) -> Dict[str, Any]:
+    """Read 07_planner voltage model-gap diagnostic (I-track vs terminal-V honesty)."""
+    run_dir = Path(run_dir)
+    out: Dict[str, Any] = {
+        "available": False,
+        "overall_status": None,
+        "mean_i_track_rms_A": None,
+        "mean_rms_plan_minus_dyn_V": None,
+        "residual_rms_mean_measured_V": None,
+        "n_polarity_suspect": None,
+        "n_model_gap_expected": None,
+        "note": (
+            "Planned V = RI+L dI/dt; prefer I-track and plan−dyn over raw ΔV. "
+            "polarity_suspect is YELLOW only — never auto-flip voltage_map without citation."
+        ),
+    }
+    gap = _safe_json(run_dir / "07_planner" / "voltage_model_gap.json")
+    meta = _safe_json(run_dir / "07_planner" / "PLANNER.json")
+    if isinstance(gap, dict):
+        out["available"] = True
+        out["overall_status"] = gap.get("overall_status")
+        out["mean_i_track_rms_A"] = gap.get("mean_i_track_rms_A")
+        out["n_polarity_suspect"] = gap.get("n_polarity_suspect")
+        out["n_model_gap_expected"] = gap.get("n_model_gap_expected")
+        out["circuits"] = gap.get("circuits")
+        if gap.get("note"):
+            out["note"] = gap.get("note")
+    if isinstance(meta, dict):
+        out["available"] = True
+        out["overall_status"] = out["overall_status"] or meta.get("voltage_model_gap_overall")
+        out["mean_i_track_rms_A"] = out["mean_i_track_rms_A"] or meta.get(
+            "mean_i_track_rms_A"
+        )
+        out["mean_rms_plan_minus_dyn_V"] = meta.get("mean_rms_plan_minus_dyn_V")
+        out["residual_rms_mean_measured_V"] = meta.get("residual_rms_mean_measured_V")
+        out["residual_rms_mean_deferred_ohmic_V"] = meta.get(
+            "residual_rms_mean_deferred_ohmic_V"
+        )
+    return out
+
+
 def build_science_audit(run_dir: Path) -> Dict[str, Any]:
     """Write 01_summary/science_audit.json and return the audit object."""
     run_dir = Path(run_dir)
     audit: Dict[str, Any] = {
-        "version": "1.5",
+        "version": "1.6",
         "reconstruction_quality": reconstruct_quality(run_dir),
         "inverse_shape_gate": inverse_shape_gate_summary(run_dir),
         "forward_gate": forward_gate_summary(run_dir),
@@ -849,6 +918,7 @@ def build_science_audit(run_dir: Path) -> Dict[str, Any]:
         "presentation_advisories": presentation_advisories(run_dir),
         "evolutive_ip": score_evolutive_ip(run_dir),
         "evolutive_raxis_drift": score_evolutive_raxis_drift(run_dir),
+        "planner_voltage_gap": planner_voltage_gap_audit(run_dir),
         "ohmic_drive": ohmic_drive_inventory(run_dir),
         "phase_timeline": phase_timeline_from_window(run_dir),
         "passive_resistivity": passive_resistivity_status(run_dir),
@@ -856,8 +926,8 @@ def build_science_audit(run_dir: Path) -> Dict[str, Any]:
             "Equilibrium GIFs under 03_reconstruction/presentation/ and "
             "03_reconstruction/evolutive/ (or legacy presentation/, evolutive/) are annex visuals; "
             "scientific review should start from residuals, Ip match (or Raxis drift when "
-            "clamp_ip tautology), solve_mode, inverse_shape_gate, and forward_gate "
-            "(measured-PF Forward ≠ Inverse DN)."
+            "clamp_ip tautology), solve_mode, inverse_shape_gate, forward_gate, and "
+            "planner I-track / voltage_model_gap (raw ΔV is annex)."
         ),
     }
     # Persist phase timeline under inputs for tooling

@@ -310,7 +310,17 @@ def test_run_planner_stage_with_synthetic_dynamics(tmp_path: Path) -> None:
     assert meta["drive_labels"]["P3"] == "ohmic_synthetic_IxR"
     assert meta["drive_labels"]["Solenoid"] == "measured_fairmast_V"
     assert meta.get("residual_rms_mean_V") is not None
-    assert "planning_residual_timeseries.csv" in (out / "PLANNER.md").read_text(encoding="utf-8")
+    assert meta.get("residual_rms_mean_deferred_ohmic_V") is not None
+    assert (out / "voltage_model_gap.json").exists()
+    assert meta.get("voltage_model_gap_overall") is not None
+    resid = pd.read_csv(out / "planning_residual_vs_measured_V.csv")
+    assert "gap_status" in resid.columns
+    ohmic = resid[resid["residual_compare_class"] == "deferred_ohmic_synthetic"]
+    assert len(ohmic) >= 1
+    assert ohmic["rms_V"].apply(lambda x: np.isfinite(float(x))).all()
+    md = (out / "PLANNER.md").read_text(encoding="utf-8")
+    assert "planning_residual_timeseries.csv" in md
+    assert "voltage_model_gap" in md
     assert meta.get("shape_targets_available", {}).get("note")
 
 

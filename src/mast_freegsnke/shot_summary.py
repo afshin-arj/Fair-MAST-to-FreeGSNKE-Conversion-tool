@@ -213,6 +213,17 @@ def write_shot_expert_overlay(
     if evo_ax.get("errors"):
         evo_ax_lines.append(f"| errors | {'; '.join(evo_ax['errors'])} | |")
 
+    pvg = science_audit.get("planner_voltage_gap") or {}
+    pvg_lines = [
+        f"| available | {pvg.get('available')} | |",
+        f"| overall | {pvg.get('overall_status', '—')} | polarity_suspect = YELLOW only |",
+        f"| I-track RMS [A] | {pvg.get('mean_i_track_rms_A', '—')} | primary planner success metric |",
+        f"| plan−dyn RMS [V] | {pvg.get('mean_rms_plan_minus_dyn_V', '—')} | ≪ ΔV ⇒ model gap |",
+        f"| ΔV RMS measured [V] | {pvg.get('residual_rms_mean_measured_V', '—')} | annex (not I-plan failure) |",
+        f"| n polarity_suspect | {pvg.get('n_polarity_suspect', '—')} | |",
+        f"| n model_gap_expected | {pvg.get('n_model_gap_expected', '—')} | |",
+    ]
+
     readme = "\n".join(
         [
             f"SHOT {shot} — Fair-MAST → FreeGSNKE run index",
@@ -331,6 +342,14 @@ def write_shot_expert_overlay(
             "|----------|-------|-------|",
             *evo_ax_lines,
             "",
+            "### Planner voltage gap (I-track vs terminal V)",
+            "",
+            "| Quantity | Value | Notes |",
+            "|----------|-------|-------|",
+            *pvg_lines,
+            "",
+            f"_{pvg.get('note', '')}_",
+            "",
             "### Ohmic / measured voltage drive inventory",
             "",
             f"- **Measured V circuits:** {meas_v}",
@@ -365,6 +384,7 @@ def write_shot_expert_overlay(
             "| Metrics | `03_reconstruction/metrics/reconstruction_metrics.json` |",
             "| Evolutive Ip residual | `03_reconstruction/evolutive/ip_residual.csv` |",
             "| Evolutive Raxis drift | `03_reconstruction/evolutive/raxis_drift.csv` |",
+            "| Planner voltage model gap | `07_planner/voltage_model_gap.json` |",
             "| Inverse dump | `inverse_dump.pkl` (run root) |",
             "| Measured data | `02_measured_data/` |",
             "| Authorities | `06_authorities/` |",

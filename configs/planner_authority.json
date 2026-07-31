@@ -26,5 +26,5 @@
   "qp_solver": "projected_iter",
   "qp_rel_tol": 1.0e-9,
   "max_qp_iterations": 40,
-  "notes": "ADR-004 Phase 2b / Path B v1.4.0: require_isoflux + require_picard (fail-closed after FreeGSNKE bridge). qp_solver=projected_iter (default) or slsqp. Interactive Plotly I/V HTML alongside static PNGs. Passives blocked on classic-MAST ρ."
+  "notes": "ADR-004 Phase 2b / Path B v1.4.0: require_isoflux + require_picard (fail-closed after FreeGSNKE bridge). qp_solver=projected_iter (default) or slsqp. Interactive Plotly I/V HTML alongside static PNGs. Passives blocked on classic-MAST ρ. v11.32 voltage honesty: planned V=RI+L dI/dt is not a FAIR-MAST V-fit; prefer I-track + plan−dyn / voltage_model_gap (polarity_suspect YELLOW only — never auto-flip voltage_map without citation)."
 }

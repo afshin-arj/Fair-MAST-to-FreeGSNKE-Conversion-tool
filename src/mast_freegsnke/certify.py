@@ -209,6 +209,11 @@ def certify_run_dir(
                     "present"
                 ),
                 "circuit_dynamics_mutuals": pl.get("circuit_dynamics_mutuals"),
+                "voltage_model_gap_overall": pl.get("voltage_model_gap_overall")
+                or (pl.get("voltage_model_gap") or {}).get("overall_status"),
+                "mean_i_track_rms_A": pl.get("mean_i_track_rms_A"),
+                "mean_rms_plan_minus_dyn_V": pl.get("mean_rms_plan_minus_dyn_V"),
+                "residual_rms_mean_measured_V": pl.get("residual_rms_mean_measured_V"),
             }
             if pl.get("method") == "gspulse_python":
                 auth_pl: Optional[Dict[str, Any]] = None
@@ -237,6 +242,28 @@ def certify_run_dir(
                     report["warnings"].append(
                         "planner_voltage_exceeds_measured_peak_margin"
                     )
+                gap_overall = (
+                    pl.get("voltage_model_gap_overall")
+                    or (pl.get("voltage_model_gap") or {}).get("overall_status")
+                )
+                if gap_overall == "polarity_suspect":
+                    report["warnings"].append("planner_voltage_polarity_suspect")
+                elif gap_overall == "model_gap_expected":
+                    report["warnings"].append("planner_voltage_model_gap")
+                # Prefer reading voltage_model_gap.json if PLANNER lacks nested block
+                gap_path = run_dir / "07_planner" / "voltage_model_gap.json"
+                if gap_path.is_file() and gap_overall is None:
+                    try:
+                        gobj = json.loads(gap_path.read_text(encoding="utf-8"))
+                        if isinstance(gobj, dict):
+                            go = gobj.get("overall_status")
+                            report["checks"]["planner"]["voltage_model_gap_overall"] = go
+                            if go == "polarity_suspect":
+                                report["warnings"].append("planner_voltage_polarity_suspect")
+                            elif go == "model_gap_expected":
+                                report["warnings"].append("planner_voltage_model_gap")
+                    except Exception:
+                        pass
             report["checks"]["planner"]["picard_mode"] = pl.get("picard_mode")
             report["checks"]["planner"]["picard_status"] = pl.get("picard_status")
             if (pl.get("circuit_dynamics_mutuals") or "").startswith("neglected"):

@@ -855,6 +855,16 @@ def load_planner_info(run_dir: Path) -> Dict[str, Any]:
         out["n_knots"] = meta.get("n_knots")
         out["residual_rms_mean_V"] = meta.get("residual_rms_mean_V")
         out["residual_rms_mean_measured_V"] = meta.get("residual_rms_mean_measured_V")
+        out["residual_rms_mean_deferred_ohmic_V"] = meta.get(
+            "residual_rms_mean_deferred_ohmic_V"
+        )
+        out["mean_i_track_rms_A"] = meta.get("mean_i_track_rms_A")
+        out["mean_rms_plan_minus_dyn_V"] = meta.get("mean_rms_plan_minus_dyn_V")
+        out["voltage_model_gap_overall"] = meta.get("voltage_model_gap_overall") or (
+            (meta.get("voltage_model_gap") or {}).get("overall_status")
+            if isinstance(meta.get("voltage_model_gap"), dict)
+            else None
+        )
         out["n_voltage_violations_raw"] = meta.get("n_voltage_violations_raw")
         out["method"] = meta.get("method") or "gspulse_python"
         out["method_version"] = meta.get("method_version")
@@ -1014,6 +1024,9 @@ def overview_kpis(run_dir: Path) -> Dict[str, Any]:
         "planner_rms_V": planner.get("residual_rms_mean_measured_V")
         if planner.get("residual_rms_mean_measured_V") is not None
         else planner.get("residual_rms_mean_V"),
+        "planner_i_track_rms_A": planner.get("mean_i_track_rms_A"),
+        "planner_plan_minus_dyn_V": planner.get("mean_rms_plan_minus_dyn_V"),
+        "planner_voltage_gap": planner.get("voltage_model_gap_overall"),
         "planner_v_violations": planner.get("n_voltage_violations_raw"),
         "planner_present": bool(planner.get("present")),
         "blocking_n": len(blocking),
@@ -1030,6 +1043,8 @@ _COMPARE_NUMERIC_KEYS = (
     "n_scored",
     "evolutive_rms_A",
     "planner_rms_V",
+    "planner_i_track_rms_A",
+    "planner_plan_minus_dyn_V",
     "planner_n_knots",
     "planner_v_violations",
     "blocking_n",
@@ -1101,7 +1116,10 @@ def compare_scorecard(
         ("profile_fit_mode", "Profile fit mode"),
         ("profile_n_knots", "Profile knots"),
         ("planner_status", "Planner status"),
-        ("planner_rms_V", "Planner ΔV RMS [V]"),
+        ("planner_i_track_rms_A", "Planner I-track RMS [A]"),
+        ("planner_plan_minus_dyn_V", "Planner plan−dyn RMS [V]"),
+        ("planner_voltage_gap", "Planner V gap status"),
+        ("planner_rms_V", "Planner ΔV RMS [V] (annex)"),
         ("planner_n_knots", "Planner knots"),
         ("planner_v_violations", "Planner V violations"),
         ("efit_ok", "EFIT archive ok"),

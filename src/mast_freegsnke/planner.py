@@ -418,6 +418,150 @@ def voltages_from_dynamics(
     return V
 
 
+def _finite_rms(a: np.ndarray, b: np.ndarray) -> Optional[float]:
+    a = np.asarray(a, dtype=float).reshape(-1)
+    b = np.asarray(b, dtype=float).reshape(-1)
+    mask = np.isfinite(a) & np.isfinite(b)
+    if int(np.count_nonzero(mask)) < 1:
+        return None
+    d = a[mask] - b[mask]
+    return float(np.sqrt(np.mean(d * d)))
+
+
+def _finite_corr(a: np.ndarray, b: np.ndarray) -> Optional[float]:
+    a = np.asarray(a, dtype=float).reshape(-1)
+    b = np.asarray(b, dtype=float).reshape(-1)
+    mask = np.isfinite(a) & np.isfinite(b)
+    if int(np.count_nonzero(mask)) < 3:
+        return None
+    aa, bb = a[mask], b[mask]
+    if float(np.std(aa)) < 1e-18 or float(np.std(bb)) < 1e-18:
+        return None
+    return float(np.corrcoef(aa, bb)[0, 1])
+
+
+def _classify_voltage_gap_status(
+    *,
+    drive_label: str,
+    i_track_rms_A: Optional[float],
+    rms_plan_minus_meas_V: Optional[float],
+    rms_plan_minus_dyn_V: Optional[float],
+    corr_dyn_meas: Optional[float],
+    corr_dyn_neg_meas: Optional[float],
+) -> str:
+    """Declared gap status — never invents voltage_map signs."""
+    if drive_label == "ohmic_synthetic_IxR":
+        return "deferred_ohmic_ixr"
+    if (
+        corr_dyn_meas is not None
+        and corr_dyn_neg_meas is not None
+        and float(corr_dyn_meas) < -0.7
+        and float(corr_dyn_neg_meas) > 0.7
+    ):
+        return "polarity_suspect"
+    if (
+        rms_plan_minus_dyn_V is not None
+        and rms_plan_minus_meas_V is not None
+        and float(rms_plan_minus_meas_V) > 1.0
+        and float(rms_plan_minus_dyn_V) <= 0.25 * float(rms_plan_minus_meas_V)
+    ):
+        return "model_gap_expected"
+    if i_track_rms_A is not None and np.isfinite(i_track_rms_A):
+        return "i_track_ok"
+    return "unknown"
+
+
+def build_voltage_model_gap(
+    *,
+    circuit_order: Sequence[str],
+    drive_labels: Dict[str, str],
+    I_plan: np.ndarray,
+    I_meas: np.ndarray,
+    V_plan: np.ndarray,
+    V_obs: np.ndarray,
+    V_dyn: np.ndarray,
+    V_IxR: np.ndarray,
+    R_ohm: np.ndarray,
+) -> Dict[str, Any]:
+    """Decompose planned-vs-measured V into I-track + dynamics model gap + polarity.
+
+    Large ΔV with tiny rms(V_plan−V_dyn) means the QP I-plan is fine; terminal V is
+    outside the active-only plant model (or polarity convention is suspect).
+    """
+    order = [str(c) for c in circuit_order]
+    R = np.asarray(R_ohm, dtype=float).reshape(-1)
+    circuits: List[Dict[str, Any]] = []
+    n_polarity = 0
+    n_model_gap = 0
+    i_track_vals: List[float] = []
+    for i, c in enumerate(order):
+        dlab = str(drive_labels.get(c) or "unknown")
+        i_rms = _finite_rms(I_plan[:, i], I_meas[:, i])
+        if i_rms is not None:
+            i_track_vals.append(float(i_rms))
+        rms_plan_meas = _finite_rms(V_plan[:, i], V_obs[:, i])
+        rms_dyn_meas = _finite_rms(V_dyn[:, i], V_obs[:, i])
+        rms_plan_dyn = _finite_rms(V_plan[:, i], V_dyn[:, i])
+        rms_plan_ixr = _finite_rms(V_plan[:, i], V_IxR[:, i])
+        corr_dm = _finite_corr(V_dyn[:, i], V_obs[:, i])
+        corr_dnm = _finite_corr(V_dyn[:, i], -np.asarray(V_obs[:, i], dtype=float))
+        status = _classify_voltage_gap_status(
+            drive_label=dlab,
+            i_track_rms_A=i_rms,
+            rms_plan_minus_meas_V=rms_plan_meas,
+            rms_plan_minus_dyn_V=rms_plan_dyn,
+            corr_dyn_meas=corr_dm,
+            corr_dyn_neg_meas=corr_dnm,
+        )
+        if status == "polarity_suspect":
+            n_polarity += 1
+        if status == "model_gap_expected":
+            n_model_gap += 1
+        circuits.append(
+            {
+                "circuit": c,
+                "drive_label": dlab,
+                "residual_compare_class": residual_compare_class(dlab),
+                "R_ohm_cited": float(R[i]) if i < R.size else None,
+                "i_track_rms_A": i_rms,
+                "rms_plan_minus_meas_V": rms_plan_meas,
+                "rms_dyn_minus_meas_V": rms_dyn_meas,
+                "rms_plan_minus_dyn_V": rms_plan_dyn,
+                "rms_plan_minus_IxR_V": rms_plan_ixr,
+                "corr_dyn_meas": corr_dm,
+                "corr_dyn_neg_meas": corr_dnm,
+                "gap_status": status,
+            }
+        )
+    mean_i = float(np.mean(i_track_vals)) if i_track_vals else None
+    overall = "ok"
+    if n_polarity > 0:
+        overall = "polarity_suspect"
+    elif n_model_gap > 0:
+        overall = "model_gap_expected"
+    return {
+        "version": "1.0",
+        "overall_status": overall,
+        "n_polarity_suspect": int(n_polarity),
+        "n_model_gap_expected": int(n_model_gap),
+        "mean_i_track_rms_A": mean_i,
+        "circuits": circuits,
+        "note": (
+            "Planned V = R I + L dI/dt (I-primary QP). "
+            "rms_plan_minus_dyn ≪ rms_plan_minus_meas ⇒ model/terminal-V gap, not failed I-plan. "
+            "polarity_suspect: corr(V_dyn,V_meas)<−0.7 and corr(V_dyn,−V_meas)>0.7 — "
+            "YELLOW only; do not auto-flip voltage_map without citation. "
+            "deferred_ohmic_ixr uses cited circuit_dynamics R (not invented); "
+            "evolutive ohmic fill may still use FreeGSNKE coil_resist (dual-R honesty)."
+        ),
+        "do_not": [
+            "auto_flip_voltage_map_sign",
+            "invent_passive_resistivity",
+            "invent_P3_P6_measured_V",
+        ],
+    }
+
+
 def solve_trajectory_qp(
     *,
     I_target: np.ndarray,
@@ -1072,13 +1216,24 @@ def run_planner_stage(
         Path(run_dir) / "06_authorities" / "contracts" / "voltage_map.resolved.json",
     )
     drive_labels: Dict[str, str] = {c: "unknown" for c in order}
+    ohmic_sign_scale: Dict[str, Tuple[float, float]] = {c: (1.0, 1.0) for c in order}
     for vmap_path in vmap_candidates:
         if not vmap_path.exists():
             continue
         vmap = json.loads(vmap_path.read_text(encoding="utf-8"))
         circuits = vmap.get("circuits") or {}
         for c in order:
-            comb = str((circuits.get(c) or {}).get("combine", ""))
+            spec = circuits.get(c) or {}
+            comb = str(spec.get("combine", ""))
+            try:
+                sgn = float(spec.get("sign", 1.0))
+            except (TypeError, ValueError):
+                sgn = 1.0
+            try:
+                scl = float(spec.get("scale", 1.0))
+            except (TypeError, ValueError):
+                scl = 1.0
+            ohmic_sign_scale[c] = (sgn, scl)
             if comb == "from_current_ohmic":
                 drive_labels[c] = "ohmic_synthetic_IxR"
             elif comb in ("identity", "sum", "mean"):
@@ -1092,39 +1247,111 @@ def run_planner_stage(
     I_df.to_csv(out_dir / "planned_currents.csv", index=False)
     V_df.to_csv(out_dir / "planned_voltages.csv", index=False)
 
+    # Model-gap: dynamics of measured I vs planned V vs FAIR-MAST / IxR refs
+    V_dyn = voltages_from_dynamics(
+        I_tgt,
+        R=circuit_dynamics.R_ohm,
+        L=circuit_dynamics.L_henry,
+        dt=dt,
+    )
+    V_IxR = np.zeros_like(V_plan)
+    R_vec = np.asarray(circuit_dynamics.R_ohm, dtype=float).reshape(-1)
+    for i, c in enumerate(order):
+        sgn, scl = ohmic_sign_scale[c]
+        V_IxR[:, i] = float(sgn) * float(scl) * I_tgt[:, i] * float(R_vec[i])
+
+    gap = build_voltage_model_gap(
+        circuit_order=order,
+        drive_labels=drive_labels,
+        I_plan=I_plan,
+        I_meas=I_tgt,
+        V_plan=V_plan,
+        V_obs=V_obs,
+        V_dyn=V_dyn,
+        V_IxR=V_IxR,
+        R_ohm=R_vec,
+    )
+    gap_by_c = {str(r["circuit"]): r for r in gap.get("circuits") or []}
+
     resid_rows = []
     for i, c in enumerate(order):
-        dV = V_plan[:, i] - V_obs[:, i]
         dlab = drive_labels[c]
+        g = gap_by_c.get(c) or {}
+        if dlab == "ohmic_synthetic_IxR":
+            dV = V_plan[:, i] - V_IxR[:, i]
+            v_ref_kind = "IxR_cited_dynamics_R"
+            rms = g.get("rms_plan_minus_IxR_V")
+            mae = None
+            max_abs = None
+            mask = np.isfinite(dV)
+            if int(np.count_nonzero(mask)) >= 1:
+                mae = float(np.mean(np.abs(dV[mask])))
+                max_abs = float(np.max(np.abs(dV[mask])))
+        else:
+            dV = V_plan[:, i] - V_obs[:, i]
+            v_ref_kind = "measured_fairmast_V"
+            rms = g.get("rms_plan_minus_meas_V")
+            mae = None
+            max_abs = None
+            mask = np.isfinite(dV)
+            if int(np.count_nonzero(mask)) >= 1:
+                mae = float(np.mean(np.abs(dV[mask])))
+                max_abs = float(np.max(np.abs(dV[mask])))
+                if rms is None:
+                    rms = float(np.sqrt(np.mean(dV[mask] ** 2)))
         resid_rows.append(
             {
                 "circuit": c,
                 "drive_label": dlab,
                 "residual_compare_class": residual_compare_class(dlab),
-                "rms_V": float(np.sqrt(np.mean(dV**2))),
-                "mae_V": float(np.mean(np.abs(dV))),
-                "max_abs_V": float(np.max(np.abs(dV))),
+                "v_ref_kind": v_ref_kind,
+                "rms_V": rms,
+                "mae_V": mae,
+                "max_abs_V": max_abs,
                 "n": int(n_k),
+                "i_track_rms_A": g.get("i_track_rms_A"),
+                "rms_plan_minus_meas_V": g.get("rms_plan_minus_meas_V"),
+                "rms_dyn_minus_meas_V": g.get("rms_dyn_minus_meas_V"),
+                "rms_plan_minus_dyn_V": g.get("rms_plan_minus_dyn_V"),
+                "rms_plan_minus_IxR_V": g.get("rms_plan_minus_IxR_V"),
+                "corr_dyn_meas": g.get("corr_dyn_meas"),
+                "corr_dyn_neg_meas": g.get("corr_dyn_neg_meas"),
+                "gap_status": g.get("gap_status"),
             }
         )
     resid_df = pd.DataFrame(resid_rows)
     resid_df.to_csv(out_dir / "planning_residual_vs_measured_V.csv", index=False)
+    (out_dir / "voltage_model_gap.json").write_text(
+        json.dumps(gap, indent=2) + "\n", encoding="utf-8"
+    )
 
     # Per-time residual timeseries (expert UI / CSV download)
     ts_rows: List[Dict[str, Any]] = []
     for k, t in enumerate(times):
         for i, c in enumerate(order):
             dlab = drive_labels[c]
+            if dlab == "ohmic_synthetic_IxR":
+                v_obs_k = float(V_IxR[k, i])
+                dV_k = float(V_plan[k, i] - V_IxR[k, i])
+                v_ref_kind = "IxR_cited_dynamics_R"
+            else:
+                v_obs_k = float(V_obs[k, i])
+                dV_k = float(V_plan[k, i] - V_obs[k, i])
+                v_ref_kind = "measured_fairmast_V"
             ts_rows.append(
                 {
                     "time": float(t),
                     "circuit": c,
                     "drive_label": dlab,
                     "residual_compare_class": residual_compare_class(dlab),
+                    "v_ref_kind": v_ref_kind,
                     "V_plan_V": float(V_plan[k, i]),
-                    "V_obs_V": float(V_obs[k, i]),
-                    "dV_V": float(V_plan[k, i] - V_obs[k, i]),
+                    "V_obs_V": v_obs_k,
+                    "V_dyn_Imeas_V": float(V_dyn[k, i]),
+                    "V_IxR_V": float(V_IxR[k, i]),
+                    "dV_V": dV_k,
                     "I_plan_A": float(I_plan[k, i]),
+                    "I_meas_A": float(I_tgt[k, i]),
                 }
             )
     ts_df = pd.DataFrame(ts_rows)
@@ -1279,13 +1506,24 @@ def run_planner_stage(
         if r["rms_V"] is not None and np.isfinite(r["rms_V"])
     ]
     mean_rms = float(np.mean(finite_all)) if finite_all else None
+    mean_i_track = gap.get("mean_i_track_rms_A")
+    mean_plan_dyn = []
+    for r in resid_rows:
+        if r["residual_compare_class"] == "measured_V" and r.get("rms_plan_minus_dyn_V") is not None:
+            try:
+                v = float(r["rms_plan_minus_dyn_V"])
+            except (TypeError, ValueError):
+                continue
+            if np.isfinite(v):
+                mean_plan_dyn.append(v)
+    mean_rms_plan_minus_dyn = float(np.mean(mean_plan_dyn)) if mean_plan_dyn else None
 
     meta = {
         "shot": shot,
         "status": status,
         # Path B0–B3 honesty labels
         "method": "gspulse_python",
-        "method_version": "v1.4",
+        "method_version": "v1.5",
         "qp_solver": sol.get("qp_solver") or planner_auth.qp_solver,
         "require_isoflux": bool(planner_auth.require_isoflux),
         "require_picard": bool(planner_auth.require_picard),
@@ -1316,11 +1554,18 @@ def run_planner_stage(
         "residual_rms_mean_V": mean_rms,
         "residual_rms_mean_measured_V": mean_rms_measured,
         "residual_rms_mean_deferred_ohmic_V": mean_rms_deferred_ohmic,
+        "mean_i_track_rms_A": mean_i_track,
+        "mean_rms_plan_minus_dyn_V": mean_rms_plan_minus_dyn,
+        "voltage_model_gap": gap,
+        "voltage_model_gap_overall": gap.get("overall_status"),
         "voltage_plan_model": "circuit_dynamics_RI_plus_L_dIdt",
         "voltage_residual_honesty": (
             "Planned V = R I + L dI/dt from cited R/L (and FreeGSNKE mutuals when retained). "
             "QP objective is I-tracking (weight_V ≪ weight_track_I); large ΔV with good I is expected. "
-            "deferred_ohmic_synthetic circuits (e.g. P3/P6 from_current_ohmic) are not measured-V fits."
+            "Prefer mean_i_track_rms_A and rms_plan_minus_dyn vs raw ΔV: when plan≈dyn(I_meas) "
+            "the gap is active-only model vs terminal V (or polarity_suspect). "
+            "deferred_ohmic_synthetic circuits score vs I×R_cited (not NaN / not FAIR-MAST V); "
+            "evolutive ohmic fill may still use FreeGSNKE coil_resist (dual-R honesty)."
         ),
         "plots_written": plots_written,
         "shape_targets_available": shape_targets_available,
@@ -1359,7 +1604,7 @@ def run_planner_stage(
             },
         },
         "limitations": [
-            "method=gspulse_python v1.4: current-tracking + circuit dynamics QP "
+            "method=gspulse_python v1.5: current-tracking + circuit dynamics QP "
             f"(solver={planner_auth.qp_solver}) "
             "+ vacuum-coil Green's isoflux (require={planner_auth.require_isoflux}) "
             "+ Picard plasma freeze (require={planner_auth.require_picard}) "
@@ -1381,8 +1626,9 @@ def run_planner_stage(
                 else f"psi_bry_cost=false status={psi_bry_status} — {psi_bry_note}"
             ),
             "Passives excluded while passive_resistivity awaiting_authority",
-            "P3/P6 may be deferred_ohmic_synthetic (from_current_ohmic) — not measured-V fits",
+            "P3/P6 deferred_ohmic_synthetic scored vs I×R_cited (not measured-V fits); dual-R vs FreeGSNKE coil_resist possible",
             "Planned V is circuit-dynamics RI+L dI/dt; weight_V≪weight_I so large ΔV≠failed I-plan",
+            "voltage_model_gap: polarity_suspect is YELLOW diagnostic only — never auto-flip voltage_map without citation",
             "Never invents coil I/V limits — citation required",
             "Voltage box limits are fail-closed: over-limit plans raise PlannerError",
             "Ejima ψ_bry requires cited R_p + L_I (never invent / never silent li→L_I)",
@@ -1399,10 +1645,17 @@ def run_planner_stage(
         "**Voltage honesty:** planned V = `R I + L dI/dt` (circuit dynamics). "
         "The QP tracks currents (`weight_track_I`); `weight_V` is tiny — large ΔV with good I is expected "
         "while passives ρ await (ADR-005) and R/L are cited tables. "
-        "Circuits tagged `deferred_ohmic_synthetic` (P3/P6 ohmic I×R) are not measured-V residuals.",
+        "Prefer **I-track RMS** and **plan−dyn** over raw ΔV: when `V_plan≈V_dyn(I_meas)` the gap is "
+        "active-only model vs terminal V (or `polarity_suspect`). "
+        "Circuits tagged `deferred_ohmic_synthetic` score vs **I×R_cited** (not FAIR-MAST V; dual-R vs FreeGSNKE possible).",
         "",
         f"- status: **{status}**",
-        f"- method: `gspulse_python` v1.4 (solver={planner_auth.qp_solver}, "
+        f"- voltage_model_gap: **{gap.get('overall_status')}** "
+        f"(polarity_suspect={gap.get('n_polarity_suspect')}, "
+        f"model_gap_expected={gap.get('n_model_gap_expected')})",
+        f"- mean I-track RMS: {mean_i_track} A",
+        f"- mean rms(plan−dyn) measured channels: {mean_rms_plan_minus_dyn} V",
+        f"- method: `gspulse_python` v1.5 (solver={planner_auth.qp_solver}, "
         f"picard={bool(picard_used)}, "
         f"isoflux_cost={bool(isoflux_used)}, psi_bry={bool(psi_bry_used)}, "
         f"mode={meta.get('isoflux_mode')})",
@@ -1423,14 +1676,18 @@ def run_planner_stage(
     ]
     for r in resid_rows:
         md.append(
-            f"- **{r['circuit']}** ({r['drive_label']} / {r['residual_compare_class']}): "
-            f"rms={r['rms_V']:.6g} V"
+            f"- **{r['circuit']}** ({r['drive_label']} / {r['residual_compare_class']} / "
+            f"{r.get('gap_status')}): rms={r['rms_V']} V "
+            f"(I_rms={r.get('i_track_rms_A')} A; "
+            f"plan−dyn={r.get('rms_plan_minus_dyn_V')} V; "
+            f"corr_dyn_meas={r.get('corr_dyn_meas')})"
         )
     md.append("")
     md.append("## Artifacts")
     md.append("- `planned_currents.csv` / `planned_voltages.csv`")
-    md.append("- `planning_residual_vs_measured_V.csv` (per-circuit summary)")
-    md.append("- `planning_residual_timeseries.csv` (per-time ΔV)")
+    md.append("- `planning_residual_vs_measured_V.csv` (per-circuit summary + gap fields)")
+    md.append("- `planning_residual_timeseries.csv` (per-time ΔV + V_dyn + IxR)")
+    md.append("- `voltage_model_gap.json` (I-track / model-gap / polarity diagnostic)")
     if isoflux_used:
         md.append("- `isoflux_residual.json` (vacuum-coil Green's sensor residuals)")
     md.append("- `picard.json` (Path B3 outer-loop status)")
@@ -1488,6 +1745,10 @@ def run_planner_stage(
         "residual_rms_by_circuit": meta["residual_rms_by_circuit"],
         "residual_rms_mean_V": mean_rms,
         "residual_rms_mean_measured_V": mean_rms_measured,
+        "residual_rms_mean_deferred_ohmic_V": mean_rms_deferred_ohmic,
+        "mean_i_track_rms_A": mean_i_track,
+        "mean_rms_plan_minus_dyn_V": mean_rms_plan_minus_dyn,
+        "voltage_model_gap_overall": gap.get("overall_status"),
         "n_voltage_violations_raw": n_v_viol,
         "meta": meta,
     }
