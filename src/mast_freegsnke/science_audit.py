@@ -836,14 +836,16 @@ def presentation_advisories(run_dir: Path) -> Dict[str, Any]:
         if overall == "polarity_suspect":
             expect_mismatch = True
             items.append(
-                "Planner voltage_model_gap=polarity_suspect (corr(V_dyn,V_meas) strongly "
-                "negative on some measured circuits) — YELLOW only; do not auto-flip "
-                "voltage_map without citation. Prefer I-track / plan−dyn over raw ΔV."
+                "Planner voltage gap: channel sign mismatch vs FreeGSNKE I "
+                "(corr(V_dyn,V_meas) strongly negative) — YELLOW; cite voltage_map "
+                "before flipping. Prefer I-track / plan−dyn over raw ΔV."
             )
         elif overall == "model_gap_expected":
             items.append(
-                "Planner voltage_model_gap=model_gap_expected: V_plan≈V_dyn(I_meas) but "
-                "differs from FAIR-MAST terminal V (active-only R/L; passives ρ awaiting)."
+                "Planner voltage gap: active-only model vs terminal V "
+                "(V_plan≈V_dyn(I_meas); passives ρ awaiting). "
+                "Solenoid early-window bias under large |dI/dt| is the same class — not a p1 flip. "
+                "P4/P5 use voltage_map sign=−1 (v2.2) when cited."
             )
         n_same = pvg.get("n_same_sign_model_gap")
         try:
@@ -852,9 +854,9 @@ def presentation_advisories(run_dir: Path) -> Dict[str, Any]:
             n_same_i = 0
         if n_same_i > 0:
             items.append(
-                "Same-sign model_gap (e.g. Solenoid/CS): terminal-V / missing "
-                "passives-plasma coupling — NOT a polarity / p1 flip candidate; "
-                "window trim does not close CS ΔV."
+                "Same-sign active-only gap (e.g. Solenoid/CS): terminal-V / missing "
+                "passives-plasma coupling — NOT a polarity / p1 flip; early bias often "
+                "larger under high |dI/dt|."
             )
     return {
         "available": bool(items),
@@ -899,10 +901,13 @@ def planner_voltage_gap_audit(run_dir: Path) -> Dict[str, Any]:
     if isinstance(gap, dict):
         out["available"] = True
         out["overall_status"] = gap.get("overall_status")
+        out["overall_status_label"] = gap.get("overall_status_label")
         out["mean_i_track_rms_A"] = gap.get("mean_i_track_rms_A")
         out["n_polarity_suspect"] = gap.get("n_polarity_suspect")
         out["n_model_gap_expected"] = gap.get("n_model_gap_expected")
         out["n_same_sign_model_gap"] = gap.get("n_same_sign_model_gap")
+        out["n_sign_mismatch"] = gap.get("n_sign_mismatch", gap.get("n_polarity_suspect"))
+        out["n_active_only_gap"] = gap.get("n_active_only_gap", gap.get("n_model_gap_expected"))
         out["circuits"] = gap.get("circuits")
         if gap.get("note"):
             out["note"] = gap.get("note")

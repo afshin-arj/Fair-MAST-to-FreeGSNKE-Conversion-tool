@@ -46,7 +46,7 @@ def test_multitime_solve_spec_defaults_and_validation() -> None:
 def test_execution_authority_writes_multitime_solver_knobs(tmp_path: Path) -> None:
     root = write_execution_authority(tmp_path, metrics_n_times=5)
     bundle = load_execution_authority_bundle(root / "execution_authority_bundle.json")
-    assert bundle.authority_version == "11.33.0"
+    assert bundle.authority_version == "11.34.0"
     assert bundle.solver.multitime.preferred_mode == "full_inverse"
     assert bundle.solver.multitime.fresh_constrain_per_time is True
     assert bundle.solver.multitime.max_solving_iterations == 50

@@ -1,3 +1,17 @@
+## 11.34.0 — P4/P5 voltage sign + Solenoid early-gap honesty
+
+### Voltage map (authority)
+- **P4/P5 `sign=-1` (v2.2):** Level-2 `p4`/`p5` anti-correlate with `dI/dt` of coil_map currents under FreeGSNKE filament polarity=+1 (SHOT/30201: corr(V,dI/dt)≈−0.91/−0.69). Declared bridge restores active-circuit plant `V≈RI+L dI/dt` for planner/evolutive. Remaining residual is active-only model gap (passives awaiting ADR-005).
+- **Solenoid/P2 stay `sign=+1`:** same-sign model gap (plan≈dyn); flipping would worsen RMS by >10×. Early-window bias is larger under high `|dI/dt|` — not a p1 flip.
+
+### Planner diagnostics
+- Gap annex: early/late bias, `corr_V_dIdt`, `gap_status_label` (expert-facing), `early_window_elevated`.
+- SUMMARY / UI use clearer labels (`sign mismatch`, `active-only gap`) while keeping stable status keys.
+
+### Validate
+- Unit tests for shipped P4/P5 signs, classic voltage apply, early-bias fields.
+- Version **11.34.0**.
+
 ## 11.33.0 — Pre-peak window trim + Solenoid gap annex
 
 ### Window

@@ -1,6 +1,6 @@
 {
-  "version": "2.1",
-  "notes": "FAIR-MAST = classic MAST (not MAST-U). FreeGSNKE active circuits are classic only: Solenoid, P2_inner, P2_outer, P3, P4, P5, P6 — no divertors. Measured voltages p1/p2/p4/p5 (V) are primary drive. One FAIR-MAST p2 channel is applied identically to both P2_inner and P2_outer (declared same-V policy). Level-2 coil_voltage has only four channels for reference shot 30201; P3 and P6 stay from_current_ohmic (I×R). 2026-07-19 L1 inventory (configs/l1_voltage_inventory_30201.json): amc has P3/P6 currents only; no public xpc group / XPC_FA DRIVE (intended P6 V in fair-mast-ingestion mast.yml but not published); xma/p6_volts is ~40 mV raw — not usable as PF drive without inventing calibration. Do not invent P3/P6 voltage channels.",
+  "version": "2.2",
+  "notes": "FAIR-MAST = classic MAST (not MAST-U). FreeGSNKE active circuits are classic only: Solenoid, P2_inner, P2_outer, P3, P4, P5, P6 — no divertors. Measured voltages p1/p2/p4/p5 (V) are primary drive. One FAIR-MAST p2 channel is applied identically to both P2_inner and P2_outer (declared same-V policy). Level-2 coil_voltage has only four channels for reference shot 30201; P3 and P6 stay from_current_ohmic (I×R). v2.2: P4/P5 voltage_map sign=-1 restores FreeGSNKE I-convention consistency (corr(V,dI/dt)>0); Solenoid/P2 remain sign=+1 (same-sign active-only model gap, not a flip). L1 inventory: configs/l1_voltage_inventory_30201.json. Do not invent P3/P6 voltage channels.",
   "machine_active_circuit_order": [
     "Solenoid",
     "P2_inner",
@@ -44,15 +44,15 @@
       "voltage_channels": ["p4"],
       "combine": "identity",
       "scale": 1.0,
-      "sign": 1,
-      "notes": "PRIMARY measured FAIR-MAST voltage: p4 → classic P4; units V."
+      "sign": -1,
+      "notes": "PRIMARY measured FAIR-MAST voltage p4 → classic P4 (V). sign=-1 (v2.2, cited): Level-2 p4 anti-correlates with dI/dt of coil_map P4 under FreeGSNKE filament polarity=+1 (SHOT/30201: corr(V,dI/dt)≈−0.91; corr(−V,dI/dt)≈+0.91). Declared bridge restores active-circuit plant V≈RI+L dI/dt for planner/evolutive. Remaining residual is active-only model gap (passives awaiting ADR-005), not a further flip."
     },
     "P5": {
       "voltage_channels": ["p5"],
       "combine": "identity",
       "scale": 1.0,
-      "sign": 1,
-      "notes": "PRIMARY measured FAIR-MAST voltage: p5 → classic P5; units V."
+      "sign": -1,
+      "notes": "PRIMARY measured FAIR-MAST voltage p5 → classic P5 (V). sign=-1 (v2.2, cited): Level-2 p5 anti-correlates with dI/dt of coil_map P5 under FreeGSNKE filament polarity=+1 (SHOT/30201: corr(V,dI/dt)≈−0.69; corr(−V,dI/dt)≈+0.69). Declared bridge restores active-circuit plant V≈RI+L dI/dt for planner/evolutive. Remaining residual is active-only model gap (passives awaiting ADR-005), not a further flip."
     },
     "P6": {
       "voltage_channels": [],

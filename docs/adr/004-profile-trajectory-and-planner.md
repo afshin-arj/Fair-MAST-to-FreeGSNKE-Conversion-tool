@@ -62,12 +62,15 @@ Products are labeled `method=gspulse_python` (not upstream MATLAB/MEQ GSPulse). 
    violate **fixed** cited plant V bounds after projection are **fail-closed**. Under
    `measured_peak_margin`, I boxes stay hard; V overshoot vs the 1.2× engineering envelope is
    reported as `voltage_exceeds_measured_peak_margin` (loud, not silent).
-   **Voltage residual honesty (v11.32 / v11.33):** planned V is post-map \(V=RI+L\dot{I}\) from the
+   **Voltage residual honesty (v11.32–v11.34):** planned V is post-map \(V=RI+L\dot{I}\) from the
    I-primary QP — not a least-squares fit to FAIR-MAST terminal V. Prefer
    `mean_i_track_rms_A` and `rms_plan_minus_dyn` / `voltage_model_gap.json` over raw ΔV.
-   Annex fields: `mean_bias_plan_minus_meas_V`, `rms_RI_V`, `rms_L_dI_V`. Solenoid/CS
-   same-sign bias is `model_gap_expected` (not a polarity / p1 flip). `polarity_suspect`
-   is YELLOW only (never auto-flip `voltage_map` without citation).
+   Annex fields: `mean_bias_plan_minus_meas_V`, early/late bias, `rms_RI_V`, `rms_L_dI_V`,
+   `corr_V_dIdt`, `gap_status_label`. Solenoid/CS same-sign bias (often larger early under
+   high \(|\dot{I}|\)) is active-only gap — not a p1 flip. **P4/P5 `voltage_map` sign=−1
+   (v2.2)** restores \(\mathrm{corr}(V,\dot{I})>0\) under FreeGSNKE I convention; remaining
+   residual is still active-only gap. `polarity_suspect` / sign-mismatch is YELLOW only for
+   channels still anti-correlated after the declared map.
    Deferred ohmic (P3/P6) residuals score vs I×R_cited, not NaN.
    Default window end is `ip_prepeak_floor` (exclude pre-disruption Ip spike); does not close CS ΔV.
 4. **Picard** (Path B3): optional outer loop — FreeGSNKE forward GS → freeze plasma ψ/B

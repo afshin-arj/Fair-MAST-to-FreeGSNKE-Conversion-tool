@@ -856,14 +856,15 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
         headers = [
             "circuit",
             "drive_label",
-            "gap_status",
+            "gap_status_label",
             "rms_V",
             "i_track_rms_A",
             "rms_plan_minus_dyn_V",
             "mean_bias_plan_minus_meas_V",
+            "mean_bias_early_plan_minus_meas_V",
+            "corr_V_dIdt",
             "rms_RI_V",
             "rms_L_dI_V",
-            "corr_dyn_meas",
             "n",
         ]
         body_rows = [

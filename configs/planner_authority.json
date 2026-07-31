@@ -26,5 +26,5 @@
   "qp_solver": "projected_iter",
   "qp_rel_tol": 1.0e-9,
   "max_qp_iterations": 40,
-  "notes": "ADR-004 Phase 2b / Path B v1.4.0: require_isoflux + require_picard (fail-closed after FreeGSNKE bridge). qp_solver=projected_iter (default) or slsqp. Interactive Plotly I/V HTML alongside static PNGs. Passives blocked on classic-MAST ρ. v11.32 voltage honesty: planned V=RI+L dI/dt is not a FAIR-MAST V-fit; prefer I-track + plan−dyn / voltage_model_gap (polarity_suspect YELLOW only — never auto-flip voltage_map without citation)."
+  "notes": "ADR-004 Phase 2b / Path B v1.4.0: require_isoflux + require_picard (fail-closed after FreeGSNKE bridge). qp_solver=projected_iter (default) or slsqp. Interactive Plotly I/V HTML alongside static PNGs. Passives blocked on classic-MAST ρ. Voltage honesty: planned V=RI+L dI/dt is not a FAIR-MAST V-fit; prefer I-track + plan−dyn / voltage_model_gap. P4/P5 voltage_map sign=-1 (v2.2) restores corr(V,dI/dt)>0; Solenoid early bias is active-only gap (not p1 flip). Remaining polarity_suspect is YELLOW only."
 }

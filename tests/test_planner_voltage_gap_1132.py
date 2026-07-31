@@ -48,19 +48,22 @@ def test_voltages_from_dynamics_gap_identity() -> None:
         dt=dt,
     )
     assert gap["overall_status"] == "model_gap_expected"
-    assert gap["version"] == "1.1"
+    assert gap["version"] == "1.2"
     assert int(gap["n_same_sign_model_gap"]) >= 2  # constant channel has no corr
+    assert gap["overall_status_label"]
     for row in gap["circuits"]:
         assert row["i_track_rms_A"] == pytest.approx(0.0, abs=1e-9)
         assert row["rms_plan_minus_dyn_V"] == pytest.approx(0.0, abs=1e-9)
         assert row["rms_plan_minus_meas_V"] == pytest.approx(50.0, rel=1e-6)
         assert row["mean_bias_plan_minus_meas_V"] == pytest.approx(50.0, rel=1e-6)
+        assert row["mean_bias_early_plan_minus_meas_V"] is not None
         assert row["rms_RI_V"] is not None and row["rms_RI_V"] > 0.0
         assert row["rms_L_dI_V"] is not None
         assert row["gap_status"] == "model_gap_expected"
+        assert "Active-only" in (row.get("gap_status_label") or "")
         if row.get("corr_dyn_meas") is not None and float(row["corr_dyn_meas"]) > 0.0:
             assert row["same_sign_model_gap"] is True
-            assert "NOT a polarity" in (row.get("honesty") or "")
+            assert "not a polarity" in (row.get("honesty") or "").lower()
     assert "auto_flip_solenoid_p1" in gap["do_not"]
     assert "fit_CS_R_to_measured_V" in gap["do_not"]
 
@@ -92,10 +95,29 @@ def test_solenoid_like_gap_annex_fields() -> None:
     assert row["gap_status"] == "model_gap_expected"
     assert row["same_sign_model_gap"] is True
     assert row["mean_bias_plan_minus_meas_V"] == pytest.approx(70.0, rel=1e-5)
+    assert row["mean_bias_early_plan_minus_meas_V"] is not None
+    assert row["corr_V_dIdt"] is not None
     assert row["rms_RI_V"] == pytest.approx(float(np.sqrt(np.mean((R[0] * I[:, 0]) ** 2))), rel=1e-5)
     assert row["rms_L_dI_V"] is not None and np.isfinite(row["rms_L_dI_V"])
     assert gap["n_same_sign_model_gap"] == 1
-    assert "p1" in (row.get("honesty") or "").lower() or "polarity" in (row.get("honesty") or "").lower()
+    honesty = (row.get("honesty") or "").lower()
+    assert "p1" in honesty or "polarity" in honesty or "active-only" in honesty
+
+
+def test_shipped_voltage_map_p4_p5_sign_restores_dIdt() -> None:
+    """v2.2: P4/P5 sign=-1; Solenoid/P2 stay +1 (same-sign model gap, not flip)."""
+    from mast_freegsnke.voltage_map import load_voltage_map, validate_voltage_map
+
+    root = Path(__file__).resolve().parents[1]
+    vmap = load_voltage_map(root / "configs" / "voltage_map.json")
+    rep = validate_voltage_map(vmap)
+    assert not rep.get("errors"), rep.get("errors")
+    assert vmap.version == "2.2"
+    assert int(vmap.circuits["P4"]["sign"]) == -1
+    assert int(vmap.circuits["P5"]["sign"]) == -1
+    assert int(vmap.circuits["Solenoid"]["sign"]) == 1
+    assert int(vmap.circuits["P2_inner"]["sign"]) == 1
+    assert int(vmap.circuits["P2_outer"]["sign"]) == 1
 
     assert (
         _classify_voltage_gap_status(

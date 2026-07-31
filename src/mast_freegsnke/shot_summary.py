@@ -216,13 +216,13 @@ def write_shot_expert_overlay(
     pvg = science_audit.get("planner_voltage_gap") or {}
     pvg_lines = [
         f"| available | {pvg.get('available')} | |",
-        f"| overall | {pvg.get('overall_status', '—')} | polarity_suspect = YELLOW only |",
+        f"| overall | {pvg.get('overall_status', '—')} | {pvg.get('overall_status_label') or 'sign mismatch = YELLOW'} |",
         f"| I-track RMS [A] | {pvg.get('mean_i_track_rms_A', '—')} | primary planner success metric |",
-        f"| plan−dyn RMS [V] | {pvg.get('mean_rms_plan_minus_dyn_V', '—')} | ≪ ΔV ⇒ model gap |",
+        f"| plan−dyn RMS [V] | {pvg.get('mean_rms_plan_minus_dyn_V', '—')} | ≪ ΔV ⇒ active-only gap |",
         f"| ΔV RMS measured [V] | {pvg.get('residual_rms_mean_measured_V', '—')} | annex (not I-plan failure) |",
-        f"| n polarity_suspect | {pvg.get('n_polarity_suspect', '—')} | YELLOW only — no auto-flip |",
-        f"| n model_gap_expected | {pvg.get('n_model_gap_expected', '—')} | active-only vs terminal V |",
-        f"| n same_sign_model_gap | {pvg.get('n_same_sign_model_gap', '—')} | Solenoid ≠ polarity flip |",
+        f"| n sign mismatch | {pvg.get('n_sign_mismatch', pvg.get('n_polarity_suspect', '—'))} | YELLOW — cite map before flip |",
+        f"| n active-only gap | {pvg.get('n_active_only_gap', pvg.get('n_model_gap_expected', '—'))} | RI+L dI/dt vs terminal V |",
+        f"| n same-sign gap | {pvg.get('n_same_sign_model_gap', '—')} | Solenoid early bias ≠ p1 flip |",
     ]
 
     readme = "\n".join(

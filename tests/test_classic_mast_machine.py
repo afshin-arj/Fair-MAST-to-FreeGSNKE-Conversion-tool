@@ -176,8 +176,11 @@ def test_apply_voltage_map_classic_columns(tmp_path: Path) -> None:
     assert list(df["Solenoid"]) == pytest.approx([1.0, 2.0])
     assert list(df["P2_inner"]) == pytest.approx([3.0, 4.0])
     assert list(df["P2_outer"]) == pytest.approx([3.0, 4.0])
-    assert list(df["P4"]) == pytest.approx([5.0, 6.0])
-    assert list(df["P5"]) == pytest.approx([7.0, 8.0])
+    # v2.2: P4/P5 sign=-1 restores FreeGSNKE I-convention consistency
+    assert list(df["P4"]) == pytest.approx([-5.0, -6.0])
+    assert list(df["P5"]) == pytest.approx([-7.0, -8.0])
+    assert int(vmap.circuits["P4"]["sign"]) == -1
+    assert int(vmap.circuits["P5"]["sign"]) == -1
     # ohmic deferred without R
     assert pd.isna(df["P3"]).all()
     assert pd.isna(df["P6"]).all()

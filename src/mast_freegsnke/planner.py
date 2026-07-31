@@ -449,7 +449,14 @@ def _classify_voltage_gap_status(
     corr_dyn_meas: Optional[float],
     corr_dyn_neg_meas: Optional[float],
 ) -> str:
-    """Declared gap status — never invents voltage_map signs."""
+    """Classify voltage residual honesty (stable machine keys).
+
+    Status keys (expert labels via ``voltage_gap_status_label``):
+      deferred_ohmic_ixr  — no FAIR-MAST V; scored vs cited I×R
+      polarity_suspect    — channel sign mismatch vs FreeGSNKE I (YELLOW)
+      model_gap_expected  — active-only RI+L dI/dt vs terminal V
+      i_track_ok          — I-track OK; no large model/sign gap
+    """
     if drive_label == "ohmic_synthetic_IxR":
         return "deferred_ohmic_ixr"
     if (
@@ -471,6 +478,21 @@ def _classify_voltage_gap_status(
     return "unknown"
 
 
+VOLTAGE_GAP_STATUS_LABEL: Dict[str, str] = {
+    "deferred_ohmic_ixr": "Deferred ohmic (I×R cited)",
+    "polarity_suspect": "Channel sign mismatch vs FreeGSNKE I",
+    "model_gap_expected": "Active-only model vs terminal V",
+    "i_track_ok": "I-track OK",
+    "unknown": "Unknown",
+}
+
+
+def voltage_gap_status_label(status: Optional[str]) -> str:
+    """Expert-facing label for a voltage gap status key."""
+    key = str(status or "unknown")
+    return VOLTAGE_GAP_STATUS_LABEL.get(key, key)
+
+
 def _finite_mean_bias(a: np.ndarray, b: np.ndarray) -> Optional[float]:
     """mean(a − b) over finite pairs."""
     a = np.asarray(a, dtype=float).reshape(-1)
@@ -489,6 +511,16 @@ def _finite_rms_abs(a: np.ndarray) -> Optional[float]:
     return float(np.sqrt(np.mean(a[mask] ** 2)))
 
 
+def _early_late_slices(n: int, *, early_frac: float = 0.2) -> Tuple[slice, slice]:
+    """First/last fraction of knots (at least 3 samples when n allows)."""
+    frac = float(early_frac)
+    if not (0.0 < frac < 0.5):
+        frac = 0.2
+    k = max(3, int(round(frac * n)))
+    k = min(k, max(1, n // 2))
+    return slice(0, k), slice(n - k, n)
+
+
 def build_voltage_model_gap(
     *,
     circuit_order: Sequence[str],
@@ -503,28 +535,38 @@ def build_voltage_model_gap(
     L_henry: Optional[np.ndarray] = None,
     dt: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """Decompose planned-vs-measured V into I-track + dynamics model gap + polarity.
+    """Decompose planned-vs-measured V into I-track + dynamics model gap + sign check.
 
     Large ΔV with tiny rms(V_plan−V_dyn) means the QP I-plan is fine; terminal V is
-    outside the active-only plant model (or polarity convention is suspect).
+    outside the active-only plant model (or channel sign still mismatches FreeGSNKE I).
     """
     order = [str(c) for c in circuit_order]
     R = np.asarray(R_ohm, dtype=float).reshape(-1)
     I_m = np.asarray(I_meas, dtype=float)
     n_t, n = I_m.shape
+    early_sl, late_sl = _early_late_slices(n_t)
     V_RI = np.zeros_like(I_m)
     V_LdI = np.zeros_like(I_m)
-    for i in range(min(n, R.size)):
-        V_RI[:, i] = float(R[i]) * I_m[:, i]
+    dI_dt = np.zeros_like(I_m)
     if L_henry is not None and dt is not None and float(dt) > 0.0:
         L = np.asarray(L_henry, dtype=float).reshape(n, n)
         dI = np.diff(I_m, axis=0) / float(dt)
         for k in range(n_t - 1):
+            dI_dt[k] = dI[k]
             V_LdI[k] = L @ dI[k]
+        dI_dt[-1] = dI[-1]
         V_LdI[-1] = L @ dI[-1]
     else:
         # Fallback: inductive remainder of dyn vs ohmic drop
+        for i in range(min(n, R.size)):
+            V_RI[:, i] = float(R[i]) * I_m[:, i]
         V_LdI = np.asarray(V_dyn, dtype=float) - V_RI
+        if dt is not None and float(dt) > 0.0 and n_t >= 2:
+            dI = np.diff(I_m, axis=0) / float(dt)
+            dI_dt[:-1] = dI
+            dI_dt[-1] = dI[-1]
+    for i in range(min(n, R.size)):
+        V_RI[:, i] = float(R[i]) * I_m[:, i]
 
     circuits: List[Dict[str, Any]] = []
     n_polarity = 0
@@ -542,7 +584,12 @@ def build_voltage_model_gap(
         rms_plan_ixr = _finite_rms(V_plan[:, i], V_IxR[:, i])
         corr_dm = _finite_corr(V_dyn[:, i], V_obs[:, i])
         corr_dnm = _finite_corr(V_dyn[:, i], -np.asarray(V_obs[:, i], dtype=float))
+        corr_v_di = _finite_corr(V_obs[:, i], dI_dt[:, i])
         bias = _finite_mean_bias(V_plan[:, i], V_obs[:, i])
+        bias_early = _finite_mean_bias(V_plan[early_sl, i], V_obs[early_sl, i])
+        bias_late = _finite_mean_bias(V_plan[late_sl, i], V_obs[late_sl, i])
+        rms_early = _finite_rms(V_plan[early_sl, i], V_obs[early_sl, i])
+        rms_late = _finite_rms(V_plan[late_sl, i], V_obs[late_sl, i])
         rms_ri = _finite_rms_abs(V_RI[:, i])
         rms_ldi = _finite_rms_abs(V_LdI[:, i])
         status = _classify_voltage_gap_status(
@@ -558,6 +605,12 @@ def build_voltage_model_gap(
             and corr_dm is not None
             and float(corr_dm) > 0.0
         )
+        early_elevated = bool(
+            same_sign_model_gap
+            and bias_early is not None
+            and bias_late is not None
+            and abs(float(bias_early)) > 1.5 * max(abs(float(bias_late)), 1.0)
+        )
         if status == "polarity_suspect":
             n_polarity += 1
         if status == "model_gap_expected":
@@ -565,16 +618,22 @@ def build_voltage_model_gap(
         if same_sign_model_gap:
             n_same_sign_model_gap += 1
         honesty = None
-        if same_sign_model_gap:
+        if status == "polarity_suspect":
             honesty = (
-                "same_sign_model_gap: terminal-V / missing passives-plasma coupling "
-                "(active-only RI+L dI/dt) — NOT a polarity flip candidate "
-                "(do not auto-flip voltage_map / p1)."
+                "Channel sign mismatch: corr(V_dyn,V_meas)<−0.7 while "
+                "corr(V_dyn,−V_meas)>0.7 — YELLOW diagnostic. Cite FAIR-MAST↔FreeGSNKE "
+                "convention in voltage_map before changing sign (see P4/P5 v2.2)."
             )
-        elif status == "polarity_suspect":
+        elif early_elevated:
             honesty = (
-                "polarity_suspect: YELLOW only — cite FAIR-MAST convention before "
-                "any voltage_map sign change."
+                "Active-only model gap elevated early in window (large |dI/dt| + "
+                "missing passives/plasma coupling) — not a Solenoid/p1 sign error; "
+                "plan≈dyn(I_meas) throughout."
+            )
+        elif same_sign_model_gap:
+            honesty = (
+                "Active-only model gap (same-sign): terminal V vs RI+L dI/dt "
+                "(passives/plasma awaiting citation) — not a polarity / p1 flip."
             )
         circuits.append(
             {
@@ -588,11 +647,18 @@ def build_voltage_model_gap(
                 "rms_plan_minus_dyn_V": rms_plan_dyn,
                 "rms_plan_minus_IxR_V": rms_plan_ixr,
                 "mean_bias_plan_minus_meas_V": bias,
+                "mean_bias_early_plan_minus_meas_V": bias_early,
+                "mean_bias_late_plan_minus_meas_V": bias_late,
+                "rms_early_plan_minus_meas_V": rms_early,
+                "rms_late_plan_minus_meas_V": rms_late,
+                "early_window_elevated": early_elevated,
                 "rms_RI_V": rms_ri,
                 "rms_L_dI_V": rms_ldi,
                 "corr_dyn_meas": corr_dm,
                 "corr_dyn_neg_meas": corr_dnm,
+                "corr_V_dIdt": corr_v_di,
                 "gap_status": status,
+                "gap_status_label": voltage_gap_status_label(status),
                 "same_sign_model_gap": same_sign_model_gap,
                 "honesty": honesty,
             }
@@ -604,21 +670,28 @@ def build_voltage_model_gap(
     elif n_model_gap > 0:
         overall = "model_gap_expected"
     return {
-        "version": "1.1",
+        "version": "1.2",
         "overall_status": overall,
+        "overall_status_label": voltage_gap_status_label(overall if overall != "ok" else "i_track_ok"),
         "n_polarity_suspect": int(n_polarity),
         "n_model_gap_expected": int(n_model_gap),
         "n_same_sign_model_gap": int(n_same_sign_model_gap),
+        "n_sign_mismatch": int(n_polarity),
+        "n_active_only_gap": int(n_model_gap),
         "mean_i_track_rms_A": mean_i,
+        "early_frac": 0.2,
         "circuits": circuits,
+        "status_labels": dict(VOLTAGE_GAP_STATUS_LABEL),
         "note": (
             "Planned V = R I + L dI/dt (I-primary QP). "
-            "rms_plan_minus_dyn ≪ rms_plan_minus_meas ⇒ model/terminal-V gap, not failed I-plan. "
-            "Solenoid (CS) same-sign bias is expected under active-only dynamics "
-            "(passives/plasma coupling awaiting citation) — not a p1 polarity bug; "
-            "window trim does not close CS ΔV. "
-            "polarity_suspect: corr(V_dyn,V_meas)<−0.7 and corr(V_dyn,−V_meas)>0.7 — "
-            "YELLOW only; do not auto-flip voltage_map without citation. "
+            "rms_plan_minus_dyn ≪ rms_plan_minus_meas ⇒ active-only model vs terminal V, "
+            "not a failed I-plan. "
+            "Solenoid/CS same-sign bias (often larger early under high |dI/dt|) is "
+            "active-only gap — not a p1 flip; window trim does not close CS ΔV. "
+            "P4/P5 voltage_map sign=-1 (v2.2) restores corr(V,dI/dt)>0 under FreeGSNKE I; "
+            "remaining P4/P5 residual is active-only gap. "
+            "polarity_suspect remains YELLOW for any channel still anti-correlated after "
+            "the declared map — do not auto-flip without citation. "
             "deferred_ohmic_ixr uses cited circuit_dynamics R (not invented); "
             "evolutive ohmic fill may still use FreeGSNKE coil_resist (dual-R honesty)."
         ),
@@ -1389,10 +1462,19 @@ def run_planner_stage(
                 "corr_dyn_meas": g.get("corr_dyn_meas"),
                 "corr_dyn_neg_meas": g.get("corr_dyn_neg_meas"),
                 "mean_bias_plan_minus_meas_V": g.get("mean_bias_plan_minus_meas_V"),
+                "mean_bias_early_plan_minus_meas_V": g.get(
+                    "mean_bias_early_plan_minus_meas_V"
+                ),
+                "mean_bias_late_plan_minus_meas_V": g.get(
+                    "mean_bias_late_plan_minus_meas_V"
+                ),
+                "early_window_elevated": g.get("early_window_elevated"),
                 "rms_RI_V": g.get("rms_RI_V"),
                 "rms_L_dI_V": g.get("rms_L_dI_V"),
+                "corr_V_dIdt": g.get("corr_V_dIdt"),
                 "same_sign_model_gap": g.get("same_sign_model_gap"),
                 "gap_status": g.get("gap_status"),
+                "gap_status_label": g.get("gap_status_label"),
             }
         )
     resid_df = pd.DataFrame(resid_rows)
@@ -1704,8 +1786,8 @@ def run_planner_stage(
             "Passives excluded while passive_resistivity awaiting_authority",
             "P3/P6 deferred_ohmic_synthetic scored vs I×R_cited (not measured-V fits); dual-R vs FreeGSNKE coil_resist possible",
             "Planned V is circuit-dynamics RI+L dI/dt; weight_V≪weight_I so large ΔV≠failed I-plan",
-            "voltage_model_gap: polarity_suspect is YELLOW diagnostic only — never auto-flip voltage_map without citation",
-            "Solenoid/CS same-sign model_gap ≠ polarity flip — do not auto-flip p1 / voltage_map; do not fit CS R to V",
+            "voltage_model_gap: polarity_suspect/sign_mismatch is YELLOW — cite voltage_map before flipping",
+            "P4/P5 voltage_map sign=-1 (v2.2) restores corr(V,dI/dt)>0; Solenoid early bias ≠ p1 flip",
             "Never invents coil I/V limits — citation required",
             "Voltage box limits are fail-closed: over-limit plans raise PlannerError",
             "Ejima ψ_bry requires cited R_p + L_I (never invent / never silent li→L_I)",
@@ -1728,17 +1810,18 @@ def run_planner_stage(
         "",
         f"- status: **{status}**",
         f"- voltage_model_gap: **{gap.get('overall_status')}** "
-        f"(polarity_suspect={gap.get('n_polarity_suspect')}, "
-        f"model_gap_expected={gap.get('n_model_gap_expected')}, "
-        f"same_sign_model_gap={gap.get('n_same_sign_model_gap')})",
+        f"({gap.get('overall_status_label')}; "
+        f"sign_mismatch={gap.get('n_sign_mismatch')}, "
+        f"active_only_gap={gap.get('n_active_only_gap')}, "
+        f"same_sign={gap.get('n_same_sign_model_gap')})",
         f"- mean I-track RMS: {mean_i_track} A",
         f"- mean rms(plan−dyn) measured channels: {mean_rms_plan_minus_dyn} V",
         (
-            "- **Solenoid honesty:** same-sign plan−meas bias on CS is "
-            "`model_gap_expected` (active-only RI+L dI/dt vs terminal V; passives/plasma "
-            "awaiting) — **not** a polarity / p1 flip candidate; window trim does not close CS ΔV."
+            "- **Solenoid / early-window:** elevated early plan−meas bias under large "
+            "|dI/dt| is active-only model gap (plan≈dyn) — **not** a p1 sign flip; "
+            "P4/P5 use voltage_map sign=−1 (v2.2) to match FreeGSNKE I convention."
             if int(gap.get("n_same_sign_model_gap") or 0) > 0
-            else "- Solenoid honesty: no same-sign model_gap channels this run."
+            else "- Voltage honesty: no same-sign active-only gap channels this run."
         ),
         f"- method: `gspulse_python` v1.5 (solver={planner_auth.qp_solver}, "
         f"picard={bool(picard_used)}, "
@@ -1762,12 +1845,13 @@ def run_planner_stage(
     for r in resid_rows:
         md.append(
             f"- **{r['circuit']}** ({r['drive_label']} / {r['residual_compare_class']} / "
-            f"{r.get('gap_status')}): rms={r['rms_V']} V "
+            f"{r.get('gap_status_label') or r.get('gap_status')}): rms={r['rms_V']} V "
             f"(I_rms={r.get('i_track_rms_A')} A; "
             f"plan−dyn={r.get('rms_plan_minus_dyn_V')} V; "
             f"bias={r.get('mean_bias_plan_minus_meas_V')} V; "
-            f"rms_RI={r.get('rms_RI_V')} V; rms_L_dI={r.get('rms_L_dI_V')} V; "
-            f"corr_dyn_meas={r.get('corr_dyn_meas')})"
+            f"early_bias={r.get('mean_bias_early_plan_minus_meas_V')} V; "
+            f"corr_V_dIdt={r.get('corr_V_dIdt')}; "
+            f"rms_RI={r.get('rms_RI_V')} V; rms_L_dI={r.get('rms_L_dI_V')} V)"
         )
     md.append("")
     md.append("## Artifacts")
