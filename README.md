@@ -6,7 +6,7 @@ Classic MAST Level-2 data → FreeGSNKE equilibrium reconstruction → residuals
 
 | | |
 |---|---|
-| **Version** | **11.29.0** |
+| **Version** | **11.30.0** |
 | **Machine** | Classic MAST (not MAST-U) |
 | **Solver** | [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke) only |
 | **EFIT** | Archive compare (ADR-002) — not live EFIT++ / Py-EFIT / efit-ai |

@@ -40,6 +40,134 @@ def apply_equal_aspect_rz(
             pass
 
 
+def _iter_machine_coil_filaments(tokamak: Any) -> List[Tuple[float, float, float, float]]:
+    """Yield (R, Z, half_width_R, half_height_Z) for active (+passive) filaments."""
+    import numpy as np
+
+    out: List[Tuple[float, float, float, float]] = []
+    coil_lists: List[Any] = []
+    coils = getattr(tokamak, "coils", None)
+    if coils is not None:
+        coil_lists.append(coils)
+    for attr in ("passive_coils", "passives"):
+        pas = getattr(tokamak, attr, None)
+        if pas is not None:
+            coil_lists.append(pas)
+
+    for clist in coil_lists:
+        try:
+            entries = list(clist)
+        except Exception:
+            continue
+        for entry in entries:
+            try:
+                coil = entry[1] if isinstance(entry, (list, tuple)) and len(entry) >= 2 else entry
+            except Exception:
+                continue
+            nested = getattr(coil, "coils", None) or [coil]
+            try:
+                nested_iter = list(nested)
+            except Exception:
+                nested_iter = [coil]
+            for item in nested_iter:
+                try:
+                    mc = item[1] if isinstance(item, (list, tuple)) and len(item) >= 2 else item
+                except Exception:
+                    mc = item
+                try:
+                    rf = np.asarray(getattr(mc, "Rfil", getattr(mc, "R", [])), dtype=float).ravel()
+                    zf = np.asarray(getattr(mc, "Zfil", getattr(mc, "Z", [])), dtype=float).ravel()
+                except Exception:
+                    continue
+                if rf.size == 0 or zf.size == 0:
+                    continue
+                try:
+                    dR = float(np.asarray(getattr(mc, "dR", 0.02), dtype=float).ravel()[0])
+                except Exception:
+                    dR = 0.02
+                try:
+                    dZ = float(np.asarray(getattr(mc, "dZ", 0.02), dtype=float).ravel()[0])
+                except Exception:
+                    dZ = 0.02
+                dR = max(abs(dR), 1.0e-3)
+                dZ = max(abs(dZ), 1.0e-3)
+                n = int(min(rf.size, zf.size))
+                for i in range(n):
+                    if np.isfinite(rf[i]) and np.isfinite(zf[i]):
+                        out.append((float(rf[i]), float(zf[i]), dR, dZ))
+    return out
+
+
+def structure_safe_contour_mask(
+    tokamak: Any,
+    R: Any,
+    Z: Any,
+    *,
+    coil_pad: float = 1.35,
+) -> Any:
+    """Boolean mask: True where ψ contours may be drawn.
+
+    Keeps points **inside** the limiter/wall polygon and **outside** active
+    (and passive, if present) coil filament rectangles — so vacuum/open-field
+    contours do not visually cut through the solenoid, PF coils, or limiter.
+    Presentation only; never invents metrology.
+    """
+    import numpy as np
+
+    Rm = np.asarray(R, dtype=float)
+    Zm = np.asarray(Z, dtype=float)
+    if Rm.shape != Zm.shape:
+        return np.ones(Rm.shape, dtype=bool)
+
+    allow = np.ones(Rm.shape, dtype=bool)
+
+    lim = getattr(tokamak, "limiter", None)
+    if lim is not None:
+        try:
+            lr = np.asarray(getattr(lim, "R"), dtype=float).ravel()
+            lz = np.asarray(getattr(lim, "Z"), dtype=float).ravel()
+            m = np.isfinite(lr) & np.isfinite(lz)
+            lr, lz = lr[m], lz[m]
+            if lr.size >= 3:
+                from matplotlib.path import Path as MplPath
+
+                poly = MplPath(np.column_stack([lr, lz]))
+                pts = np.column_stack([Rm.ravel(), Zm.ravel()])
+                allow &= poly.contains_points(pts).reshape(Rm.shape)
+        except Exception:
+            pass
+
+    pad = float(coil_pad) if coil_pad and coil_pad > 0.0 else 1.0
+    for r0, z0, dR, dZ in _iter_machine_coil_filaments(tokamak):
+        hw = pad * float(dR)
+        hh = pad * float(dZ)
+        allow &= ~((np.abs(Rm - r0) <= hw) & (np.abs(Zm - z0) <= hh))
+
+    return allow
+
+
+def mask_psi_for_structure_safe_contours(
+    psi: Any,
+    R: Any,
+    Z: Any,
+    tokamak: Any,
+    *,
+    coil_pad: float = 1.35,
+) -> Any:
+    """Copy of ψ with NaN outside limiter and inside coil rectangles."""
+    import numpy as np
+
+    arr = np.array(np.asarray(psi, dtype=float), copy=True)
+    if tokamak is None:
+        return arr
+    try:
+        allow = structure_safe_contour_mask(tokamak, R, Z, coil_pad=coil_pad)
+        arr[~allow] = np.nan
+    except Exception:
+        pass
+    return arr
+
+
 @dataclass(frozen=True)
 class PresentationAuthority:
     """Declared presentation knobs (snapshotted under inputs/)."""
@@ -54,10 +182,14 @@ class PresentationAuthority:
     # Default curated: Inverse DN honesty — native domain-wide levels pierce coils and
     # hide missing LCFS when xpt empty after restore.
     plot_style: str = "curated"
+    # Vacuum/open-field contours outside LCFS (structure-masked — never through coils).
+    show_open_field: bool = True
+    n_open_contours: int = 6
     notes: str = (
         "PNG frames + GIFs across the finalized formed-plasma window "
         "(linspace_window_inclusive for inverse/forward; evolutive steps for nlstepper). "
-        "Default plot_style=curated (core surfaces + LCFS); freegsnke_native remains "
+        "Default plot_style=curated with structure-masked open-field contours "
+        "(inside limiter, not through solenoid/PF coils). freegsnke_native remains "
         "available for example01a-style tokamak.plot+eq.plot. Not a substitute for "
         "metrics CSVs; skipped/failed solves omit frames."
     )
@@ -77,6 +209,10 @@ class PresentationAuthority:
             raise PresentationError(
                 "plot_style must be 'freegsnke_native' or 'curated'"
             )
+        if not isinstance(self.show_open_field, bool):
+            raise PresentationError("show_open_field must be bool")
+        if not (isinstance(self.n_open_contours, int) and 1 <= int(self.n_open_contours) <= 30):
+            raise PresentationError("n_open_contours must be int in [1, 30]")
         if self.write_equilibrium_gifs and not self.write_eq_frames:
             raise PresentationError(
                 "write_equilibrium_gifs=true requires write_eq_frames=true "
@@ -94,12 +230,14 @@ def load_presentation_authority(path: Path) -> PresentationAuthority:
     if not isinstance(obj, dict):
         raise PresentationError("presentation authority root must be an object")
     auth = PresentationAuthority(
-        version=str(obj.get("version", "1.1")),
+        version=str(obj.get("version", "1.2")),
         write_equilibrium_gifs=bool(obj.get("write_equilibrium_gifs", True)),
         write_eq_frames=bool(obj.get("write_eq_frames", True)),
         gif_fps=float(obj.get("gif_fps", 2.0)),
         gif_dpi=int(obj.get("gif_dpi", 100)),
         plot_style=str(obj.get("plot_style", "curated")),
+        show_open_field=bool(obj.get("show_open_field", True)),
+        n_open_contours=int(obj.get("n_open_contours", 6)),
         notes=str(obj.get("notes", PresentationAuthority.notes)),
     )
     auth.validate()
@@ -486,8 +624,8 @@ def plot_equilibrium_curated(
     tokamak: Any = None,
     *,
     n_core_contours: int = 10,
-    show_open_field: bool = False,
-    n_open_contours: int = 4,
+    show_open_field: bool = True,
+    n_open_contours: int = 6,
     inverse_targets: Optional[Dict[str, Any]] = None,
     dump_lcfs: Optional[Tuple[Any, Any]] = None,
     lcfs_label: str = "LCFS (dump polyline)",
@@ -501,8 +639,10 @@ def plot_equilibrium_curated(
     Optional ``dump_lcfs`` (R,Z) draws a caller-supplied polyline (Inverse dump
     or live Forward LCFS) — prefer live Forward LCFS on Forward frames.
     LCFS polylines are sanitized to the GS domain (no R≤0 / R<Rmin beaks).
+    Open-field contours (default on) are structure-masked: inside limiter only,
+    NaN through solenoid/PF coil filament boxes — Inverse/Forward/Evolutive.
     When ``allow_psi_bndry_lcfs_fallback=False`` (Forward/Evolutive), never
-    substitute a full ψ=ψ_bndry contour that snakes through the solenoid.
+    substitute an unmasked ψ=ψ_bndry contour that snakes through the solenoid.
     """
     import numpy as np
     from numpy import amax, amin, linspace
@@ -555,6 +695,8 @@ def plot_equilibrium_curated(
 
     R = eq.R
     Z = eq.Z
+    # Structure-safe ψ: NaN outside limiter and inside coil/solenoid rectangles.
+    psi_safe = mask_psi_for_structure_safe_contours(psi, R, Z, tokamak)
     drew_core = False
     # Core nested surfaces strictly between axis and boundary (exclusive).
     if np.isfinite(psi_axis) and np.isfinite(psi_bndry) and abs(psi_bndry - psi_axis) > 0.0:
@@ -565,7 +707,7 @@ def plot_equilibrium_curated(
             ax.contour(
                 R,
                 Z,
-                psi,
+                psi_safe,
                 levels=core_levels,
                 colors="0.35",
                 linewidths=0.7,
@@ -602,7 +744,7 @@ def plot_equilibrium_curated(
                 ax.contour(
                     R,
                     Z,
-                    psi,
+                    psi_safe,
                     levels=levels,
                     colors="0.35",
                     linewidths=0.6,
@@ -611,27 +753,29 @@ def plot_equilibrium_curated(
                 drew_core = True
                 if not np.isfinite(psi_bndry):
                     psi_bndry = psi_edge
-    if not drew_core and np.isfinite(psi).any():
-        # Last resort: few muted levels (still better than blank), labeled open-field.
-        pmin, pmax = float(amin(psi)), float(amax(psi))
-        if abs(pmax - pmin) > 0.0:
-            levels = linspace(pmin, pmax, 8)[1:-1]
-            if len(levels) > 0:
-                ax.contour(
-                    R,
-                    Z,
-                    psi,
-                    levels=levels,
-                    colors="0.55",
-                    linewidths=0.45,
-                    alpha=0.45,
-                    linestyles=":",
-                )
-                drew_core = True
+    if not drew_core and np.isfinite(psi_safe).any():
+        # Last resort: few muted levels on structure-safe ψ only.
+        finite = psi_safe[np.isfinite(psi_safe)]
+        if finite.size > 8:
+            pmin, pmax = float(amin(finite)), float(amax(finite))
+            if abs(pmax - pmin) > 0.0:
+                levels = linspace(pmin, pmax, 8)[1:-1]
+                if len(levels) > 0:
+                    ax.contour(
+                        R,
+                        Z,
+                        psi_safe,
+                        levels=levels,
+                        colors="0.55",
+                        linewidths=0.45,
+                        alpha=0.45,
+                        linestyles=":",
+                    )
+                    drew_core = True
 
-    # Optional muted open-field contours outside LCFS (never denser than core).
+    # Open-field / vacuum contours outside LCFS (structure-masked).
     if show_open_field and np.isfinite(psi_bndry):
-        outside = psi[np.isfinite(psi)]
+        outside = psi_safe[np.isfinite(psi_safe)]
         if psi_axis < psi_bndry:
             cand = outside[outside > psi_bndry]
         else:
@@ -641,12 +785,20 @@ def plot_equilibrium_curated(
             ax.contour(
                 R,
                 Z,
-                psi,
+                psi_safe,
                 levels=open_levels,
-                colors="0.65",
-                linewidths=0.4,
-                alpha=0.35,
+                colors="0.55",
+                linewidths=0.45,
+                alpha=0.4,
                 linestyles=":",
+            )
+            ax.plot(
+                [],
+                [],
+                ":",
+                color="0.55",
+                lw=0.8,
+                label="open-field (masked: inside limiter, not through coils)",
             )
 
     # Separatrix / LCFS: prefer sanitized polyline (honest closed boundary).
@@ -673,7 +825,7 @@ def plot_equilibrium_curated(
         ax.contour(
             R,
             Z,
-            psi,
+            psi_safe,
             levels=[psi_bndry],
             colors="r",
             linewidths=2.0,
@@ -682,11 +834,11 @@ def plot_equilibrium_curated(
         ax.plot([], [], "r-", lw=2.0, label="LCFS (primary X ψ)")
         drew_lcfs = True
     elif drew_lcfs and np.isfinite(psi_bndry) and show_open_field:
-        # Optional: faint primary-X isoflux for divertor legs (not default).
+        # Faint primary-X isoflux for divertor legs — structure-masked only.
         ax.contour(
             R,
             Z,
-            psi,
+            psi_safe,
             levels=[psi_bndry],
             colors="r",
             linewidths=0.7,
@@ -715,8 +867,6 @@ def plot_equilibrium_curated(
     ax.grid(alpha=0.25)
     ax.set_xlabel("Major radius [m]")
     ax.set_ylabel("Height [m]")
-    # Honest presentation: vacuum ψ exists at PF coils; open-field contours are
-    # off by default so dashed levels through coil boxes are not read as plasma.
     if not show_open_field:
         ax.plot(
             [],
@@ -724,7 +874,7 @@ def plot_equilibrium_curated(
             ":",
             color="0.65",
             lw=0.8,
-            label="open-field omitted (vacuum ψ at coils; not plasma)",
+            label="open-field omitted",
         )
 
 
@@ -776,8 +926,24 @@ def save_equilibrium_png(
         style = "curated"
 
     label = str(lcfs_label or ("LCFS (dump polyline)" if use_inverse_dump_lcfs else "LCFS (Forward)"))
-    # Forward/Evolutive: never substitute ψ=ψ_bndry contour (snakes through CS).
+    # Forward/Evolutive: never substitute unmasked ψ=ψ_bndry (snakes through CS).
     allow_psi_fallback = bool(use_inverse_dump_lcfs)
+    show_of = True
+    n_open = 6
+    try:
+        inputs_guess = None
+        if run_dir is not None:
+            rd = Path(run_dir)
+            for cand in (rd / "inputs", rd):
+                if (cand / "presentation_authority.json").is_file():
+                    inputs_guess = cand
+                    break
+        if inputs_guess is not None:
+            pres = load_presentation_authority(inputs_guess / "presentation_authority.json")
+            show_of = bool(pres.show_open_field)
+            n_open = int(pres.n_open_contours)
+    except Exception:
+        pass
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -794,6 +960,8 @@ def save_equilibrium_png(
                 dump_lcfs=dump_lcfs,
                 lcfs_label=label,
                 allow_psi_bndry_lcfs_fallback=allow_psi_fallback,
+                show_open_field=show_of,
+                n_open_contours=n_open,
             )
         except Exception as e:
             plt.close(fig)

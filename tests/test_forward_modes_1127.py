@@ -23,7 +23,7 @@ REPO = Path(__file__).resolve().parents[1]
 def test_forward_window_currents_default() -> None:
     b = default_execution_authority_bundle()
     assert b.solver.forward_window_currents == "measured_pf"
-    assert b.authority_version == "11.29.0"
+    assert b.authority_version == "11.30.0"
 
 
 def test_forward_window_currents_load_roundtrip(tmp_path: Path) -> None:

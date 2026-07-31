@@ -1,3 +1,15 @@
+## 11.30.0 — Structure-masked open-field contours (Inverse/Forward/Evolutive)
+
+### Presentation
+- Curated plots default **`show_open_field=True`**: fill white space with vacuum/open-field ψ contours.
+- Contours are **structure-masked**: only **inside the limiter**; NaN through **solenoid / PF coil** filament boxes (and passives if present) — not drawn through copper.
+- Applies to Inverse, Forward, and Evolutive via shared `plot_equilibrium_curated` / `save_equilibrium_png`.
+- Presentation authority: `show_open_field`, `n_open_contours` (defaults on / 6).
+
+### Validate
+- Unit tests for limiter/coil mask + curated defaults.
+- Version **11.30.0**.
+
 ## 11.29.0 — LCFS domain hygiene (no solenoid-crossing red beaks)
 
 ### Presentation / extract

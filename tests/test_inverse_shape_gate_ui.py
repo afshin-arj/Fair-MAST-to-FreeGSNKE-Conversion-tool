@@ -13,12 +13,12 @@ from mast_freegsnke.shot_summary import _KNOWN_LIMITATIONS
 REPO = Path(__file__).resolve().parents[1]
 
 
-def test_plot_equilibrium_curated_open_field_off_by_default() -> None:
+def test_plot_equilibrium_curated_open_field_on_by_default() -> None:
     sig = inspect.signature(plot_equilibrium_curated)
-    assert sig.parameters["show_open_field"].default is False
+    assert sig.parameters["show_open_field"].default is True
     src = inspect.getsource(plot_equilibrium_curated)
-    assert "open-field omitted" in src
-    assert "vacuum ψ" in src or "vacuum" in src
+    assert "mask_psi_for_structure_safe_contours" in src
+    assert "structure-masked" in src or "not through coils" in src
 
 
 def test_inverse_shape_gate_summary_from_result_json(tmp_path: Path) -> None:

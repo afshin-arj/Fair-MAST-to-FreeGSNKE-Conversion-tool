@@ -743,6 +743,8 @@ class ShotPipeline:
                     gif_fps=float(self.cfg.equilibrium_gif_fps),
                     gif_dpi=int(self.cfg.equilibrium_gif_dpi),
                     plot_style="curated",
+                    show_open_field=True,
+                    n_open_contours=6,
                 )
                 pres_path = write_presentation_authority(inputs_dir, pres)
                 _stage(

@@ -27,7 +27,7 @@ _KNOWN_LIMITATIONS = [
     "Static Forward: t0 uses Inverse dump currents (+ dump ψ IC by default); window uses solver.forward_window_currents (default measured_pf; optional inverse_dump_currents = shape DEMO only). Forward plots must use live Forward LCFS (never Inverse dump LCFS); measured-PF Forward is not Inverse DN success. Live LCFS polylines are clipped to the GS domain (R>Rmin, R>0) so separatrix rays through the solenoid are not drawn as plasma. n_converged counts tol-met GS only.",
     "Evolutive frames use live Evolutive LCFS only (never Inverse dump LCFS / Inverse null targets). early_stop=axis_drift is not an Ip-collapse claim (n_passive=0 soft-stop common). Evolutive stays soft-stop until cited ρ exists.",
     "profile_trajectory: richer α only from cited EFIT++ pprime (archive_profiles); scalar_bridge holds authority α — never invent α.",
-    "Equilibrium GIFs are presentation annexes — not a substitute for residual metrics or Ip match. Curated plots omit open-field ψ through PF coils by default (vacuum ψ ≠ plasma).",
+    "Equilibrium GIFs are presentation annexes — not a substitute for residual metrics or Ip match. Curated plots draw structure-masked open-field contours (inside limiter; NaN through solenoid/PF coils) — Inverse/Forward/Evolutive.",
     "04_efit_compare uses FAIR-MAST Level-2 EFIT++ archive products — not a live efit-ai Fortran solve.",
 ]
 
