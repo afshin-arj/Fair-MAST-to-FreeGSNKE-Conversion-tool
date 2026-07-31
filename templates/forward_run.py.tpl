@@ -118,13 +118,59 @@ def _load_multitime_spec(solv: dict) -> dict:
 
 
 def _forward_profile_source(solv: dict) -> str:
-    src = str((solv or {}).get("forward_profile_source", "inverse_dump_frozen") or "inverse_dump_frozen")
-    if src not in {"inverse_dump_frozen", "profile_trajectory"}:
+    src = str(
+        (solv or {}).get("forward_profile_source", "profile_trajectory_if_ok")
+        or "profile_trajectory_if_ok"
+    )
+    if src not in {"inverse_dump_frozen", "profile_trajectory", "profile_trajectory_if_ok"}:
         raise ValueError(
             f"unsupported solver.forward_profile_source={src!r} "
-            "(use inverse_dump_frozen|profile_trajectory)"
+            "(use inverse_dump_frozen|profile_trajectory|profile_trajectory_if_ok)"
         )
     return src
+
+
+def _forward_ic_psi(solv: dict) -> str:
+    src = str((solv or {}).get("forward_ic_psi", "inverse_dump") or "inverse_dump")
+    if src not in {"inverse_dump", "default"}:
+        raise ValueError(
+            f"unsupported solver.forward_ic_psi={src!r} (use inverse_dump|default)"
+        )
+    return src
+
+
+def _apply_forward_ic_psi(eq, dump: dict, grid: dict, ic_mode: str) -> str:
+    """Seed t0 Forward ψ from Inverse dump when declared. Never invent ψ."""
+    if ic_mode == "default":
+        eq.plasma_psi = eq.create_psi_plasma_default(adaptive_centre=True)
+        eq.solved = False
+        return "default"
+    psi = dump.get("plasma_psi")
+    if psi is None:
+        print("[WARN] forward_ic_psi=inverse_dump but dump plasma_psi missing; using default", flush=True)
+        eq.plasma_psi = eq.create_psi_plasma_default(adaptive_centre=True)
+        eq.solved = False
+        return "default_fallback_missing"
+    try:
+        arr = np.asarray(psi, dtype=float)
+        nx, ny = int(grid["nx"]), int(grid["ny"])
+        if arr.shape != (nx, ny) and arr.size != nx * ny:
+            print(
+                f"[WARN] dump plasma_psi shape {arr.shape} != grid ({nx},{ny}); using default",
+                flush=True,
+            )
+            eq.plasma_psi = eq.create_psi_plasma_default(adaptive_centre=True)
+            eq.solved = False
+            return "default_fallback_shape"
+        eq.plasma_psi = arr.reshape(nx, ny) if arr.ndim == 1 else arr
+        eq.solved = False
+        print("[OK] forward_ic_psi: restored Inverse dump plasma_psi", flush=True)
+        return "inverse_dump"
+    except Exception as e:
+        print(f"[WARN] could not restore dump plasma_psi ({e}); using default", flush=True)
+        eq.plasma_psi = eq.create_psi_plasma_default(adaptive_centre=True)
+        eq.solved = False
+        return "default_fallback_error"
 
 
 def _resolve_forward_profile_kwargs(
@@ -143,7 +189,7 @@ def _resolve_forward_profile_kwargs(
     if source_requested == "inverse_dump_frozen":
         return frozen, "inverse_dump_frozen"
 
-    # profile_trajectory path
+    soft = source_requested == "profile_trajectory_if_ok"
     require = False
     try:
         from mast_freegsnke.profile_trajectory import (
@@ -155,6 +201,8 @@ def _resolve_forward_profile_kwargs(
         pol_path = INPUTS / "profile_trajectory_authority" / "profile_trajectory_authority.json"
         if pol_path.exists():
             require = bool(load_profile_trajectory_policy(pol_path).require)
+        if soft:
+            require = False
         traj = try_load_built_trajectory(INPUTS)
         if traj is not None:
             kn = interpolate_profile_at(traj, float(t_i))
@@ -172,7 +220,7 @@ def _resolve_forward_profile_kwargs(
             raise RuntimeError(
                 "solver.forward_profile_source=profile_trajectory but trajectory "
                 f"unavailable/invalid: {e}. Fix profile_trajectory authority or set "
-                "forward_profile_source=inverse_dump_frozen."
+                "forward_profile_source=inverse_dump_frozen|profile_trajectory_if_ok."
             ) from e
         print(
             f"[WARN] profile_trajectory unavailable at t={float(t_i):.6f}: {e}; "
@@ -185,14 +233,60 @@ def _resolve_forward_profile_kwargs(
         raise RuntimeError(
             "solver.forward_profile_source=profile_trajectory but no ok trajectory "
             "under inputs/profile_trajectory_authority/. Build profile_trajectory "
-            "or set forward_profile_source=inverse_dump_frozen."
+            "or set forward_profile_source=inverse_dump_frozen|profile_trajectory_if_ok."
         )
+    if soft:
+        return frozen, "inverse_dump_frozen"
     print(
         f"[WARN] profile_trajectory missing/not-ok at t={float(t_i):.6f}; "
         "falling back to inverse_dump_frozen",
         flush=True,
     )
     return frozen, "inverse_dump_frozen_fallback"
+
+
+def _forward_shape_audit(eq, profiles, dump: dict, ip: float) -> dict:
+    """Label-only Forward shape vs Inverse dump targets (not an acceptance gate)."""
+    out = {
+        "n_opt": None,
+        "n_xpt": None,
+        "topology_hint": "unknown",
+        "vs_inverse_targets": None,
+        "note": "Forward shape labels only — not Inverse shape acceptance.",
+    }
+    try:
+        from mast_freegsnke.inverse_shape_honesty import (
+            critical_points_from_total_psi,
+            score_inverse_shape,
+        )
+
+        crit = critical_points_from_total_psi(eq, ip=float(ip))
+        out["n_opt"] = int(crit.get("n_opt") or 0)
+        out["n_xpt"] = int(crit.get("n_xpt") or 0)
+        nx = int(out["n_xpt"] or 0)
+        if nx >= 2:
+            out["topology_hint"] = "double_null"
+        elif nx == 1:
+            out["topology_hint"] = "single_null"
+        ea = dump.get("execution_authority_bundle") or {}
+        bnd = (ea.get("boundary") or {}) if isinstance(ea, dict) else {}
+        nulls = bnd.get("null_points")
+        if nulls is not None:
+            aud = score_inverse_shape(
+                eq=eq,
+                null_points=nulls,
+                ip=float(ip),
+                null_topology=None,
+                acceptance={"enabled": False},
+            )
+            out["vs_inverse_targets"] = {
+                "shape_status": aud.get("shape_status"),
+                "targets": aud.get("targets"),
+                "fail_reasons": aud.get("fail_reasons"),
+            }
+    except Exception as e:
+        out["error"] = f"{type(e).__name__}: {e}"
+    return out
 
 
 def _live_forward_lcfs(eq):
@@ -480,6 +574,9 @@ def main():
         nx=int(grid["nx"]), ny=int(grid["ny"]),
     )
 
+    _ic_mode = _forward_ic_psi(solv)
+    _ic_psi_used = _apply_forward_ic_psi(eq, dump, grid, _ic_mode)
+
     pk = dump["profile_kwargs"]
     profile_kwargs = {
         "paxis": float(pk["paxis"]),
@@ -561,7 +658,11 @@ def main():
             frames_dir = HERE / "presentation" / "forward_frames"
             per_time = []
             tokamak_pickle = HERE / ".multitime_work" / "tokamak_fwd.pkl"
-            n_ok = 0
+            n_produced = 0
+            n_converged = 0
+            n_completed_max_iter = 0
+            n_timeout = 0
+            n_error = 0
             n_skip = 0
             _plot_style = str(getattr(pres, "plot_style", "curated") or "curated")
             _src_req = _forward_profile_source(solv)
@@ -602,6 +703,7 @@ def main():
                     pf_i=pf_i,
                     tokamak_pickle=tokamak_pickle,
                 )
+                st = str(result.get("status") or "")
                 entry = {
                     "t": float(t_i),
                     "ip": float(ip_i),
@@ -615,12 +717,19 @@ def main():
                     "profile_source_used": src_used,
                 }
                 if result.get("ok"):
-                    n_ok += 1
-                    if pres.write_eq_frames:
-                        # Child restore only copies plasma_psi — re-bind profiles.
-                        _prof_i = ConstrainPaxisIp(
-                            eq=eq, Ip=float(ip_i), **pk_i
+                    n_produced += 1
+                    if st == "converged":
+                        n_converged += 1
+                    elif st == "completed_max_iter":
+                        n_completed_max_iter += 1
+                    _prof_i = ConstrainPaxisIp(eq=eq, Ip=float(ip_i), **pk_i)
+                    try:
+                        entry["shape_audit"] = _forward_shape_audit(
+                            eq, _prof_i, dump, float(ip_i)
                         )
+                    except Exception as _sae:
+                        entry["shape_audit"] = {"error": str(_sae)}
+                    if pres.write_eq_frames:
                         tag = f"eq_t{float(t_i):.6f}".replace(".", "p")
                         png = _save_forward_png(
                             tokamak=tokamak,
@@ -630,6 +739,7 @@ def main():
                             title=(
                                 f"Forward GS measured-PF replay "
                                 f"t={float(t_i):.4f}s Ip={ip_i/1e6:.3f}MA"
+                                + (f" [{st}]" if st == "completed_max_iter" else "")
                             ),
                             dpi=int(pres.gif_dpi),
                             figsize=(4.0, 8.0),
@@ -646,6 +756,10 @@ def main():
                     )
                 else:
                     n_skip += 1
+                    if st == "timeout":
+                        n_timeout += 1
+                    else:
+                        n_error += 1
                     print(
                         f"[SKIP] forward window sample t={float(t_i):.6f}s: {result.get('error')}",
                         flush=True,
@@ -658,20 +772,28 @@ def main():
                         **tb_meta,
                         "per_time": per_time,
                         "solve_mode": "forward_gs",
-                        "n_ok": n_ok,
+                        "n_ok": n_produced,
+                        "n_converged": n_converged,
+                        "n_completed_max_iter": n_completed_max_iter,
+                        "n_timeout": n_timeout,
+                        "n_error": n_error,
                         "n_skipped": n_skip,
+                        "ic_psi_requested": _ic_mode,
+                        "ic_psi_used": _ic_psi_used,
                         "multitime_authority": mt_spec,
                         "profile_source_requested": _src_req,
                         "profile_sources_used": sorted(_src_used_rollup),
                         "note": (
                             "Multi-time forward uses measured PF/Ip at each window sample "
-                            "(not Inverse dump currents). Default profiles freeze Inverse "
-                            "dump paxis/α (forward_profile_source=inverse_dump_frozen); "
-                            "optional profile_trajectory is declared authority only. "
-                            "Plots use live Forward LCFS — never Inverse dump LCFS / Inverse "
-                            "null targets (measured-PF Forward is not Inverse shape acceptance; "
-                            "SN-vs-DN vs Inverse is expected). psi continuation from t0 "
-                            "(unless continuation=false), max_solving_iterations + hard "
+                            "(not Inverse dump currents). Default profile source is "
+                            "profile_trajectory_if_ok (use cited ADR-004 trajectory when ok; "
+                            "else freeze Inverse dump paxis/α). t0 IC defaults to Inverse dump "
+                            "plasma_psi (forward_ic_psi=inverse_dump). Plots use live Forward "
+                            "LCFS — never Inverse dump LCFS / Inverse null targets "
+                            "(measured-PF Forward is not Inverse shape acceptance; SN-vs-DN vs "
+                            "Inverse is expected). n_converged counts tol-met GS only; "
+                            "completed_max_iter still writes frames but is not full success. "
+                            "psi continuation from t0 (unless continuation=false); hard "
                             "per_time_timeout_s kill. Skipped times omit frames; never fabricate."
                         ),
                     },

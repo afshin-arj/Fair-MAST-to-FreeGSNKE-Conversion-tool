@@ -1,3 +1,18 @@
+## 11.25.0 — Forward FreeGSNKE solve: dump ψ IC + trajectory-if-ok + honest convergence
+
+### Solve
+- `solver.forward_ic_psi` default `inverse_dump`: restore Inverse dump `plasma_psi` before t0 GS (never invent).
+- `solver.forward_profile_source` default `profile_trajectory_if_ok`: use cited ADR-004 trajectory when `status=ok`, else freeze dump profiles.
+- Window counts: `n_converged` / `n_completed_max_iter` / `n_timeout` / `n_error` (tol-met vs soft max-iter).
+- Per-time Forward `shape_audit` labels (n_xpt / vs Inverse targets) — not an acceptance gate.
+
+### SUMMARY
+- `forward_gate` surfaces `n_converged`, `ic_psi_used`, profile sources.
+
+### Validate
+- Unit tests for authority defaults + Forward template tokens.
+- Version **11.25.0**.
+
 ## 11.24.0 — Forward plot honesty + profile-source authority
 
 ### Presentation

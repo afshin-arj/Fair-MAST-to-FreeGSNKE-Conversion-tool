@@ -83,10 +83,13 @@ def test_forward_gate_summary_from_times_json(tmp_path: Path) -> None:
             {
                 "n_times": 3,
                 "n_ok": 2,
+                "n_converged": 1,
+                "n_completed_max_iter": 1,
                 "n_skipped": 1,
                 "solve_mode": "forward_gs",
-                "profile_source_requested": "inverse_dump_frozen",
-                "profile_sources_used": ["inverse_dump_frozen"],
+                "ic_psi_used": "inverse_dump",
+                "profile_source_requested": "profile_trajectory_if_ok",
+                "profile_sources_used": ["profile_trajectory"],
                 "note": "measured PF/Ip",
                 "per_time": [],
             }
@@ -98,8 +101,10 @@ def test_forward_gate_summary_from_times_json(tmp_path: Path) -> None:
     gate = forward_gate_summary(run)
     assert gate["available"] is True
     assert gate["n_ok"] == 2
-    assert gate["n_skipped"] == 1
-    assert gate["profile_source_requested"] == "inverse_dump_frozen"
+    assert gate["n_converged"] == 1
+    assert gate["n_completed_max_iter"] == 1
+    assert gate["ic_psi_used"] == "inverse_dump"
+    assert gate["profile_source_requested"] == "profile_trajectory_if_ok"
     assert gate["forward_png_present"] is True
     assert "Inverse dump LCFS" in gate["note"] or "live Forward LCFS" in gate["note"]
 

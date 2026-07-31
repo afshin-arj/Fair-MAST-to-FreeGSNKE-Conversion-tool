@@ -413,16 +413,21 @@ def forward_gate_summary(run_dir: Path) -> Dict[str, Any]:
     out: Dict[str, Any] = {
         "available": False,
         "n_ok": None,
+        "n_converged": None,
+        "n_completed_max_iter": None,
+        "n_timeout": None,
+        "n_error": None,
         "n_skipped": None,
         "n_times": None,
+        "ic_psi_used": None,
         "profile_source_requested": None,
         "profile_sources_used": [],
         "forward_png_present": (run_dir / "forward_equilibrium.png").is_file(),
         "note": (
-            "Static Forward: t0 GS on Inverse dump currents; window = measured PF/Ip. "
-            "Default profiles freeze Inverse dump paxis/α unless "
-            "solver.forward_profile_source=profile_trajectory. Plots must use live "
-            "Forward LCFS (not Inverse dump LCFS). Measured-PF Forward is not Inverse "
+            "Static Forward: t0 GS on Inverse dump currents (optional dump ψ IC); "
+            "window = measured PF/Ip. Default profile_trajectory_if_ok when cited "
+            "trajectory exists. Plots must use live Forward LCFS (not Inverse dump "
+            "LCFS). n_converged = tol-met only; measured-PF Forward is not Inverse "
             "shape acceptance."
         ),
     }
@@ -443,6 +448,20 @@ def forward_gate_summary(run_dir: Path) -> Dict[str, Any]:
     n_ok = int(ft.get("n_ok") or 0)
     n_skip = int(ft.get("n_skipped") or 0)
     n_times = int(ft.get("n_times") or len(ft.get("times") or []) or len(ft.get("per_time") or []) or 0)
+    n_conv = ft.get("n_converged")
+    if n_conv is None:
+        n_conv = sum(
+            1
+            for e in (ft.get("per_time") or [])
+            if isinstance(e, dict) and str(e.get("status") or "") == "converged"
+        )
+    n_maxit = ft.get("n_completed_max_iter")
+    if n_maxit is None:
+        n_maxit = sum(
+            1
+            for e in (ft.get("per_time") or [])
+            if isinstance(e, dict) and str(e.get("status") or "") == "completed_max_iter"
+        )
     srcs = ft.get("profile_sources_used")
     if not isinstance(srcs, list):
         srcs = []
@@ -454,9 +473,14 @@ def forward_gate_summary(run_dir: Path) -> Dict[str, Any]:
         {
             "available": True,
             "n_ok": n_ok,
+            "n_converged": int(n_conv),
+            "n_completed_max_iter": int(n_maxit),
+            "n_timeout": ft.get("n_timeout"),
+            "n_error": ft.get("n_error"),
             "n_skipped": n_skip,
             "n_times": n_times,
             "solve_mode": ft.get("solve_mode"),
+            "ic_psi_used": ft.get("ic_psi_used"),
             "profile_source_requested": ft.get("profile_source_requested"),
             "profile_sources_used": list(srcs),
             "forward_note": ft.get("note"),

@@ -324,9 +324,11 @@ class SolverSpec:
         default_factory=InverseShapeAcceptanceSpec
     )
     inverse_shape_retry: InverseShapeRetrySpec = field(default_factory=InverseShapeRetrySpec)
-    # Static Forward window profile knobs: freeze Inverse dump (default) or
-    # interpolate cited ADR-004 profile_trajectory (never invent).
-    forward_profile_source: str = "inverse_dump_frozen"
+    # Static Forward window profile knobs (never invent):
+    #   inverse_dump_frozen | profile_trajectory | profile_trajectory_if_ok
+    forward_profile_source: str = "profile_trajectory_if_ok"
+    # t0 Forward ψ IC: restore Inverse dump plasma_psi (default) or cold adaptive centre.
+    forward_ic_psi: str = "inverse_dump"
 
     def validate(self) -> None:
         for name, val in [
@@ -340,9 +342,14 @@ class SolverSpec:
         self.inverse_shape_acceptance.validate()
         self.inverse_shape_retry.validate()
         _require(
-            self.forward_profile_source in {"inverse_dump_frozen", "profile_trajectory"},
+            self.forward_profile_source
+            in {"inverse_dump_frozen", "profile_trajectory", "profile_trajectory_if_ok"},
             "SolverSpec: forward_profile_source must be "
-            "'inverse_dump_frozen' or 'profile_trajectory'",
+            "'inverse_dump_frozen', 'profile_trajectory', or 'profile_trajectory_if_ok'",
+        )
+        _require(
+            self.forward_ic_psi in {"inverse_dump", "default"},
+            "SolverSpec: forward_ic_psi must be 'inverse_dump' or 'default'",
         )
 
 
@@ -470,12 +477,13 @@ def default_execution_authority_bundle(metrics_n_times: int = 21) -> ExecutionAu
             max_solving_iterations=80,
             l2_reg_default=1.0e-9,
         ),
-        forward_profile_source="inverse_dump_frozen",
+        forward_profile_source="profile_trajectory_if_ok",
+        forward_ic_psi="inverse_dump",
     )
 
     return ExecutionAuthorityBundle(
         authority_name="freegsnke_execution_authority",
-        authority_version="11.24.0",
+        authority_version="11.25.0",
         grid=grid,
         profile=profile,
         profile_basis=profile_basis,
@@ -550,7 +558,11 @@ def load_execution_authority_bundle(bundle_path: Path) -> ExecutionAuthorityBund
     # Tolerate older bundles missing new keys (defaults apply).
     acceptance = InverseShapeAcceptanceSpec(**acc_obj) if acc_obj else InverseShapeAcceptanceSpec()
     retry = InverseShapeRetrySpec(**retry_obj) if retry_obj else InverseShapeRetrySpec()
-    fwd_src = str(obj["solver"].get("forward_profile_source", "inverse_dump_frozen") or "inverse_dump_frozen")
+    fwd_src = str(
+        obj["solver"].get("forward_profile_source", "profile_trajectory_if_ok")
+        or "profile_trajectory_if_ok"
+    )
+    fwd_ic = str(obj["solver"].get("forward_ic_psi", "inverse_dump") or "inverse_dump")
     solver = SolverSpec(
         inverse_target_relative_tolerance=obj["solver"]["inverse_target_relative_tolerance"],
         inverse_target_relative_psit_update=obj["solver"]["inverse_target_relative_psit_update"],
@@ -560,6 +572,7 @@ def load_execution_authority_bundle(bundle_path: Path) -> ExecutionAuthorityBund
         inverse_shape_acceptance=acceptance,
         inverse_shape_retry=retry,
         forward_profile_source=fwd_src,
+        forward_ic_psi=fwd_ic,
     )
     passive = PassiveStructureSpec(**obj.get("passive_structure", {}))
     metrics_timebase = MetricsTimebaseSpec(**obj.get("metrics_timebase", {}))

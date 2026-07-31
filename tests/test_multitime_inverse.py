@@ -46,7 +46,7 @@ def test_multitime_solve_spec_defaults_and_validation() -> None:
 def test_execution_authority_writes_multitime_solver_knobs(tmp_path: Path) -> None:
     root = write_execution_authority(tmp_path, metrics_n_times=5)
     bundle = load_execution_authority_bundle(root / "execution_authority_bundle.json")
-    assert bundle.authority_version == "11.24.0"
+    assert bundle.authority_version == "11.25.0"
     assert bundle.solver.multitime.preferred_mode == "full_inverse"
     assert bundle.solver.multitime.fresh_constrain_per_time is True
     assert bundle.solver.multitime.max_solving_iterations == 50
@@ -54,14 +54,16 @@ def test_execution_authority_writes_multitime_solver_knobs(tmp_path: Path) -> No
     assert bundle.solver.inverse_shape_acceptance.enabled is True
     assert bundle.solver.inverse_shape_acceptance.on_fail == "label_only"
     assert bundle.solver.inverse_shape_retry.max_retries == 1
-    assert bundle.solver.forward_profile_source == "inverse_dump_frozen"
+    assert bundle.solver.forward_profile_source == "profile_trajectory_if_ok"
+    assert bundle.solver.forward_ic_psi == "inverse_dump"
 
     raw = json.loads((root / "solver_spec.json").read_text())
     assert "multitime" in raw
     assert raw["multitime"]["preferred_mode"] == "full_inverse"
     assert "inverse_shape_acceptance" in raw
     assert "inverse_shape_retry" in raw
-    assert raw["forward_profile_source"] == "inverse_dump_frozen"
+    assert raw["forward_profile_source"] == "profile_trajectory_if_ok"
+    assert raw["forward_ic_psi"] == "inverse_dump"
 
 
 def test_execution_authority_loads_legacy_bundle_without_forward_profile_source(
@@ -71,9 +73,11 @@ def test_execution_authority_loads_legacy_bundle_without_forward_profile_source(
     bundle_path = root / "execution_authority_bundle.json"
     obj = json.loads(bundle_path.read_text())
     del obj["solver"]["forward_profile_source"]
+    del obj["solver"]["forward_ic_psi"]
     bundle_path.write_text(json.dumps(obj, indent=2) + "\n")
     loaded = load_execution_authority_bundle(bundle_path)
-    assert loaded.solver.forward_profile_source == "inverse_dump_frozen"
+    assert loaded.solver.forward_profile_source == "profile_trajectory_if_ok"
+    assert loaded.solver.forward_ic_psi == "inverse_dump"
 
 
 def test_execution_authority_loads_legacy_bundle_without_shape_gate(tmp_path: Path) -> None:
@@ -253,8 +257,12 @@ def test_forward_template_plot_honesty_and_profile_source() -> None:
     assert "use_inverse_targets=False" in tpl
     assert "LCFS (Forward)" in tpl
     assert "forward_profile_source" in tpl
-    assert "inverse_dump_frozen" in tpl
-    assert "profile_trajectory" in tpl
+    assert "profile_trajectory_if_ok" in tpl
+    assert "forward_ic_psi" in tpl
+    assert "_apply_forward_ic_psi" in tpl
+    assert "n_converged" in tpl
+    assert "n_completed_max_iter" in tpl
+    assert "_forward_shape_audit" in tpl
     assert '_plot_style = str(getattr(pres, "plot_style", "curated")' in tpl or 'plot_style", "curated"' in tpl
     # Must not silently default Forward plots to freegsnke_native.
     assert 'plot_style", "freegsnke_native"' not in tpl
