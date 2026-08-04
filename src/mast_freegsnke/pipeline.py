@@ -963,7 +963,19 @@ class ShotPipeline:
                         ejima_status=ps_auth.ejima.status,
                     )
                 except Exception as e:
-                    _stage("plasma_scalars_authority", True, note=f"snapshot_failed:{e}")
+                    if self.cfg.execute_planner:
+                        blocking_errors.append(
+                            f"plasma_scalars_authority_failed: {type(e).__name__}: {e}"
+                        )
+                        _stage("plasma_scalars_authority", False, error=str(e))
+                    else:
+                        _stage("plasma_scalars_authority", True, note=f"snapshot_failed:{e}")
+            elif self.cfg.execute_planner:
+                blocking_errors.append(
+                    "plasma_scalars_authority_required: set plasma_scalars_authority_path "
+                    "when execute_planner=true"
+                )
+                _stage("plasma_scalars_authority", False, note="missing_path")
             else:
                 _stage("plasma_scalars_authority", True, note="no_path")
 
@@ -1390,7 +1402,24 @@ class ShotPipeline:
                         )
                         _stage("shape_targets", False, error=str(e))
             elif self.cfg.build_shape_targets:
-                _stage("shape_targets", True, note="no_window_soft_skip")
+                # Mirror profile_trajectory: honor require when window is missing.
+                _req_st = True
+                try:
+                    from .shape_targets import load_shape_targets_authority
+
+                    st_path0 = _resolve_config_path(
+                        self.cfg.shape_targets_authority_path, repo_root
+                    )
+                    if st_path0 is not None and st_path0.exists():
+                        _req_st = bool(load_shape_targets_authority(st_path0).require)
+                except Exception:
+                    _req_st = True
+                msg = "shape_targets skipped: window.json not finalized"
+                if _req_st:
+                    blocking_errors.append(msg)
+                    _stage("shape_targets", False, note="no_window")
+                else:
+                    _stage("shape_targets", True, note="no_window_soft_skip")
             else:
                 _stage("shape_targets", True, note="build_shape_targets=false")
 
@@ -1541,7 +1570,14 @@ class ShotPipeline:
                             _stage("torax_geometry_export", False, path=str(geqdsk_path))
 
                     # Evolutive forward (FAIR-MAST voltages) after successful inverse IC
-                    if self.cfg.execute_evolutive:
+                    if self.cfg.execute_evolutive and blocking_errors:
+                        _stage(
+                            "evolutive_execute",
+                            False,
+                            note="skipped_blocking_errors",
+                            blocking_errors=list(blocking_errors),
+                        )
+                    elif self.cfg.execute_evolutive:
                         evo_script = run_dir / "evolutive_run.py"
                         if not evo_script.exists():
                             blocking_errors.append("missing_evolutive_run.py")
@@ -1794,6 +1830,11 @@ class ShotPipeline:
                                 + ("; ".join(ecr.errors) or "unknown")
                                 + (f" | {ecr.fix_hint}" if ecr.fix_hint else "")
                             )
+                        else:
+                            degraded_notes.append(
+                                "efit_compare_soft_fail:"
+                                + ("; ".join(ecr.errors[:3]) or "unknown")
+                            )
                 except Exception as e:
                     _stage("efit_compare", False, error=str(e))
                     efit_compare_report = {"ok": False, "errors": [str(e)]}
@@ -1808,13 +1849,24 @@ class ShotPipeline:
                         )
                         if ec_snap.exists() and load_efit_compare_authority(ec_snap).fail_closed_if_missing:
                             blocking_errors.append(f"efit_compare_exception: {type(e).__name__}: {e}")
+                        else:
+                            degraded_notes.append(
+                                f"efit_compare_exception:{type(e).__name__}:{e}"
+                            )
                     except Exception:
-                        pass
+                        degraded_notes.append(f"efit_compare_exception:{type(e).__name__}:{e}")
+            elif self.cfg.compare_efit_archive:
+                _stage(
+                    "efit_compare",
+                    False,
+                    note="skipped_no_shot_cache",
+                )
+                degraded_notes.append("efit_compare_skipped_no_shot_cache")
             else:
                 _stage(
                     "efit_compare",
                     True,
-                    note="compare_efit_archive=false_or_no_cache",
+                    note="compare_efit_archive=false",
                 )
 
             # ADR-006: GSFit live peer (after FreeGSNKE + EFIT archive compare; soft-skip while awaiting)
@@ -2182,13 +2234,26 @@ class ShotPipeline:
                             cache_dir=shot_cache,
                             timeout_s=self.cfg.freegsnke_script_timeout_s,
                         )
+                        plan_ok = True
+                        plan_status = str(prep.get("status") or "ok")
+                        if prep.get("ok") is False:
+                            plan_ok = False
+                        if plan_status in {
+                            "voltage_exceeds_measured_peak_margin",
+                            "voltage_limit_violations",
+                            "awaiting_authority",
+                        }:
+                            plan_ok = False
+                            degraded_notes.append(f"planner_status:{plan_status}")
                         _stage(
                             "planner",
-                            True,
+                            plan_ok,
                             path=prep.get("path"),
                             n_knots=prep.get("n_knots"),
                             residual_rms=prep.get("residual_rms_by_circuit"),
                             n_voltage_violations=prep.get("n_voltage_violations_raw"),
+                            status=plan_status,
+                            note=None if plan_ok else plan_status,
                         )
                         if self.cfg.execute_evolutive_from_plan:
                             from .evolutive_from_plan import run_evolutive_from_plan_stage

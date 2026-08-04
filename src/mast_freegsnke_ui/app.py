@@ -308,6 +308,7 @@ def create_app(
                 className="shot-dossier-bar mb-3",
             ),
             dcc.Store(id="kbd-bound", data=False),
+            html.Button(id="kbd-flush", n_clicks=0, style={"display": "none"}),
             html.Div(id="kbd-sink", style={"display": "none"}),
             dbc.Row(
                 [
@@ -529,9 +530,10 @@ def create_app(
     )
 
     # Keyboard shortcuts + clipboard for [data-clipboard-text] (bound once).
+    # Drain pending keys immediately via hidden #kbd-flush click (not only on poll).
     app.clientside_callback(
         """
-        function(n, bound, refresh) {
+        function(nPoll, nFlush, bound, refresh) {
             if (!window.__fgConsoleBound) {
                 window.__fgConsoleBound = true;
                 window.__fgPendingTab = null;
@@ -546,12 +548,20 @@ def create_app(
                         e.preventDefault();
                         const el = document.getElementById('shot-input');
                         if (el) { el.focus(); if (el.select) el.select(); }
+                        return;
                     }
+                    let pending = false;
                     if (e.key === 'r' || e.key === 'R') {
                         window.__fgPendingRefresh = true;
+                        pending = true;
                     }
                     if (e.key >= '1' && e.key <= '9') {
                         window.__fgPendingTab = tabs[parseInt(e.key, 10) - 1] || null;
+                        pending = true;
+                    }
+                    if (pending) {
+                        const flush = document.getElementById('kbd-flush');
+                        if (flush) { flush.click(); }
                     }
                 });
                 document.addEventListener('click', function(e) {
@@ -581,6 +591,7 @@ def create_app(
         Output("refresh-token", "data", allow_duplicate=True),
         Output("kbd-bound", "data"),
         Input("poll", "n_intervals"),
+        Input("kbd-flush", "n_clicks"),
         State("kbd-bound", "data"),
         State("refresh-token", "data"),
         prevent_initial_call=True,
@@ -1095,7 +1106,10 @@ def create_app(
 
         # Cache heavy tab bodies (Compare / Planner / EFIT) so switching back is instant.
         # Key includes results fingerprint + refresh token so rebuilds stay honest.
+        # btn-refresh must bust cache even when fingerprint is unchanged.
         refresh_sig = str(_refresh_token or "")
+        if triggered == "btn-refresh":
+            refresh_sig = f"{refresh_sig}|btn:{_n_refresh or 0}"
         if tid == "compare":
             lib_fp_now = _library_fingerprint(runs_dir, cache_dir=cache_dir)
             try:

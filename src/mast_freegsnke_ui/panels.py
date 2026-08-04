@@ -162,6 +162,24 @@ def accordion(sections: List[tuple[str, Any, bool]], *, always_open: bool = True
     )
 
 
+def _stage_is_soft_skip(st: Dict[str, Any]) -> bool:
+    """Soft-skip / awaiting stages are not hard FAIL and count toward progress."""
+    if bool(st.get("ok")):
+        return False
+    status_s = str(st.get("status") or "").lower()
+    note_l = str(st.get("note") or "").lower()
+    return (
+        status_s in {"awaiting_authority", "skipped", "soft_skip"}
+        or note_l.startswith("skipped")
+        or note_l.startswith("skip")
+        or "awaiting" in note_l
+        or note_l.startswith("snapshot_only")
+        or "false_or_no" in note_l
+        or note_l.startswith("compare_efit_archive=false")
+        or (note_l.startswith("execute_") and "false" in note_l)
+    )
+
+
 def stage_progress_bar(progress: Optional[Dict[str, Any]], running: bool) -> Any:
     html, _, dbc = _require()
     if not progress:
@@ -170,7 +188,8 @@ def stage_progress_bar(progress: Optional[Dict[str, Any]], running: bool) -> Any
     if not stages and not running:
         return html.Div(className="stage-progress-wrap")
     n = max(len(stages), 1)
-    done = sum(1 for s in stages if s.get("ok"))
+    done = sum(1 for s in stages if s.get("ok") or _stage_is_soft_skip(s))
+    n_skip = sum(1 for s in stages if _stage_is_soft_skip(s))
     overall = str((progress or {}).get("status") or "")
     blocking = list((progress or {}).get("blocking_errors") or [])
     hard_fail = overall == "failed" or bool(blocking)
@@ -181,11 +200,14 @@ def stage_progress_bar(progress: Optional[Dict[str, Any]], running: bool) -> Any
         color = "info"
     elif hard_fail:
         color = "danger"
-    elif overall == "success" or (done == n and n):
-        color = "success"
+    elif overall in {"success", "degraded"} or (done == n and n):
+        color = "success" if overall != "degraded" else "warning"
     else:
         color = "secondary"
-    label = f"{done}/{n} stages" + (" · running" if running else "")
+    label = f"{done}/{n} stages"
+    if n_skip:
+        label += f" ({n_skip} skip)"
+    label += (" · running" if running else "")
     return html.Div(
         [
             html.Div(
@@ -234,15 +256,7 @@ def stage_timeline(progress: Optional[Dict[str, Any]], running: bool) -> Any:
         err = st.get("error") or st.get("error_hint")
         is_current = name == current and running
         note = st.get("note")
-        status_s = str(st.get("status") or "").lower()
-        note_l = str(note or "").lower()
-        soft_skip = (not ok) and (
-            status_s in {"awaiting_authority", "skipped", "soft_skip"}
-            or "skip" in note_l
-            or "awaiting" in note_l
-            or note_l.startswith("snapshot_only")
-            or "false_or_no" in note_l
-        )
+        soft_skip = _stage_is_soft_skip(st)
         cls = "stage-item"
         if is_current:
             cls += " stage-active"
@@ -290,6 +304,8 @@ def stage_timeline(progress: Optional[Dict[str, Any]], running: bool) -> Any:
 def _media_mode_label(path: Path) -> Optional[str]:
     name = path.name.lower()
     rel = str(path).replace("\\", "/").lower()
+    if "side_by_side" in name or name.startswith("sbs_") or "/04_efit_compare/" in rel or "/efit_compare/" in rel:
+        return "efit_sbs"
     if "evolutive_plan" in name or "/evolutive_plan/" in rel:
         return "evolutive_plan"
     if "evolutive" in name or "/evolutive/" in rel:
@@ -1433,6 +1449,31 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
     ]
     rest = [p for p in other if p not in static_first]
     ordered_plots = sbs + static_first + rest
+    sbs_meta = art._safe_json(Path(run_dir) / "04_efit_compare" / "plots" / "side_by_side_meta.json")
+    if not isinstance(sbs_meta, dict):
+        sbs_meta = art._safe_json(Path(run_dir) / "efit_compare" / "plots" / "side_by_side_meta.json")
+    sbs_caption_children: List[Any] = []
+    if isinstance(sbs_meta, dict):
+        chips_row = []
+        if sbs_meta.get("freegsnke_source"):
+            chips_row.append(chip("SBS source", sbs_meta.get("freegsnke_source"), tone="warn"))
+        if sbs_meta.get("freegsnke_psi_kind"):
+            chips_row.append(chip("ψ", sbs_meta.get("freegsnke_psi_kind"), tone="warn"))
+        if chips_row:
+            sbs_caption_children.append(html.Div(chips_row, className="compare-chip-row mb-2"))
+        notes = sbs_meta.get("notes")
+        note_list = notes if isinstance(notes, list) else ([notes] if notes else [])
+        for n in note_list[:6]:
+            if n:
+                sbs_caption_children.append(html.P(str(n), className="small text-muted mb-1"))
+    if not sbs_caption_children:
+        sbs_caption_children.append(
+            html.P(
+                "Left: FreeGSNKE LCFS (+ ψ when dumped) with Inverse X/O targets when shape_targets "
+                "remapped the boundary. Right: FAIR-MAST EFIT++ archive. ψ color scales are independent.",
+                className="small text-muted",
+            )
+        )
     return html.Div(
         [
             tab_banner(
@@ -1454,15 +1495,7 @@ def efit_panel(shot: int, run_dir: Path) -> Any:
                         "FreeGSNKE | EFIT++ side-by-side",
                         html.Div(
                             [
-                                html.P(
-                                    "Left: FreeGSNKE LCFS (+ total ψ when dumped) with Inverse "
-                                    "X/O targets (+/o) when shape_targets remapped the boundary. "
-                                    "Solved primary × sits on ψ_bndry; secondary gray × are off-LCFS. "
-                                    "Right: FAIR-MAST EFIT++ archive ψ/LCFS. "
-                                    "SN: LCFS through one divertor tip; DN: both upper+lower tips. "
-                                    "ψ color scales are independent.",
-                                    className="small text-muted",
-                                ),
+                                html.Div(sbs_caption_children, className="mb-2"),
                                 media_gallery(
                                     shot,
                                     sbs[:_MAX_GALLERY],

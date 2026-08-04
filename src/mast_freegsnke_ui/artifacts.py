@@ -1411,6 +1411,7 @@ def results_fingerprint(run_dir: Optional[Path]) -> str:
         "07_planner/PLANNER.json",
         "04_efit_compare/COMPARE.json",
         "04_efit_compare/shape_scorecard.json",
+        "04_efit_compare/plots/side_by_side_meta.json",
         "08_gsfit/GSFIT.json",
         "03_reconstruction/metrics/reconstruction_metrics.json",
         "03_reconstruction/evolutive/evolutive_meta.json",
@@ -1423,4 +1424,18 @@ def results_fingerprint(run_dir: Optional[Path]) -> str:
                 parts.append(f"{rel}:{st.st_mtime_ns}:{st.st_size}")
         except OSError:
             parts.append(rel)
+    # Directory mtimes catch plot/GIF-only updates that leave JSON unchanged.
+    for drel in (
+        "03_reconstruction/presentation",
+        "03_reconstruction/evolutive",
+        "04_efit_compare/plots",
+        "07_planner",
+    ):
+        d = run_dir / drel
+        try:
+            if d.is_dir():
+                st = d.stat()
+                parts.append(f"{drel}/:{st.st_mtime_ns}")
+        except OSError:
+            parts.append(drel)
     return "|".join(parts)

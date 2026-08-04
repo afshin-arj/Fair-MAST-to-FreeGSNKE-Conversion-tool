@@ -109,6 +109,9 @@ def test_config_json_defaults_for_new_keys(tmp_path: Path) -> None:
     cfg = AppConfig.load(p)
     assert cfg.allow_cache_reuse is True
     assert cfg.batch_abort_on_failure is False
+    assert cfg.s3_no_sign_request is True
+    assert "{prefix}/{shot}.zarr/{group}" in cfg.s3_layout_patterns
+    assert "equilibrium" in cfg.optional_groups
 
 
 def test_default_config_enables_cache_reuse() -> None:

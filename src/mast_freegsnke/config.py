@@ -140,11 +140,27 @@ class AppConfig:
         # Normalize + defaults
         mastapp_base_url = str(obj.get("mastapp_base_url", "https://mastapp.site/json")).rstrip("/")
         required_groups = list(obj.get("required_groups", ["pf_active", "magnetics", "wall"]))
-        optional_groups = list(obj.get("optional_groups", ["pf_passive"]))
+        optional_groups = list(
+            obj.get(
+                "optional_groups",
+                [
+                    "pf_passive",
+                    "equilibrium",
+                    "summary",
+                    "pulse_schedule",
+                    "spectrometer_visible",
+                    "soft_x_rays",
+                    "thomson_scattering",
+                    "charge_exchange",
+                    "gas_injection",
+                ],
+            )
+        )
         level2_s3_prefix = str(obj.get("level2_s3_prefix", ""))
         s5cmd_path = str(obj.get("s5cmd_path", "s5cmd"))
         s3_endpoint_url = (str(obj["s3_endpoint_url"]) if obj.get("s3_endpoint_url") else None)
-        s3_no_sign_request = bool(obj.get("s3_no_sign_request", False))
+        # Match shipped configs/default.json — False here silently breaks public Echo S3.
+        s3_no_sign_request = bool(obj.get("s3_no_sign_request", True))
         s5cmd_timeout_s = int(obj.get("s5cmd_timeout_s", 60))
         runs_dir = Path(obj.get("runs_dir", "SHOT"))
         cache_dir = Path(obj.get("cache_dir", "data_cache"))
@@ -169,6 +185,8 @@ class AppConfig:
             )
         allow_missing_geometry = bool(obj.get("allow_missing_geometry", False))
 
+        # execute_* stay False when omitted so minimal/partial JSON configs remain
+        # opt-in (shipped configs/default.json sets the shot-only happy path on).
         execute_freegsnke = bool(obj.get("execute_freegsnke", False))
         freegsnke_run_mode = str(obj.get("freegsnke_run_mode", "none")).lower()
         freegsnke_python = (str(obj["freegsnke_python"]) if obj.get("freegsnke_python") else None)
@@ -321,10 +339,13 @@ class AppConfig:
                     f"freegsnke_script_timeout_s must be > 0 or null (got {freegsnke_script_timeout_s})"
                 )
 
+        # Match shipped configs/default.json shot-centric layouts (legacy group-first
+        # patterns silently miss FAIR-MAST Level-2 trees on Echo).
         s3_layout_patterns = list(obj.get("s3_layout_patterns", [
-            "{prefix}/{group}/shot_{shot}.zarr",
-            "{prefix}/shot_{shot}/{group}.zarr",
-            "{prefix}/shot_{shot}_{group}.zarr",
+            "{prefix}/{shot}.zarr/{group}",
+            "{prefix}/{shot}.zarr/{group}/*",
+            "{prefix}/shot_{shot}.zarr/{group}",
+            "{prefix}/shot_{shot}.zarr/{group}/*",
         ]))
 
         return AppConfig(

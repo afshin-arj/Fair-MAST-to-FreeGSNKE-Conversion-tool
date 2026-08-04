@@ -1,3 +1,24 @@
+## 11.34.2 — Remaining UI/core honesty
+
+### Core
+- **AppConfig.load:** `s3_no_sign_request` default True; shot-centric `s3_layout_patterns`; richer `optional_groups` (match shipped default.json). execute_* remain opt-in when omitted.
+- **Evolutive** skipped when `blocking_errors` already set (no burn after forward fail).
+- **EFIT compare** soft-fail / no-cache → `degraded_notes` (overall `degraded`, not quiet success).
+- **shape_targets** no-window path honors `require` (mirror profile_trajectory).
+- **plasma_scalars** snapshot failure / missing path blocks when `execute_planner=true`.
+- **Planner** stage ok/status from prep (limit overruns → degraded).
+
+### UI
+- **Refresh** busts tab-body cache (was a no-op on cache hit).
+- Keyboard 1–9 / `r` flush immediately via hidden `#kbd-flush` (not poll-gated).
+- Soft-skips count toward stage progress; `degraded` bar tone.
+- EFIT SBS caption/chips from `side_by_side_meta.json`; media badge `efit_sbs`.
+- Results fingerprint includes plot-dir mtimes + SBS meta.
+
+### Validate
+- Config partial-JSON S3 layout / no-sign defaults.
+- Version **11.34.2**.
+
 ## 11.34.1 — UI + core honesty fixes
 
 ### Core
