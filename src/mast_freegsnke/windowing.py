@@ -206,9 +206,11 @@ def apply_window_end_policy(
     the |Ip| peak where ``|Ip| < end_ip_frac * Ip_peak``, clamped to the prior ``t_end``.
     If no post-peak floor crossing exists, keep the prior ``t_end``.
 
-    ``ip_prepeak_floor``: keep ``t_start``; set ``t_end`` to the last sample *before*
-    the |Ip| peak where ``|Ip| < end_ip_frac * Ip_peak``, clamped to the prior ``t_end``.
-    Excludes the rise into a pre-disruption Ip spike (measured-Ip only).
+    ``ip_prepeak_floor``: keep ``t_start``; when the |Ip| peak inside the formed
+    window sits in the late portion (≥65% of the window span — a pre-disruption
+    spike), set ``t_end`` to the last sample *before* that peak where
+    ``|Ip| < end_ip_frac * Ip_peak``, clamped to the prior ``t_end``. Mid-window
+    flattop peaks do not cut. Missing/empty Ip fails closed.
     """
     pol = str(policy or "none").strip().lower()
     if pol in ("", "none", "threshold_end", "formed_threshold"):
@@ -224,14 +226,9 @@ def apply_window_end_policy(
 
     loaded = _load_ip_series(Path(inputs_dir))
     if loaded is None:
-        note = (window.note or "") + f"|window_end_policy={pol}:no_ip_series"
-        return TimeWindow(
-            t_start=window.t_start,
-            t_end=window.t_end,
-            source=window.source,
-            signal_column=window.signal_column,
-            threshold=window.threshold,
-            note=note.lstrip("|"),
+        raise ValueError(
+            f"window_end_policy={pol} requires a measurable Ip series under {inputs_dir} "
+            "(ip.csv / magnetics); refusing soft continue that leaves the declared policy unapplied"
         )
 
     t, y, ip_label, ip_col = loaded
@@ -241,23 +238,22 @@ def apply_window_end_policy(
         if yi is not None and not (isinstance(yi, float) and math.isnan(yi))
     ]
     if not pairs:
-        note = (window.note or "") + f"|window_end_policy={pol}:empty_ip"
-        return TimeWindow(
-            t_start=window.t_start,
-            t_end=window.t_end,
-            source=window.source,
-            signal_column=window.signal_column,
-            threshold=window.threshold,
-            note=note.lstrip("|"),
+        raise ValueError(
+            f"window_end_policy={pol}: Ip series loaded from {ip_label} but all values are empty/NaN"
         )
 
-    # Peak |Ip| (global; then require peak time within/near the formed window)
-    i_peak = max(range(len(pairs)), key=lambda i: abs(pairs[i][1]))
-    t_peak, y_peak = pairs[i_peak]
+    t0 = float(window.t_start)
+    t1 = float(window.t_end)
+    # Peak search is constrained to the formed window (not global pulse extremes).
+    in_win = [(ti, yi) for ti, yi in pairs if t0 <= ti <= t1]
+    peak_pool = in_win if in_win else pairs
+    i_peak = max(range(len(peak_pool)), key=lambda i: abs(peak_pool[i][1]))
+    t_peak, y_peak = peak_pool[i_peak]
     ip_peak = abs(y_peak)
     floor = frac * ip_peak
     t_end_new = float(window.t_end)
     cut = False
+    cut_reason = "none"
     if pol == "ip_peak_then_floor":
         for ti, yi in pairs:
             if ti <= t_peak:
@@ -265,16 +261,27 @@ def apply_window_end_policy(
             if abs(yi) < floor:
                 t_end_new = float(ti)
                 cut = True
+                cut_reason = "post_peak_floor"
                 break
     else:
-        # ip_prepeak_floor: last sample strictly before peak below floor
-        for ti, yi in reversed(pairs):
-            if ti >= t_peak:
-                continue
-            if abs(yi) < floor:
-                t_end_new = float(ti)
-                cut = True
-                break
+        # ip_prepeak_floor: exclude rise into a *late* pre-disruption Ip spike.
+        # A mid-window flattop peak must not collapse t_end back to the early ramp.
+        win_span = max(0.0, t1 - t0)
+        late_frac = 0.0 if win_span <= 0.0 else (t_peak - t0) / win_span
+        late_spike = bool(in_win) and late_frac >= 0.65
+        if not late_spike:
+            cut_reason = f"no_late_spike_peak_frac={late_frac:.3g}"
+        else:
+            for ti, yi in reversed(pairs):
+                if ti >= t_peak:
+                    continue
+                if abs(yi) < floor:
+                    t_end_new = float(ti)
+                    cut = True
+                    cut_reason = "prepeak_floor_late_spike"
+                    break
+            if not cut:
+                cut_reason = "late_spike_no_prepeak_floor_cross"
     # Never extend past the formed-threshold end; never before t_start
     t_end_new = min(float(window.t_end), max(float(window.t_start), t_end_new))
     prov = (
@@ -285,6 +292,7 @@ def apply_window_end_policy(
         f";floor={floor:.6g}"
         f";t_end_cut={t_end_new:.6g}"
         f";cut={'yes' if cut else 'no'}"
+        f";cut_reason={cut_reason}"
         f";ip_source={ip_label}:{ip_col}"
     )
     note = (window.note or "")

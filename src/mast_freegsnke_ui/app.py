@@ -212,6 +212,7 @@ def create_app(
 
     cache_dir = (repo_root / "data_cache").resolve()
     required_groups = ["pf_active", "magnetics", "wall"]
+    config_load_warning: Optional[str] = None
     try:
         import json as _json
 
@@ -223,8 +224,12 @@ def create_app(
                     cache_dir = cd if cd.is_absolute() else (repo_root / cd).resolve()
                 if isinstance(cfg_obj.get("required_groups"), list) and cfg_obj["required_groups"]:
                     required_groups = [str(x) for x in cfg_obj["required_groups"]]
-    except Exception:
-        pass
+        else:
+            config_load_warning = f"Config not found: {config_path.as_posix()} — using built-in cache defaults"
+    except Exception as e:
+        config_load_warning = (
+            f"Config parse failed ({type(e).__name__}: {e}) — using built-in cache defaults"
+        )
 
     manager = run_manager or RunManager()
     assets_path = str(Path(__file__).resolve().parent / "assets")
@@ -286,6 +291,16 @@ def create_app(
                     ),
                 ],
                 className="fg-header",
+            ),
+            (
+                dbc.Alert(
+                    config_load_warning,
+                    color="warning",
+                    className="mb-2 py-2 small",
+                    dismissable=True,
+                )
+                if config_load_warning
+                else None
             ),
             html.Div(
                 id="shot-dossier",
@@ -521,7 +536,7 @@ def create_app(
                 window.__fgConsoleBound = true;
                 window.__fgPendingTab = null;
                 window.__fgPendingRefresh = false;
-                const tabs = ['overview','level2','residuals','planner','compare','efit','gifs','auth','files'];
+                const tabs = ['overview','level2','residuals','planner','compare','efit','gsfit','gifs','auth','files'];
                 document.addEventListener('keydown', function(e) {
                     const tag = (e.target && e.target.tagName) || '';
                     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target && e.target.isContentEditable)) {
@@ -597,15 +612,17 @@ def create_app(
         cache_st = shot_cache_status(cache_dir, int(shot), required=required_groups)
         if cache_st.get("ready"):
             note = "Level-2 required groups cached — Reconstruct skips S3 for those Zarrs"
-            ready = True
+            cache_status = "ready"
         elif cache_st.get("partial"):
             miss = ", ".join(cache_st.get("missing_required") or [])
             note = f"Level-2 cache partial — missing: {miss or '?'}"
-            ready = False
+            cache_status = "partial"
         else:
             note = "Level-2 cache empty — Reconstruct will download required groups"
-            ready = False
-        return panels.shot_dossier(int(shot), rd, cache_ready=ready, cache_note=note)
+            cache_status = "empty"
+        return panels.shot_dossier(
+            int(shot), rd, cache_status=cache_status, cache_note=note
+        )
 
     def _open_shot(shot: int):
         rd = art.run_dir_for(runs_dir, shot)
@@ -654,7 +671,7 @@ def create_app(
                     html.Strong(f"Opened SHOT/{shot}"),
                     html.Span(f" · status={st}"),
                     html.Div(
-                        "Tabs: Overview · Level-2 · Residuals · Compare · EFIT · Equilibria · Authorities · Files.",
+                        "Tabs: Overview · Level-2 · Residuals · Planner · Compare · EFIT · GSFit · Equilibria · Authorities · Files.",
                         className="small mt-1",
                     ),
                 ],

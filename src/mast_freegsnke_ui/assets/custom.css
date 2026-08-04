@@ -696,6 +696,11 @@ body {
   color: var(--fg-fail);
 }
 
+.stage-skip .stage-badge {
+  background: rgba(240, 185, 70, 0.16);
+  color: var(--fg-warn, #f0b946);
+}
+
 .stage-active {
   background: var(--fg-accent-dim);
 }

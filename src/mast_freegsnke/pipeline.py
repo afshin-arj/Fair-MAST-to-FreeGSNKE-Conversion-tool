@@ -269,7 +269,15 @@ class ShotPipeline:
         created_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         stage_log: List[Dict[str, Any]] = []
         blocking_errors: List[str] = []
+        degraded_notes: List[str] = []
         status = "started"
+
+        def _compute_status() -> str:
+            if blocking_errors:
+                return "failed"
+            if degraded_notes:
+                return "degraded"
+            return "success"
 
         ensure_dir(self.cfg.runs_dir)
         # User-facing layout: SHOT/<shot> (e.g. SHOT/30201); legacy SHOTS/ still supported if configured.
@@ -544,7 +552,28 @@ class ShotPipeline:
                             pra = load_passive_resistivity(prp)
                             if not pra.awaiting:
                                 pr_comps = pra.components
-                    except Exception:
+                            _stage(
+                                "passive_resistivity",
+                                True,
+                                awaiting=bool(pra.awaiting),
+                                n_components=len(pra.components or {}),
+                            )
+                        else:
+                            _stage(
+                                "passive_resistivity",
+                                False,
+                                note="path_missing",
+                                path=str(self.cfg.passive_resistivity_path),
+                            )
+                            blocking_errors.append(
+                                "passive_resistivity_path_missing: "
+                                f"{self.cfg.passive_resistivity_path}"
+                            )
+                    except Exception as e:
+                        _stage("passive_resistivity", False, error=str(e))
+                        blocking_errors.append(
+                            f"passive_resistivity_load_failed: {type(e).__name__}: {e}"
+                        )
                         pr_comps = None
 
                 rebuild_rep = maybe_rebuild_classic_machine(
@@ -1089,10 +1118,34 @@ class ShotPipeline:
                 write_json(inputs_dir / "window.json", final_tw.__dict__)
                 _stage("window_finalize", True, t_start=final_tw.t_start, t_end=final_tw.t_end, source=final_tw.source)
                 note = str(final_tw.note or "")
-                if note.startswith("fallback_") and str(final_tw.source) != "override":
+                consensus_notes = ""
+                if consensus_obj is not None and window_override is None:
+                    consensus_notes = " ".join(str(x) for x in (consensus_obj.notes or []))
+                    if getattr(consensus_obj, "method", None):
+                        consensus_notes = f"{consensus_obj.method} {consensus_notes}".strip()
+                blocked_window = False
+                if str(final_tw.source) != "override":
+                    if note.startswith("fallback_"):
+                        blocked_window = True
+                    if "no_ip_source_available_proxy_consensus" in consensus_notes:
+                        blocked_window = True
+                    if "consensus_fallback_full_extent" in note or "consensus_fallback_full_extent" in consensus_notes:
+                        blocked_window = True
+                    # Per-source full-extent votes recorded on consensus object
+                    if consensus_obj is not None:
+                        for _src, twd in (consensus_obj.per_source or {}).items():
+                            if isinstance(twd, dict) and "consensus_fallback_full_extent" in str(
+                                twd.get("note") or ""
+                            ):
+                                # Only block when that source actually drove the window (no Ip)
+                                if "no_ip_source_available_proxy_consensus" in consensus_notes:
+                                    blocked_window = True
+                                    break
+                if blocked_window:
                     blocking_errors.append(
                         "window_fallback_blocked: "
-                        f"{note} (source={final_tw.source}, col={final_tw.signal_column}). "
+                        f"{note or consensus_notes} (source={final_tw.source}, "
+                        f"col={final_tw.signal_column}). "
                         "Formed-plasma window must come from Ip/consensus or explicit --tstart/--tend — "
                         "refusing PF-proxy / full-extent silence."
                     )
@@ -1541,15 +1594,19 @@ class ShotPipeline:
                                     stdout_text=stdout_txt,
                                     n_partial=int(n_partial),
                                 ):
+                                    soft_note = (
+                                        "ic_static_gs_timeout"
+                                        if n_partial < 1
+                                        else "partial_timeout_with_history"
+                                    )
+                                    degraded_notes.append(
+                                        f"evolutive_soft_timeout:{soft_note}:n_steps={n_partial}"
+                                    )
                                     _stage(
                                         "evolutive_execute",
                                         False,
                                         error_hint=er.error_hint or "evolutive_per_step_timeout",
-                                        note=(
-                                            "ic_static_gs_timeout"
-                                            if n_partial < 1
-                                            else "partial_timeout_with_history"
-                                        ),
+                                        note=soft_note,
                                         n_steps_recorded=n_partial,
                                         duration_s=er.duration_s,
                                     )
@@ -1665,7 +1722,7 @@ class ShotPipeline:
                         _stage("contracts", True, note="contract_metrics_disabled_or_no_contracts_path")
 
             # Final status (recomputed again immediately before each manifest write below)
-            status = "success" if not blocking_errors else "failed"
+            status = _compute_status()
 
             science_audit = None
             try:
@@ -1685,7 +1742,13 @@ class ShotPipeline:
                 science_audit = None
 
             efit_compare_report: Optional[Dict[str, Any]] = None
-            if self.cfg.compare_efit_archive and shot_cache is not None:
+            if blocking_errors:
+                _stage(
+                    "efit_compare",
+                    False,
+                    note="skipped_blocking_errors",
+                )
+            elif self.cfg.compare_efit_archive and shot_cache is not None:
                 try:
                     from .efit_compare import load_efit_compare_authority, run_efit_compare
 
@@ -1756,7 +1819,9 @@ class ShotPipeline:
 
             # ADR-006: GSFit live peer (after FreeGSNKE + EFIT archive compare; soft-skip while awaiting)
             gsfit_report: Optional[Dict[str, Any]] = None
-            if self.cfg.execute_gsfit:
+            if blocking_errors:
+                _stage("gsfit", False, note="skipped_blocking_errors")
+            elif self.cfg.execute_gsfit:
                 try:
                     from .gsfit_stage import load_gsfit_authority, run_gsfit_stage
 
@@ -1906,7 +1971,11 @@ class ShotPipeline:
                         _stage("shape_targets", False, error=str(e))
 
             # ADR-004 Phase 2: optional GSPulse-style planner (default off)
-            if self.cfg.execute_planner and final_tw is not None:
+            if blocking_errors:
+                _stage("planner", False, note="skipped_blocking_errors")
+                if self.cfg.execute_evolutive_from_plan:
+                    _stage("evolutive_from_plan", False, note="skipped_blocking_errors")
+            elif self.cfg.execute_planner and final_tw is not None:
                 try:
                     pl_snap = inputs_dir / "planner_authority" / "planner_authority.json"
                     cl_snap = inputs_dir / "coil_limits_authority" / "coil_limits_authority.json"
@@ -2170,7 +2239,7 @@ class ShotPipeline:
                     else "skipped_execute_planner=false",
                 )
 
-            status = "success" if not blocking_errors else "failed"
+            status = _compute_status()
             _write_manifest(
                 {
                     "cache_dir": str(shot_cache) if shot_cache is not None else None,
@@ -2188,6 +2257,7 @@ class ShotPipeline:
                     "machine_authority_snapshot": machine_snapshot,
                     "diagnostic_calibration_snapshot": calibration_snapshot,
                     "diagnostic_calibration_apply": calibration_apply,
+                    "degraded_notes": list(degraded_notes) if degraded_notes else None,
                 }
             )
 
@@ -2243,7 +2313,7 @@ class ShotPipeline:
             except Exception as e:
                 _stage("shot_layout", False, error=str(e))
 
-            status = "success" if not blocking_errors else "failed"
+            status = _compute_status()
             _write_manifest(
                 {
                     "cache_dir": str(shot_cache) if shot_cache is not None else None,
@@ -2261,6 +2331,7 @@ class ShotPipeline:
                     "machine_authority_snapshot": machine_snapshot,
                     "diagnostic_calibration_snapshot": calibration_snapshot,
                     "diagnostic_calibration_apply": calibration_apply,
+                    "degraded_notes": list(degraded_notes) if degraded_notes else None,
                 }
             )
 

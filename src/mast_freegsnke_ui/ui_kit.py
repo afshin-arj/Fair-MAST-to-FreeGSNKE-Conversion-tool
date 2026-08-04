@@ -32,6 +32,8 @@ def status_tone(status: Any) -> str:
         "voltage_exceeds_measured_peak_margin",
         "off",
         "skipped",
+        "degraded",
+        "empty",
     }:
         return "warn"
     if isinstance(status, bool):

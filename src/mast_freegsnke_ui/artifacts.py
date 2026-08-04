@@ -301,15 +301,13 @@ def planner_csv_paths(run_dir: Path) -> List[Path]:
 
 
 def gif_paths(run_dir: Path) -> List[Path]:
+    """Inverse / Forward / Evolutive GIFs only (EFIT & planner live on their own tabs)."""
     run_dir = Path(run_dir)
     out: List[Path] = []
     for rel in (
         "03_reconstruction/presentation",
         "03_reconstruction/evolutive",
         "03_reconstruction/evolutive_plan",
-        "04_efit_compare/plots",
-        "efit_compare/plots",
-        "07_planner",
         "presentation",
         "evolutive",
     ):
@@ -732,7 +730,7 @@ def load_profile_trajectory_info(run_dir: Path) -> Dict[str, Any]:
     return out
 
 
-def load_planner_info(run_dir: Path) -> Dict[str, Any]:
+def load_planner_info(run_dir: Path, *, include_gifs: bool = True) -> Dict[str, Any]:
     """ADR-004 Phase 2 / Path B6 planner products for UI (read-only; never invents limits)."""
     import hashlib
 
@@ -974,13 +972,16 @@ def load_planner_info(run_dir: Path) -> Dict[str, Any]:
         if out.get("n_same_sign_model_gap") is None:
             out["n_same_sign_model_gap"] = gap_file.get("n_same_sign_model_gap")
     try:
-        gifs = gif_paths(run_dir)[:6]
-        out["gif_rels"] = []
-        for g in gifs:
-            try:
-                out["gif_rels"].append(str(g.relative_to(run_dir)).replace("\\", "/"))
-            except ValueError:
-                pass
+        if include_gifs:
+            gifs = gif_paths(run_dir)[:6]
+            out["gif_rels"] = []
+            for g in gifs:
+                try:
+                    out["gif_rels"].append(str(g.relative_to(run_dir)).replace("\\", "/"))
+                except ValueError:
+                    pass
+        else:
+            out["gif_rels"] = []
     except Exception:
         out["gif_rels"] = []
     return out
@@ -996,7 +997,7 @@ def overview_kpis(run_dir: Path) -> Dict[str, Any]:
     metrics = load_metrics(run_dir) or {}
     efit = load_efit_compare(run_dir) or {}
     ptraj = load_profile_trajectory_info(run_dir)
-    planner = load_planner_info(run_dir)
+    planner = load_planner_info(run_dir, include_gifs=False)
     window = summary.get("window") or man.get("time_window") or {}
     blocking = list(summary.get("blocking_errors") or man.get("blocking_errors") or progress.get("blocking_errors") or [])
     evo = audit.get("evolutive_ip") if isinstance(audit, dict) else {}

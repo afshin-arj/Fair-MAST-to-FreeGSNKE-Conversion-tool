@@ -38,6 +38,7 @@ def shot_dossier(
     shot: Optional[int],
     run_dir: Optional[Path],
     *,
+    cache_status: Optional[str] = None,
     cache_ready: Optional[bool] = None,
     cache_note: str = "",
 ) -> Any:
@@ -62,10 +63,18 @@ def shot_dossier(
         window = f"{_fmt_kpi(k.get('t_start'))} → {_fmt_kpi(k.get('t_end'))} s"
     cache_tone = ""
     cache_val = "—"
-    if cache_ready is True:
+    # Prefer explicit ready|partial|empty; legacy bool maps False→partial (kept for callers).
+    cs = str(cache_status or "").strip().lower()
+    if not cs and cache_ready is True:
+        cs = "ready"
+    elif not cs and cache_ready is False:
+        cs = "partial"
+    if cs == "ready":
         cache_val, cache_tone = "ready", "ok"
-    elif cache_ready is False:
+    elif cs == "partial":
         cache_val, cache_tone = "partial", "warn"
+    elif cs == "empty":
+        cache_val, cache_tone = "empty", "warn"
     chips = [
         chip("Shot", int(shot)),
         chip("Status", k.get("status"), tone=tone),
@@ -224,15 +233,26 @@ def stage_timeline(progress: Optional[Dict[str, Any]], running: bool) -> Any:
         ok = bool(st.get("ok"))
         err = st.get("error") or st.get("error_hint")
         is_current = name == current and running
+        note = st.get("note")
+        status_s = str(st.get("status") or "").lower()
+        note_l = str(note or "").lower()
+        soft_skip = (not ok) and (
+            status_s in {"awaiting_authority", "skipped", "soft_skip"}
+            or "skip" in note_l
+            or "awaiting" in note_l
+            or note_l.startswith("snapshot_only")
+            or "false_or_no" in note_l
+        )
         cls = "stage-item"
         if is_current:
             cls += " stage-active"
         elif ok:
             cls += " stage-ok"
+        elif soft_skip:
+            cls += " stage-skip"
         else:
             cls += " stage-fail"
-        badge = "RUN" if is_current else ("OK" if ok else "FAIL")
-        note = st.get("note")
+        badge = "RUN" if is_current else ("OK" if ok else ("SKIP" if soft_skip else "FAIL"))
         hits = st.get("cache_hits")
         synced = st.get("synced")
         dur = st.get("duration_s")
@@ -270,6 +290,8 @@ def stage_timeline(progress: Optional[Dict[str, Any]], running: bool) -> Any:
 def _media_mode_label(path: Path) -> Optional[str]:
     name = path.name.lower()
     rel = str(path).replace("\\", "/").lower()
+    if "evolutive_plan" in name or "/evolutive_plan/" in rel:
+        return "evolutive_plan"
     if "evolutive" in name or "/evolutive/" in rel:
         return "evolutive"
     if "inverse" in name or "inverse" in rel:
@@ -1490,7 +1512,13 @@ def gsfit_panel(shot: int, run_dir: Path) -> Any:
         [
             chip("ADR-006", "GSFit peer"),
             chip("live EFIT++", "no", tone="warn"),
-            chip("ok", ok, tone=ui_kit.status_tone(ok)),
+            chip(
+                "ok",
+                ok if status != "awaiting_authority" else "—",
+                tone=ui_kit.status_tone(
+                    "awaiting_authority" if status == "awaiting_authority" else ok
+                ),
+            ),
             chip(
                 "status",
                 status or "—",

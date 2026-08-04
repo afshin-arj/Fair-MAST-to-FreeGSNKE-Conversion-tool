@@ -63,9 +63,41 @@ def test_ip_prepeak_floor_excludes_late_spike(tmp_path: Path) -> None:
     assert "window_end_policy=ip_prepeak_floor" in (pre.note or "")
     assert "ip_peak_t=0.5" in (pre.note or "")
     assert "cut=yes" in (pre.note or "")
+    assert "cut_reason=prepeak_floor_late_spike" in (pre.note or "")
     # Post-peak still cuts after the spike (first |Ip|<108 after peak → 0.6)
     assert post.t_end == 0.6
     assert post.t_end > pre.t_end
+
+
+def test_ip_prepeak_floor_keeps_midwindow_flattop_peak(tmp_path: Path) -> None:
+    # Smooth mid-window peak (not a late disruption spike) must not collapse t_end.
+    _write_ip(
+        tmp_path,
+        [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+        [0.0, 40.0, 90.0, 120.0, 110.0, 100.0, 80.0],
+    )
+    base = TimeWindow(
+        t_start=0.2,
+        t_end=0.6,
+        source="test",
+        signal_column="plasma_current",
+        threshold=96.0,
+        note="formed",
+    )
+    out = apply_window_end_policy(
+        base, tmp_path, policy="ip_prepeak_floor", end_ip_frac=0.90
+    )
+    assert out.t_end == 0.6
+    assert "cut=no" in (out.note or "")
+    assert "no_late_spike" in (out.note or "")
+
+
+def test_window_end_policy_fail_closed_without_ip(tmp_path: Path) -> None:
+    base = TimeWindow(
+        t_start=0.1, t_end=0.9, source="x", signal_column=None, threshold=None
+    )
+    with pytest.raises(ValueError, match="requires a measurable Ip"):
+        apply_window_end_policy(base, tmp_path, policy="ip_prepeak_floor", end_ip_frac=0.90)
 
 
 def test_ip_peak_then_floor_keeps_end_when_no_cross(tmp_path: Path) -> None:

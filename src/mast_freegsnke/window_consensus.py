@@ -52,11 +52,14 @@ def _infer_window_for_file(csv_path: Path, label: str, formed_frac: float) -> Op
     if not cols:
         return None
 
-    # Choose signal column
+    # Choose signal column (keep ip.csv aligned with windowing._load_ip_series)
     sig_col: Optional[str] = None
     is_ip_signal = False
     if _is_ip_source(label):
         sig_col = _pick_ip_column(cols)
+        if sig_col is None and label == "ip.csv" and cols:
+            # Dedicated export: first non-time column if name is nonstandard
+            sig_col = cols[0]
         is_ip_signal = sig_col is not None
     if sig_col is None:
         # largest abs-span proxy

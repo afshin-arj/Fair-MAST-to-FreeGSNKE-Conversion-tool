@@ -1,3 +1,25 @@
+## 11.34.1 — UI + core honesty fixes
+
+### Core
+- **`ip_prepeak_floor`:** peak search constrained to the formed window; cut only for late spikes (≥65% of window span) so mid-flattop peaks no longer collapse `t_end` to the early ramp. Missing/empty Ip fails closed.
+- **Window consensus:** `ip.csv` nonstandard columns align with windowing; proxy-only / full-extent consensus is blocked like other window fallbacks.
+- **Blocking errors gate** planner / EFIT compare / GSFit (no misleading late artifacts).
+- **Passive resistivity** load/path failures are staged and blocking (no silent swallow).
+- **Evolutive soft timeout** marks run `degraded` (not `success`) with `degraded_notes`.
+- **`apply_voltage_map`** uses the same `_default_combine` as validation.
+
+### UI
+- Keyboard shortcuts include **GSFit**; Open-shot tab list corrected.
+- L2 chip distinguishes **empty** vs **partial** cache.
+- Equilibria GIFs = Inverse/Forward/Evolutive only (not EFIT/planner).
+- Soft-skipped stages show **SKIP** (not FAIL); GSFit awaiting no longer paints `ok=False` as hard fail.
+- Config parse failures surface a warning banner; overview KPIs skip GIF directory walks.
+
+### Validate
+- Window end-policy regression tests (mid-window peak, fail-closed without Ip).
+- Equilibria `gif_paths` exclusion test.
+- Version **11.34.1**.
+
 ## Docs — User Manual + README graphics
 
 - Added `docs/USER_MANUAL.md`: professional deep guide (install, stages, authorities, Inverse/Forward/Evolutive honesty, planner/voltage map, Path B5, CLI, troubleshooting).

@@ -370,13 +370,26 @@ def test_efit_sbs_gallery_does_not_fallback_to_psi(tmp_path: Path) -> None:
     # (efit_psi may still appear under "EFIT plots & downloads")
     assert "No side-by-side GIF yet" not in blob or "sbs_000" in blob
 
-def test_gif_paths_includes_legacy_efit_compare(tmp_path: Path) -> None:
+def test_gif_paths_equilibria_excludes_efit_and_planner(tmp_path: Path) -> None:
+    """Equilibria tab is Inverse/Forward/Evolutive only — EFIT/planner stay on their tabs."""
     run = tmp_path / "30201"
     legacy = run / "efit_compare" / "plots"
     legacy.mkdir(parents=True)
     (legacy / "demo.gif").write_bytes(b"GIF89a")
+    plan = run / "07_planner"
+    plan.mkdir(parents=True)
+    (plan / "plan.gif").write_bytes(b"GIF89a")
+    evo = run / "03_reconstruction" / "evolutive"
+    evo.mkdir(parents=True)
+    (evo / "evolutive_demo.gif").write_bytes(b"GIF89a")
     paths = art.gif_paths(run)
-    assert any(p.name == "demo.gif" for p in paths)
+    names = {p.name for p in paths}
+    assert "evolutive_demo.gif" in names
+    assert "demo.gif" not in names
+    assert "plan.gif" not in names
+    from mast_freegsnke_ui.panels import _media_mode_label
+
+    assert _media_mode_label(evo / "evolutive_demo.gif") == "evolutive"
 
 def test_efit_panel_renders_scorecard_rows(tmp_path: Path) -> None:
     run = tmp_path / "30201"

@@ -332,7 +332,8 @@ def apply_voltage_map(
 
     for circuit in vmap.machine_active_circuit_order:
         spec = vmap.circuits[circuit]
-        combine = str(spec.get("combine", "identity"))
+        chans0 = spec.get("voltage_channels", []) or []
+        combine = str(spec.get("combine", _default_combine(chans0 if isinstance(chans0, list) else [])))
         if combine == "default":
             default_v = float(spec["default_V"])
             out[circuit] = np.full(n, default_v, dtype=float)
