@@ -16,6 +16,7 @@ North star: **user enters only a MAST shot number → FreeGSNKE results are prod
 |-------|---------|
 | `skills/one-shot-pipeline` | Finish shot-only UX + defaults |
 | `skills/authority-hardening` | Close silent-authority gaps |
+| `skills/passive-resistivity-path-b5` | Classic-MAST ρ / Path B5 citation (never invent) |
 | `skills/certify-run` | Reviewer packs + replay |
 | `skills/ship-to-main` | Branch → commit → land on GitHub `main` |
 

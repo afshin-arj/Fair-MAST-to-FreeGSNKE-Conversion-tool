@@ -16,11 +16,17 @@ Explain why `SHOTS/<N>/` failed or is incomplete, and give the smallest fix path
 
 ## Evidence to read (in order)
 
-1. `SHOTS/<N>/manifest.json` — `status`, `blocking_errors`, `stage_log` (reruns archive prior runs under `SHOTS/<N>/history/<ts>/`)
-2. `SHOTS/<N>/EXCEPTION_TRACEBACK.txt` if present
-3. `SHOTS/<N>/logs/` FreeGSNKE stderr/stdout
-4. `probe_geometry_report.json`, `machine_authority_report.json`
-5. Launcher transcript under `logs/run_*.log` if relevant
+1. `SHOT/<N>/manifest.json` (or `SHOTS/<N>/`) — `status`, `blocking_errors`, `stage_log`
+2. `EXCEPTION_TRACEBACK.txt` if present
+3. `logs/` FreeGSNKE stderr/stdout
+4. Evolutive: `03_reconstruction/evolutive/evolutive_meta.json` — `early_stop`, `n_passive`, limitations
+5. `07_planner/voltage_model_gap.json` if planner ΔV looks wrong
+6. `probe_geometry_report.json`, `machine_authority_report.json`, `inputs/passive_resistivity*` / certify warnings
+
+## Common honest physics (not bugs)
+
+- Evolutive `early_stop=axis_drift` with `n_passive=0`: expected until ADR-005 citation — skill `passive-resistivity-path-b5`; do **not** invent ρ
+- Planner Solenoid same-sign ΔV / P4/P5 after voltage_map v2.2: active-only model gap vs terminal V
 
 ## Diagnosis format
 
@@ -29,4 +35,4 @@ Explain why `SHOTS/<N>/` failed or is incomplete, and give the smallest fix path
 - **Fix**: concrete commands or authority edits
 - **Can user retry with only shot number after fix?** yes/no + what must be pre-populated
 
-Do not invent geometry. If geometry is the blocker, say which authoritative source must be supplied.
+Do not invent geometry or vessel ρ. If geometry/passives block, name the authoritative source required.

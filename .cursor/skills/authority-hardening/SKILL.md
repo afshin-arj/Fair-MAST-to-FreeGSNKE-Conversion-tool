@@ -33,6 +33,13 @@ description: >-
 
 - Unmeasured buckets → `"UNMEASURED"` (or omit), never `0.0` that looks like evidence
 
+### P2 — Classic-MAST passives (ADR-005 / Path B5)
+
+- `configs/passive_resistivity.json` stays `awaiting_authority` until **cited** ρ (or documented \(R_\mathrm{eff}\!\rightarrow\!\rho\))
+- Never invent vessel ρ; never copy MAST-U / FUSE.jl passives
+- Empty `passive_coils.pickle` + evolutive soft-stop is **honest**, not a bug to “fix”
+- Follow skill `passive-resistivity-path-b5` for citation hunt (Berkery/VALEN, CREATE-L, EFIT++/UDA memos)
+
 ### P2 — Strict default detection
 
 - In reviewer/certify mode, any FreeGSNKE default not in execution_authority → blocking
@@ -45,6 +52,7 @@ description: >-
 - [ ] Downstream code actually reads the authority (not only validates)
 - [ ] No parallel heuristic path can override it silently
 - [ ] Tests cover fail-closed behavior
+- [ ] Passiveives: no invented ρ; ADR-005 status matches pickle emptiness
 ```
 
 ## Anti-patterns
@@ -52,9 +60,12 @@ description: >-
 - Soft-continue with invented numbers
 - Dual systems (rules + coil_map) both writable
 - Docs version ≠ `pyproject.toml` version without updating both
+- Copying MAST-U passives / Green’s to “stabilize” evolutive
+- Disabling soft-stops while `n_passive=0` to lengthen GIFs
 
 ## Related
 
 - [checklist.md](checklist.md)
 - Skill `one-shot-pipeline` for UX wiring
+- Skill `passive-resistivity-path-b5` for Path B5 citation
 - Agent `authority-auditor` for review passes

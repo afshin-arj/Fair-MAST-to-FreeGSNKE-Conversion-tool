@@ -25,8 +25,9 @@ Read these before any edit (in order):
 3. `.cursor/rules/authority-determinism.mdc`
 4. `.cursor/skills/one-shot-pipeline/SKILL.md`
 5. `.cursor/skills/authority-hardening/SKILL.md`
-6. `.cursor/skills/certify-run/SKILL.md`
-7. `.cursor/skills/ship-to-main/SKILL.md` (git/release gates)
+6. `.cursor/skills/passive-resistivity-path-b5/SKILL.md` (when passives / evolutive axis_drift / Path B5)
+7. `.cursor/skills/certify-run/SKILL.md`
+8. `.cursor/skills/ship-to-main/SKILL.md` (git/release gates)
 
 ## Delegation map (use Task / subagents)
 

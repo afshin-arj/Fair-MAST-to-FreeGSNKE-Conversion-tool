@@ -22,6 +22,8 @@ Find places where declared authority is **not binding**, or where silent convent
 4. Execution authority: FreeGSNKE defaults not covered by default-detection?
 5. Residual budget: zeros that should be UNMEASURED?
 6. Docs/version drift (README vs pyproject)?
+7. Passives (ADR-005): invented ρ? MAST-U/FUSE copy? `passive_resistivity` awaiting but pickle non-empty (or cited but pickle empty)? Evolutive soft-stop silenced while `n_passive=0`?
+8. Green’s (ADR-006): invented or silent-copied ST40/MAST-U Green’s under `gsfit_greens/`?
 
 ## Output format
 
@@ -33,3 +35,7 @@ For each finding:
 - **Concrete fix** (specific, not vague)
 
 End with a prioritized fix order for shot-only automation.
+
+## Related skill
+
+- `.cursor/skills/passive-resistivity-path-b5/SKILL.md` for Path B5 citation discipline

@@ -33,7 +33,7 @@ No interactive prompts for config paths, geometry paths, execute y/n, or metrics
 | 002 | FAIR-MAST EFIT++ archive compare (not live EFIT++) |
 | 003 | Reject Py-EFIT / efit-ai on Windows happy path |
 | 004 | Profile trajectory + Phase 2b Python GSPulse-method planner (isoflux/Picard/ψ_bry; no MATLAB; passives blocked) |
-| 005 | Classic-MAST passive ρ citation (Path B5 wiring; ρ awaiting) |
+| 005 | Classic-MAST passive ρ citation (Path B5 wiring; ρ awaiting — see ADR hunt: Berkery/VALEN, CREATE-L) |
 | 006 | GSFit live reconstruction peer (scaffold; gated until calib + Green’s) |
 
 ## Skills
@@ -42,6 +42,7 @@ No interactive prompts for config paths, geometry paths, execute y/n, or metrics
 |-------|-------------|
 | `one-shot-pipeline` | Make / run the shot-only path |
 | `authority-hardening` | Close implicit authority gaps |
+| `passive-resistivity-path-b5` | Cite classic-MAST vessel ρ / \(R_\mathrm{eff}\); never invent; Path B5 |
 | `certify-run` | Reviewer-grade pack + replay verification |
 | `ship-to-main` | Branch, commit, PR/merge onto GitHub `main` (never force-push) |
 
