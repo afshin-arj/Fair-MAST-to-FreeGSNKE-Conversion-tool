@@ -212,6 +212,7 @@ def create_app(
 
     cache_dir = (repo_root / "data_cache").resolve()
     required_groups = ["pf_active", "magnetics", "wall"]
+    export_geqdsk_default = False
     config_load_warning: Optional[str] = None
     try:
         import json as _json
@@ -224,6 +225,7 @@ def create_app(
                     cache_dir = cd if cd.is_absolute() else (repo_root / cd).resolve()
                 if isinstance(cfg_obj.get("required_groups"), list) and cfg_obj["required_groups"]:
                     required_groups = [str(x) for x in cfg_obj["required_groups"]]
+                export_geqdsk_default = bool(cfg_obj.get("export_torax_geometry", False))
         else:
             config_load_warning = f"Config not found: {config_path.as_posix()} — using built-in cache defaults"
     except Exception as e:
@@ -401,6 +403,19 @@ def create_app(
                                         dbc.Button("Cancel", id="btn-cancel", color="danger", outline=True),
                                     ],
                                     className="d-flex mb-2 run-actions",
+                                ),
+                                dbc.Switch(
+                                    id="toggle-export-geqdsk",
+                                    label="GEQDSK export (ADR-001 / TORAX)",
+                                    value=bool(export_geqdsk_default),
+                                    className="fg-geqdsk-toggle mb-1",
+                                    persistence=True,
+                                    persistence_type="local",
+                                ),
+                                html.Div(
+                                    "Off by default. On → FreeGSNKE inverse t0 → "
+                                    "downstream/torax/geqdsk_t0.eqdsk (declared R0; not TORAX itself).",
+                                    className="small text-muted mb-2 fg-geqdsk-hint",
                                 ),
                                 html.Div(id="run-alert"),
                                 html.Div(id="blocking-banner"),
@@ -731,9 +746,21 @@ def create_app(
         State("active-shot", "data"),
         State("ui-status", "data"),
         State("refresh-token", "data"),
+        State("toggle-export-geqdsk", "value"),
         prevent_initial_call=True,
     )
-    def on_buttons(n_open, n_start, n_cancel, n_submit, shot_val, picker_val, active_shot, ui_status, refresh_token):
+    def on_buttons(
+        n_open,
+        n_start,
+        n_cancel,
+        n_submit,
+        shot_val,
+        picker_val,
+        active_shot,
+        ui_status,
+        refresh_token,
+        export_geqdsk,
+    ):
         ctx = dash.callback_context
         if not ctx.triggered:
             return (no_update,) * 8
@@ -795,8 +822,14 @@ def create_app(
                 _dossier_for(active_shot) if active_shot is not None else no_update,
                 no_update,
             )
+        want_geqdsk = bool(export_geqdsk)
         try:
-            manager.start(shot, config=config_path, cwd=repo_root)
+            manager.start(
+                shot,
+                config=config_path,
+                cwd=repo_root,
+                export_torax_geometry=want_geqdsk,
+            )
         except Exception as e:  # noqa: BLE001
             return (
                 dbc.Alert(f"Failed to start: {e}", color="danger"),
@@ -809,12 +842,18 @@ def create_app(
                 no_update,
             )
         rd = art.run_dir_for(runs_dir, shot)
+        geqdsk_note = (
+            " GEQDSK export ON → downstream/torax/ after inverse."
+            if want_geqdsk
+            else " GEQDSK export OFF."
+        )
         return (
             dbc.Alert(
                 [
                     html.Strong(f"Reconstructing shot {shot}"),
                     html.Div(
-                        "Prior results are archived under history/. Watch Stages — tabs refresh now and when the run finishes. Cached Level-2 Zarrs are reused when verified.",
+                        "Prior results are archived under history/. Watch Stages — tabs refresh now and when the run finishes. Cached Level-2 Zarrs are reused when verified."
+                        + geqdsk_note,
                         className="small mt-1",
                     ),
                 ],

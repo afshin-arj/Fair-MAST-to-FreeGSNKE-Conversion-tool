@@ -40,6 +40,7 @@ class RunManager:
         config: Path,
         cwd: Path,
         python_exe: Optional[Path] = None,
+        export_torax_geometry: Optional[bool] = None,
     ) -> None:
         if self.is_running:
             raise RuntimeError("A run is already in progress")
@@ -57,6 +58,10 @@ class RunManager:
             "--config",
             str(config),
         ]
+        if export_torax_geometry is True:
+            cmd.append("--export-torax-geometry")
+        elif export_torax_geometry is False:
+            cmd.append("--no-export-torax-geometry")
         with self._lock:
             self._log.clear()
             self._shot = shot

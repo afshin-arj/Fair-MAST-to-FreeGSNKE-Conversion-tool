@@ -530,6 +530,21 @@ body {
   opacity: 0.55;
 }
 
+.fg-geqdsk-toggle {
+  font-size: 0.82rem;
+  color: var(--fg-muted, #9aa8bc);
+}
+
+.fg-geqdsk-toggle .form-check-input:checked {
+  background-color: var(--fg-accent, #2ec4b3);
+  border-color: var(--fg-accent, #2ec4b3);
+}
+
+.fg-geqdsk-hint {
+  line-height: 1.35;
+  max-width: 28rem;
+}
+
 .kbd-hint {
   display: inline-flex;
   align-items: center;

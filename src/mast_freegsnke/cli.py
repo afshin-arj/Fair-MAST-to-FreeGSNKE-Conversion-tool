@@ -231,6 +231,11 @@ def main(argv=None) -> int:
         help="ADR-001: enable optional FreeGSNKE→TORAX GEQDSK export (requires torax_geometry_export_authority_path)",
     )
     r.add_argument(
+        "--no-export-torax-geometry",
+        action="store_true",
+        help="Disable ADR-001 FreeGSNKE→TORAX GEQDSK export for this run",
+    )
+    r.add_argument(
         "--compare-efit-archive",
         action="store_true",
         help="ADR-002: compare FreeGSNKE to FAIR-MAST EFIT++ equilibrium archive",
@@ -1142,6 +1147,8 @@ def main(argv=None) -> int:
                     "torax_geometry_export_authority_path",
                     "configs/torax_geometry_export_authority.json",
                 )
+        if getattr(args, "no_export_torax_geometry", False):
+            object.__setattr__(cfg, "export_torax_geometry", False)
         if getattr(args, "compare_efit_archive", False):
             object.__setattr__(cfg, "compare_efit_archive", True)
             if not cfg.efit_compare_authority_path:

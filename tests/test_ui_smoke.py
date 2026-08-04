@@ -368,6 +368,8 @@ def test_run_manager_start_mocked(tmp_path: Path) -> None:
         cmd = popen.call_args[0][0]
         assert "run" in cmd
         assert "30201" in cmd
+        assert "--export-torax-geometry" not in cmd
+        assert "--no-export-torax-geometry" not in cmd
 
     import time
 
@@ -379,6 +381,30 @@ def test_run_manager_start_mocked(tmp_path: Path) -> None:
     snap = mgr.snapshot()
     assert snap["shot"] == 30201
     assert any("hello" in ln for ln in snap["log_lines"]) or snap["returncode"] == 0
+
+
+def test_run_manager_geqdsk_export_flags(tmp_path: Path) -> None:
+    mgr = RunManager(log_maxlen=20)
+    fake_proc = MagicMock()
+    fake_proc.poll.return_value = 0
+    fake_proc.pid = 1
+    fake_proc.stdout = iter([])
+    fake_proc.wait.return_value = 0
+    cfg = tmp_path / "default.json"
+    cfg.write_text("{}", encoding="utf-8")
+
+    with patch("mast_freegsnke_ui.run_manager.subprocess.Popen", return_value=fake_proc) as popen:
+        mgr.start(30201, config=cfg, cwd=tmp_path, export_torax_geometry=True)
+        cmd = popen.call_args[0][0]
+        assert "--export-torax-geometry" in cmd
+        assert "--no-export-torax-geometry" not in cmd
+
+    mgr2 = RunManager(log_maxlen=20)
+    with patch("mast_freegsnke_ui.run_manager.subprocess.Popen", return_value=fake_proc) as popen:
+        mgr2.start(30201, config=cfg, cwd=tmp_path, export_torax_geometry=False)
+        cmd = popen.call_args[0][0]
+        assert "--no-export-torax-geometry" in cmd
+        assert "--export-torax-geometry" not in cmd
 
 
 def test_fill_all_tabs_have_distinct_content(tmp_path: Path) -> None:

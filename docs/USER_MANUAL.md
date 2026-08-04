@@ -357,6 +357,8 @@ Requires `pip install -e ".[ui]"`.
 
 The UI is shot-only: run a shot, browse existing `SHOT/<N>/` packs, and inspect summary/reconstruction tabs. It does not invent authorities; it drives the same pipeline config as the CLI.
 
+**Optional GEQDSK toggle:** under Reconstruct, switch **GEQDSK export (ADR-001 / TORAX)** on to write `downstream/torax/geqdsk_t0.eqdsk` after inverse (declared R0; does not run TORAX). Off by default unless `export_torax_geometry` is true in the loaded config.
+
 ---
 
 ## 13. CLI reference
