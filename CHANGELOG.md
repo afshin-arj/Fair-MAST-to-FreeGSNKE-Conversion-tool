@@ -1,3 +1,8 @@
+## Docs — User Manual + README graphics
+
+- Added `docs/USER_MANUAL.md`: professional deep guide (install, stages, authorities, Inverse/Forward/Evolutive honesty, planner/voltage map, Path B5, CLI, troubleshooting).
+- Refreshed `README.md` with two graphics under `docs/assets/` and clearer links to the manual and ADRs.
+
 ## 11.34.0 — P4/P5 voltage sign + Solenoid early-gap honesty
 
 ### Voltage map (authority)

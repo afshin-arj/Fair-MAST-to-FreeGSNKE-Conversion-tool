@@ -2,23 +2,19 @@
 
 **Enter a MAST shot number. Everything else is automatic.**
 
-Classic MAST Level-2 data → FreeGSNKE equilibrium reconstruction → residuals, plots, and provenance under `SHOT/<N>/`.
+Classic MAST FAIR-MAST Level-2 data → FreeGSNKE equilibrium reconstruction → residuals, plots, and hashed provenance under `SHOT/<N>/`.
+
+<p align="center">
+  <img src="docs/assets/readme-hero-pipeline.png" alt="FAIR-MAST Level-2 to FreeGSNKE to SHOT pack pipeline" width="920"/>
+</p>
 
 | | |
 |---|---|
 | **Version** | **11.34.0** |
 | **Machine** | Classic MAST (not MAST-U) |
 | **Solver** | [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke) only |
-| **EFIT** | Archive compare (ADR-002) — not live EFIT++ / Py-EFIT / efit-ai |
-| **GSFit** | Optional live peer (ADR-006) — soft-skips until calib + Green’s cited |
-
-```mermaid
-flowchart LR
-  shot([Shot N]) --> l2[FAIR-MAST L2]
-  l2 --> auth[Authorities]
-  auth --> solve[FreeGSNKE]
-  solve --> out([SHOT/N pack])
-```
+| **EFIT** | Archive compare ([ADR-002](docs/adr/002-fairmast-efit-compare.md)) — not live EFIT++ |
+| **Manual** | **[User Manual](docs/USER_MANUAL.md)** — install, stages, authorities, CLI |
 
 ---
 
@@ -54,44 +50,11 @@ mast-freegsnke ui --config configs/default.json
 
 ---
 
-## Pipeline
+## What you get
 
-```mermaid
-flowchart TB
-  subgraph data [Data]
-    dl[Download L2]
-    ex[Extract inputs]
-    meas[02_measured_data]
-  end
-  subgraph freeg [FreeGSNKE]
-    inv[Inverse]
-    fwd[Forward]
-    evo[Evolutive]
-  end
-  subgraph review [Review]
-    met[Residuals]
-    efit[EFIT archive]
-    sum[SUMMARY]
-  end
-  dl --> ex --> meas
-  ex --> inv --> fwd
-  inv --> evo
-  inv --> met --> sum
-  fwd --> efit --> sum
-  evo --> sum
-```
-
-| Stage | What it does |
-|-------|----------------|
-| **Inverse** | Static GS with declared shape targets; shape gate ≠ FreeGSNKE GS stop |
-| **Forward** | Dump-current t0 + measured-PF window; live LCFS; ≠ Inverse DN |
-| **Evolutive** | nlstepper from Inverse IC + voltages; live LCFS; soft-stop honesty |
-| **EFIT compare** | FreeGSNKE vs archived FAIR-MAST EFIT++ |
-| **GSFit peer** | Optional live fit (ADR-006); soft-skips while awaiting |
-
----
-
-## Output pack
+<p align="center">
+  <img src="docs/assets/readme-shot-pack.png" alt="SHOT pack folder layout" width="720"/>
+</p>
 
 ```text
 SHOT/<N>/
@@ -102,54 +65,48 @@ SHOT/<N>/
 ├── 04_efit_compare/     vs EFIT++ archive
 ├── 06_authorities/      snapshotted JSON + hashes
 ├── 07_planner/          optional GSPulse-method planner
-├── 08_gsfit/            GSFit live peer (ADR-006; often awaiting)
+├── 08_gsfit/            GSFit live peer (often awaiting)
 └── manifest.json
 ```
 
-```mermaid
-flowchart LR
-  pack[SHOT/N] --> s[Summary]
-  pack --> m[Measured]
-  pack --> r[Reconstruction]
-  pack --> e[EFIT]
-  pack --> g[GSFit]
-  pack --> a[Authorities]
-```
+| Stage | Role |
+|-------|------|
+| **Inverse** | Static GS with declared shape targets |
+| **Forward** | Dump-current t0 + measured PF window; live LCFS |
+| **Evolutive** | nlstepper from Inverse IC + voltages; soft-stop honesty |
+| **EFIT compare** | FreeGSNKE vs archived FAIR-MAST EFIT++ |
+| **Planner** | Python GSPulse-method path (ADR-004); passives blocked until cited ρ |
 
 ---
 
 ## Design laws
 
-```mermaid
-flowchart LR
-  d[Deterministic] --> a[Explicit authority]
-  a --> f[Fail fast]
-  f --> n[Never invent metrology]
-  n --> m[Manifest everything]
-```
+- **Deterministic** — no hidden smoothing or silent conventions  
+- **Explicit authority** — coil map, voltage map, machine, contracts are declared JSON (hashed)  
+- **Fail fast** — missing authority **blocks**; never invent metrology  
+- **Manifest everything** — every stage outcome is recorded  
 
-- Coil maps, voltages, machine, and solver knobs are **declared JSON** (hashed).
-- Missing authority **blocks** the run — no silent defaults that invent geometry or calibration.
-- Browser UI: `run_ui.cmd` → `http://127.0.0.1:8050`
+Browser UI: `run_ui.cmd` → `http://127.0.0.1:8050`
 
 ---
 
 ## Honest limits
 
-- Classic MAST only · no FreeGSNKE passives until cited ρ exists  
-- P3/P6 use declared `I×R` ohmic drive (no public PF V)  
-- EFIT tab = archive compare, not a live reconstruction engine
-- GSFit tab = live peer scaffold (ADR-006); awaiting until calib + Green’s cited
-- Planner (`07_planner/`, GSPulse-method Python) never invents passives/ρ — YELLOW until cited resistivity  
+- Classic MAST only · no FreeGSNKE passives until cited ρ ([ADR-005](docs/adr/005-classic-mast-passive-resistivity.md))  
+- P3/P6 use declared `I×R` ohmic drive when public PF V is absent  
+- EFIT tab = archive compare, not a live reconstruction engine ([ADR-003](docs/adr/003-reject-pyefit-windows-path.md))  
+- GSFit = live peer scaffold ([ADR-006](docs/adr/006-gsfit-live-peer.md)); soft-skips until calib + Green’s cited  
 
 ---
 
-## Docs
+## Documentation
 
-| | |
-|---|---|
-| `AGENTS.md` | North star + agent roles |
-| `docs/adr/` | Architecture decisions |
+| Document | Purpose |
+|----------|---------|
+| **[User Manual](docs/USER_MANUAL.md)** | Full guide — install, pipeline depth, authorities, CLI, troubleshooting |
+| [HOW_TO_RUN.txt](HOW_TO_RUN.txt) | Launcher cheat sheet |
+| [AGENTS.md](AGENTS.md) | North star + agent roles |
+| [docs/adr/](docs/adr/README.md) | Architecture Decision Records |
 | [FAIR-MAST](https://github.com/ukaea/fair-mast) · [mastapp L2](https://mastapp.site/level2-data.html) | Upstream data |
 
 © 2026 Afshin Arjhangmehr
