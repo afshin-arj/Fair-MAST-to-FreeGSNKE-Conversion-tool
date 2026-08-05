@@ -58,7 +58,21 @@ def critical_points_from_total_psi(eq: Any, *, ip: float) -> Dict[str, Any]:
         psi_arr = np.asarray(psi, dtype=float)
         from freegs4e import critical
 
-        opt, xpt = critical.find_critical(eq.R, eq.Z, psi_arr, None, float(ip))
+        # freegs4e wants signIp=±1 — never pass |Ip| in amps (wipes X-points).
+        sign_ip = int(np.sign(float(ip)))
+        if sign_ip == 0:
+            sign_ip = 1
+        try:
+            opt, xpt = critical.find_critical(eq.R, eq.Z, psi_arr, None, sign_ip)
+        except TypeError:
+            opt, xpt = critical.find_critical(eq.R, eq.Z, psi_arr)
+        if (xpt is None or len(xpt) == 0) and sign_ip != 0:
+            try:
+                opt2, xpt2 = critical.find_critical(eq.R, eq.Z, psi_arr, None, -sign_ip)
+                if xpt2 is not None and len(xpt2) > 0:
+                    opt, xpt = opt2, xpt2
+            except TypeError:
+                pass
         if opt is not None:
             for row in opt:
                 out["opt"].append([float(row[0]), float(row[1]), float(row[2])])

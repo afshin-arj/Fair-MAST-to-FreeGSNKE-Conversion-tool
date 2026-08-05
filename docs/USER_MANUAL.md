@@ -1,6 +1,6 @@
 # Fair-MAST → FreeGSNKE — User Manual
 
-**Version:** 11.34.4  
+**Version:** 11.34.5  
 **Audience:** fusion researchers, data engineers, and reviewers who need a shot-only, authority-bound path from classic MAST Level-2 data to FreeGSNKE reconstructions  
 **North star:** enter a MAST shot number; everything else is automatic  
 

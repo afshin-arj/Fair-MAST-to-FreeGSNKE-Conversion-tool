@@ -317,7 +317,15 @@ def attach_profiles_after_restore(
                 from freegs4e import critical
 
                 ip = float(getattr(profiles, "Ip", 0.0) or 0.0)
-                opt2, xpt2 = critical.find_critical(eq.R, eq.Z, psi_arr, None, ip)
+                import numpy as _np
+
+                sign_ip = int(_np.sign(ip)) or 1
+                try:
+                    opt2, xpt2 = critical.find_critical(
+                        eq.R, eq.Z, psi_arr, None, sign_ip
+                    )
+                except TypeError:
+                    opt2, xpt2 = critical.find_critical(eq.R, eq.Z, psi_arr)
                 if opt2 is not None and len(opt2) > 0:
                     profiles.opt = opt2
                     try:

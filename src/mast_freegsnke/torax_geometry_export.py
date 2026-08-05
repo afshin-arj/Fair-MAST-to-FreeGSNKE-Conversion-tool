@@ -166,21 +166,103 @@ def _critical_points_empty(pts: Any) -> bool:
         return True
 
 
-def _find_critical_points(eq: Any, psi: Any) -> Tuple[Any, Any]:
-    """O/X points via freegs4e; prefer Ip-aware signature used by shape honesty."""
-    from freegs4e import critical
+def _sign_ip_from_eq(eq: Any) -> int:
+    """freegs4e ``find_critical(..., signIp=)`` wants ±1 — never |Ip| in amps."""
+    import numpy as np
 
-    ip: Optional[float] = None
     try:
         ip = float(eq.plasmaCurrent())
     except Exception:
-        ip = None
-    if ip is not None:
+        return 1
+    s = int(np.sign(ip))
+    return s if s != 0 else 1
+
+
+def _critical_from_attached(eq: Any) -> Tuple[Any, Any]:
+    """Prefer opt/xpt already attached by FreeGSNKE / shape honesty (curated plot path)."""
+    for src in (getattr(eq, "_profiles", None), eq):
+        if src is None:
+            continue
+        opt = getattr(src, "opt", None)
+        xpt = getattr(src, "xpt", None)
+        if opt is not None and not _critical_points_empty(opt):
+            return opt, xpt
+    return None, None
+
+
+def _psi_bndry_fallback(eq: Any, opoint: Any) -> Tuple[Optional[float], str]:
+    """Honest ψ_bndry when find_critical yields no X (never invent X coordinates)."""
+    import numpy as np
+
+    for src in (getattr(eq, "_profiles", None), eq):
+        if src is None:
+            continue
+        for attr in ("psi_bndry", "psi_bound"):
+            raw = getattr(src, attr, None)
+            if raw is None:
+                continue
+            try:
+                v = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if v == v and abs(v) != float("inf"):
+                return v, f"{type(src).__name__}.{attr}"
+
+    try:
+        isoflux = np.asarray(eq.separatrix(ntheta=101), dtype=float)
+        if isoflux.ndim != 2 or isoflux.shape[0] < 4 or isoflux.shape[1] < 2:
+            return None, ""
+        psi = np.asarray(eq.psi(), dtype=float)
+        from scipy.interpolate import RectBivariateSpline
+
+        spl = RectBivariateSpline(eq.R[:, 0], eq.Z[0, :], psi)
+        vals = spl(isoflux[:, 0], isoflux[:, 1], grid=False)
+        vals = np.asarray(vals, dtype=float)
+        vals = vals[np.isfinite(vals)]
+        if vals.size < 1:
+            return None, ""
+        return float(np.median(vals)), "separatrix_psi_median"
+    except Exception:
+        return None, ""
+
+
+def _find_critical_points(eq: Any, psi: Any) -> Tuple[Any, Any, str]:
+    """O/X points via attached profiles or freegs4e (correct ``signIp=±1``).
+
+    Returns ``(opoint, xpoint, source_note)``.
+    """
+    import numpy as np
+    from freegs4e import critical
+
+    psi_arr = np.asarray(psi, dtype=float)
+
+    o_att, x_att = _critical_from_attached(eq)
+    if o_att is not None and not _critical_points_empty(o_att):
+        if not _critical_points_empty(x_att):
+            return o_att, x_att, "eq_or_profiles_opt_xpt"
+
+    sign = _sign_ip_from_eq(eq)
+    opoint: Any = None
+    xpoint: Any = None
+    try:
+        opoint, xpoint = critical.find_critical(eq.R, eq.Z, psi_arr, None, sign)
+    except TypeError:
+        opoint, xpoint = critical.find_critical(eq.R, eq.Z, psi_arr)
+
+    if _critical_points_empty(xpoint) and not _critical_points_empty(opoint):
+        # plasmaCurrent() sign can disagree with the ψ ordering used at solve time.
         try:
-            return critical.find_critical(eq.R, eq.Z, psi, None, ip)
+            o2, x2 = critical.find_critical(eq.R, eq.Z, psi_arr, None, -sign)
+            if not _critical_points_empty(x2):
+                return o2, x2, f"find_critical_signIp={-sign}"
         except TypeError:
             pass
-    return critical.find_critical(eq.R, eq.Z, psi)
+
+    if o_att is not None and not _critical_points_empty(o_att) and _critical_points_empty(xpoint):
+        # Keep attached O; X resolved later via psi_bndry fallback.
+        return o_att, x_att, "eq_or_profiles_opt_only"
+
+    return opoint, xpoint, f"find_critical_signIp={sign}"
 
 
 def write_geqdsk_declared_rcentr(
@@ -201,18 +283,32 @@ def write_geqdsk_declared_rcentr(
 
     psi = eq.psi()
     nx, ny = psi.shape
-    opoint, xpoint = _find_critical_points(eq, psi)
+    opoint, xpoint, crit_source = _find_critical_points(eq, psi)
     if _critical_points_empty(opoint):
         raise ToraxGeometryExportError("critical.find_critical returned no O-point")
-    if _critical_points_empty(xpoint):
-        raise ToraxGeometryExportError("critical.find_critical returned no X-point")
+
+    o0 = opoint[0]
+    simagx_abs = float(o0[2])
+    boundary_source = crit_source
+    n_xpoint = 0
+    if not _critical_points_empty(xpoint):
+        x0 = xpoint[0]
+        psi_bndry_abs = float(x0[2])
+        n_xpoint = int(len(xpoint))
+        boundary_source = f"{crit_source}+primary_xpoint"
+    else:
+        psi_bndry_abs, fb_src = _psi_bndry_fallback(eq, opoint)
+        if psi_bndry_abs is None:
+            raise ToraxGeometryExportError(
+                "critical.find_critical returned no X-point and no honest psi_bndry "
+                "fallback (profiles.psi_bndry / separatrix) — cannot set GEQDSK sibdry"
+            )
+        boundary_source = f"{crit_source}+{fb_src}"
 
     rmin, rmax = float(eq.Rmin), float(eq.Rmax)
     zmin, zmax = float(eq.Zmin), float(eq.Zmax)
     fvac = float(eq.fvac())
 
-    o0 = opoint[0]
-    x0 = xpoint[0]
     data: Dict[str, Any] = {
         "nx": nx,
         "ny": ny,
@@ -225,8 +321,8 @@ def write_geqdsk_declared_rcentr(
     }
     data["rmagx"] = float(o0[0])
     data["zmagx"] = float(o0[1])
-    data["simagx"] = float(o0[2])
-    data["sibdry"] = float(x0[2]) - data["simagx"]
+    data["simagx"] = simagx_abs
+    data["sibdry"] = float(psi_bndry_abs) - data["simagx"]
     data["cpasma"] = float(eq.plasmaCurrent())
 
     psinorm = linspace(0.0, 1.0, nx, endpoint=False)
@@ -268,7 +364,9 @@ def write_geqdsk_declared_rcentr(
         "ny": int(ny),
         "cpasma_A": float(data["cpasma"]),
         "n_opoint": int(len(opoint)),
-        "n_xpoint": int(len(xpoint)),
+        "n_xpoint": int(n_xpoint),
+        "critical_source": boundary_source,
+        "psi_bndry_abs": float(psi_bndry_abs),
     }
 
 

@@ -108,13 +108,110 @@ def test_inverse_template_mentions_torax_export() -> None:
     # Multitime shape gate must use ea["grid"] (NameError left soft-skips on 30201).
     assert 'grid=ea["grid"]' in tpl
 
+
 def test_critical_points_empty_handles_numpy() -> None:
     assert _critical_points_empty(None) is True
     assert _critical_points_empty([]) is True
     assert _critical_points_empty(np.zeros((0, 3))) is True
-    # Non-empty ndarray must NOT use truthiness (would raise AmbiguousTruthValue).
     pts = np.array([[0.9, 0.0, 1.0], [0.85, 0.5, 0.5]], dtype=float)
     assert _critical_points_empty(pts) is False
+
+
+def test_sign_ip_helper_never_returns_amps() -> None:
+    from mast_freegsnke.torax_geometry_export import _sign_ip_from_eq
+
+    class _EqPos:
+        def plasmaCurrent(self):
+            return 1.0e6
+
+    class _EqNeg:
+        def plasmaCurrent(self):
+            return -8.5e5
+
+    assert _sign_ip_from_eq(_EqPos()) == 1
+    assert _sign_ip_from_eq(_EqNeg()) == -1
+
+
+def test_write_geqdsk_psi_bndry_fallback_without_xpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When find_critical yields O but no X, use profiles.psi_bndry (SHOT/30201)."""
+    import sys
+
+    nx, ny = 8, 8
+    R = np.linspace(0.2, 1.5, nx)
+    Z = np.linspace(-1.2, 1.2, ny)
+    RR, ZZ = np.meshgrid(R, Z, indexing="ij")
+    psi = np.exp(-((RR - 0.9) ** 2 + ZZ**2) / 0.25)
+
+    class _Prof:
+        psi_bndry = 0.2
+        opt = np.array([[0.9, 0.0, 1.0]], dtype=float)
+        xpt = np.zeros((0, 3), dtype=float)
+
+    class _Eq:
+        R = RR
+        Z = ZZ
+        Rmin, Rmax = 0.2, 1.5
+        Zmin, Zmax = -1.2, 1.2
+        nx = 8
+        ny = 8
+        tokamak = SimpleNamespace(wall=None)
+        _profiles = _Prof()
+
+        def psi(self):
+            return psi
+
+        def fvac(self):
+            return 0.5
+
+        def plasmaCurrent(self):
+            return -1.0e6  # wrong-sign amps must not be passed as signIp
+
+        def fpol(self, p):
+            return np.full_like(p, 0.5, dtype=float)
+
+        def pressure(self, p):
+            return np.zeros_like(p, dtype=float)
+
+        def ffprime(self, p):
+            return np.zeros_like(p, dtype=float)
+
+        def pprime(self, p):
+            return np.zeros_like(p, dtype=float)
+
+        def q(self, p):
+            return np.ones_like(p, dtype=float)
+
+        def separatrix(self, ntheta=101):
+            th = np.linspace(0, 2 * np.pi, int(ntheta), endpoint=False)
+            return np.column_stack([0.9 + 0.3 * np.cos(th), 0.4 * np.sin(th)])
+
+    op = np.array([[0.9, 0.0, 1.0]], dtype=float)
+    xp_empty = np.zeros((0, 3), dtype=float)
+
+    monkeypatch.setattr(
+        "mast_freegsnke.torax_geometry_export._find_critical_points",
+        lambda eq, psi_arr: (op, xp_empty, "test_no_x"),
+    )
+
+    def _fake_write(data, fh, label=None):
+        fh.write(f"sibdry={data['sibdry']}\n")
+
+    fake_geqdsk = SimpleNamespace(write=_fake_write)
+    try:
+        import freegs4e as _real_f4e
+
+        monkeypatch.setattr(_real_f4e, "_geqdsk", fake_geqdsk)
+    except ImportError:
+        monkeypatch.setitem(sys.modules, "freegs4e", SimpleNamespace(_geqdsk=fake_geqdsk))
+        monkeypatch.setitem(sys.modules, "freegs4e._geqdsk", fake_geqdsk)
+
+    buf = io.StringIO()
+    meta = write_geqdsk_declared_rcentr(_Eq(), buf, rcentr_m=0.85, label="test")
+    assert meta["n_xpoint"] == 0
+    assert "psi_bndry" in str(meta["critical_source"])
+    assert "sibdry=-0.8" in buf.getvalue()  # 0.2 - 1.0
 
 
 def test_write_geqdsk_accepts_numpy_critical_points(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -176,7 +273,7 @@ def test_write_geqdsk_accepts_numpy_critical_points(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(
         "mast_freegsnke.torax_geometry_export._find_critical_points",
-        lambda eq, psi_arr: (op, xp),
+        lambda eq, psi_arr: (op, xp, "test_numpy_critical"),
     )
 
     written = {"n": 0}

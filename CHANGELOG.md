@@ -1,3 +1,19 @@
+## 11.34.5 — GEQDSK export: correct freegs4e signIp
+
+### Root cause (SHOT/30201 re-run)
+- Inverse shape audit found **n_xpt=4**, but TORAX export failed with `no X-point`.
+- freegs4e `find_critical(..., signIp=±1)` was given **|Ip| in amps** (e.g. `1e6`). Wrong sign vs ψ ordering discards every X-point.
+- Peers (evolutive/EFIT/planner) already ran thanks to 11.34.4 cascade fix.
+
+### Core
+- Pass `signIp=±1` only; retry opposite sign if X empty; prefer attached `profiles.opt/xpt`.
+- If still no X: honest `psi_bndry` fallback (`profiles.psi_bndry` / separatrix median) — never invent X coordinates.
+- Same signIp fix in shape honesty (+ presentation fallback).
+
+### Validate
+- signIp helper + no-X ψ_bndry fallback tests.
+- Version **11.34.5**.
+
 ## 11.34.4 — GEQDSK blockers no longer cascade-skip peers
 
 ### Why SHOT/30201 skipped EFIT / GSFit / planner / evolutive
