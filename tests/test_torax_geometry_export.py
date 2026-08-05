@@ -104,10 +104,9 @@ def test_inverse_template_mentions_torax_export() -> None:
     tpl = (repo / "templates" / "inverse_run.py.tpl").read_text(encoding="utf-8")
     assert "export_torax_geqdsk_from_equilibrium" in tpl
     assert "try_load_torax_geometry_export_authority" in tpl
-    assert "torax_geometry_export_failed" in tpl
+    assert "continuing after TORAX export failure" in tpl
     # Multitime shape gate must use ea["grid"] (NameError left soft-skips on 30201).
     assert 'grid=ea["grid"]' in tpl
-
 
 def test_critical_points_empty_handles_numpy() -> None:
     assert _critical_points_empty(None) is True

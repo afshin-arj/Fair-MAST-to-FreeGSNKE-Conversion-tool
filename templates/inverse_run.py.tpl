@@ -1529,8 +1529,9 @@ def main():
         print(f"[WARN] inverse_equilibrium.png failed: {_fig_e}", flush=True)
 
     # ADR-001 optional TORAX GEQDSK export (authority-gated; default off).
-    # When authority is snapshotted, export failure is fail-closed (SystemExit)
-    # so the pipeline does not see a green inverse + empty GEQDSK stub.
+    # After inverse_dump.pkl, export failure must not abort the child (dump +
+    # synthetics stay valid). Pipeline fail-closes on missing/empty GEQDSK when
+    # export_torax_geometry=true — without cascade-skipping EFIT/planner peers.
     _tg = None
     try:
         from mast_freegsnke.torax_geometry_export import (
@@ -1552,8 +1553,6 @@ def main():
             )
         else:
             print("[INFO] TORAX geometry export skipped (no authority snapshot)", flush=True)
-    except SystemExit:
-        raise
     except Exception as _tge:
         print(f"[WARN] torax geometry export failed: {_tge}", flush=True)
         try:
@@ -1563,9 +1562,11 @@ def main():
                     _stub.unlink()
         except Exception:
             pass
-        if _tg is not None:
-            raise SystemExit(f"torax_geometry_export_failed: {_tge}") from _tge
-
+        print(
+            "[WARN] continuing after TORAX export failure "
+            "(pipeline fail-closes if export_torax_geometry=true)",
+            flush=True,
+        )
     # Multi-time synthetic probe diagnostics (contract metrics input, v10.5.0).
     # Runs LAST in child processes so the t0 inverse dump/plots stay pristine.
     write_synthetic_probe_csvs(

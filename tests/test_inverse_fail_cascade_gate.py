@@ -43,7 +43,7 @@ def test_inverse_template_normalises_profiles_before_pprime_dump() -> None:
 
 
 def test_inverse_template_plot_failsoft_after_dump() -> None:
-    """Plot stays fail-soft after dump; ADR-001 GEQDSK is fail-closed when authority present."""
+    """Plot + optional TORAX stay fail-soft after dump; pipeline fail-closes GEQDSK."""
     tpl = (REPO / "templates" / "inverse_run.py.tpl").read_text(encoding="utf-8")
     after_dump = tpl.split('print("Saved inverse_dump.pkl")', 1)[1]
     assert "never abort after a successful dump" in after_dump or "inverse_equilibrium.png failed" in after_dump
@@ -53,6 +53,21 @@ def test_inverse_template_plot_failsoft_after_dump() -> None:
     assert "SystemExit" not in plot_region
     torax = after_dump.split("ADR-001", 1)[1].split("write_synthetic_probe_csvs", 1)[0]
     assert "torax geometry export failed" in torax
-    assert "torax_geometry_export_failed" in torax
-    assert "SystemExit" in torax
+    assert "SystemExit" not in torax
+    assert "continuing after TORAX export failure" in torax
     assert 'grid=ea["grid"]' in tpl
+
+
+def test_pipeline_geqdsk_blockers_do_not_cascade_skip_peers() -> None:
+    """ADR-001 missing GEQDSK fails the run but must not skip EFIT/planner peers."""
+    src = (REPO / "src" / "mast_freegsnke" / "pipeline.py").read_text(encoding="utf-8")
+    assert "cascade_skip_blockers" in src
+    assert src.count("cascade_skip_blockers(blocking_errors)") >= 3
+    from mast_freegsnke.pipeline import cascade_skip_blockers
+
+    only_torax = [
+        "torax_geometry_export_missing: expected GEQDSK under downstream/torax/"
+    ]
+    assert cascade_skip_blockers(only_torax) == []
+    mixed = only_torax + ["freegsnke_inverse_failed (see logs/inverse.stderr.txt)"]
+    assert cascade_skip_blockers(mixed) == [mixed[1]]

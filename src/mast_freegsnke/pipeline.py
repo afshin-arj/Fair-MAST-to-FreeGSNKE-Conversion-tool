@@ -64,6 +64,27 @@ from .execution_authority import write_execution_authority
 from .equilibrium_presentation import PresentationAuthority, write_presentation_authority
 
 
+def cascade_skip_blockers(blocking_errors: List[str]) -> List[str]:
+    """Blockers that should skip later peers (evolutive / EFIT / GSFit / planner).
+
+    ADR-001 GEQDSK export failure still belongs in ``blocking_errors`` so the run
+    fails closed when ``export_torax_geometry=true``, but must **not** cascade-skip
+    reconstruction peers that only need a successful Inverse (SHOT/30201).
+    """
+    out: List[str] = []
+    for err in blocking_errors:
+        s = str(err)
+        low = s.lower()
+        if low.startswith("torax_geometry_export_missing"):
+            continue
+        if low.startswith("torax_geometry_export_verify_failed"):
+            continue
+        if low.startswith("torax_geometry_export_failed"):
+            continue
+        out.append(err)
+    return out
+
+
 def _resolve_config_path(raw: Optional[str], repo_root: Path) -> Optional[Path]:
     if not raw:
         return None
@@ -1602,13 +1623,15 @@ class ShotPipeline:
                                 child_hint=child_hint or None,
                             )
 
-                    # Evolutive forward (FAIR-MAST voltages) after successful inverse IC
-                    if self.cfg.execute_evolutive and blocking_errors:
+                    # Evolutive forward (FAIR-MAST voltages) after successful inverse IC.
+                    # GEQDSK-only blockers must not skip evolutive (ADR-001 is orthogonal).
+                    _peer_blockers = cascade_skip_blockers(blocking_errors)
+                    if self.cfg.execute_evolutive and _peer_blockers:
                         _stage(
                             "evolutive_execute",
                             False,
                             note="skipped_blocking_errors",
-                            blocking_errors=list(blocking_errors),
+                            blocking_errors=list(_peer_blockers),
                         )
                     elif self.cfg.execute_evolutive:
                         evo_script = run_dir / "evolutive_run.py"
@@ -1811,7 +1834,7 @@ class ShotPipeline:
                 science_audit = None
 
             efit_compare_report: Optional[Dict[str, Any]] = None
-            if blocking_errors:
+            if cascade_skip_blockers(blocking_errors):
                 _stage(
                     "efit_compare",
                     False,
@@ -1904,7 +1927,7 @@ class ShotPipeline:
 
             # ADR-006: GSFit live peer (after FreeGSNKE + EFIT archive compare; soft-skip while awaiting)
             gsfit_report: Optional[Dict[str, Any]] = None
-            if blocking_errors:
+            if cascade_skip_blockers(blocking_errors):
                 _stage("gsfit", False, note="skipped_blocking_errors")
             elif self.cfg.execute_gsfit:
                 try:
@@ -2056,7 +2079,7 @@ class ShotPipeline:
                         _stage("shape_targets", False, error=str(e))
 
             # ADR-004 Phase 2: optional GSPulse-style planner (default off)
-            if blocking_errors:
+            if cascade_skip_blockers(blocking_errors):
                 _stage("planner", False, note="skipped_blocking_errors")
                 if self.cfg.execute_evolutive_from_plan:
                     _stage("evolutive_from_plan", False, note="skipped_blocking_errors")

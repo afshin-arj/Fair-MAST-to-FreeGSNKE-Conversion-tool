@@ -1,3 +1,18 @@
+## 11.34.4 — GEQDSK blockers no longer cascade-skip peers
+
+### Why SHOT/30201 skipped EFIT / GSFit / planner / evolutive
+- Inverse **succeeded**. The only hard fail was ADR-001 `torax_geometry_export_missing` (empty GEQDSK from a numpy AmbiguousTruthValue bug, fixed in 11.34.3).
+- Pipeline treated that as a generic `blocking_error`, so later peers used `skipped_blocking_errors` even though they do not depend on TORAX export.
+- Mirnov/saddle/omaha `awaiting_authority` and DN≠Forward GIF notes were **INFO/ADVISORY**, not skips.
+
+### Core
+- **`cascade_skip_blockers`:** GEQDSK-only blockers still fail the run (ADR-001), but do not skip evolutive / EFIT archive compare / GSFit / planner.
+- Inverse TORAX export stays **fail-soft after dump** (no SystemExit) so Forward/multitime are not aborted when export fails; pipeline still fail-closes on missing/empty GEQDSK.
+
+### Validate
+- Cascade helper + template fail-soft regression tests.
+- Version **11.34.4**.
+
 ## 11.34.3 — GEQDSK export (ADR-001) fail-closed fix
 
 ### Core
