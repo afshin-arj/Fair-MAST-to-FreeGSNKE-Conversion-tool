@@ -884,7 +884,7 @@ def write_synthetic_probe_csvs(tokamak, eq, profiles_kwargs, solver, solv, ea, i
                     solv=solv,
                     mt_spec=mt_spec,
                     bnd=bnd_i,
-                    grid=grid,
+                    grid=ea["grid"],
                     t_i=float(t_i),
                     ip_i=float(ip_i),
                     pf_i=_pf_now,
@@ -1528,7 +1528,10 @@ def main():
     except Exception as _fig_e:
         print(f"[WARN] inverse_equilibrium.png failed: {_fig_e}", flush=True)
 
-    # ADR-001 optional TORAX GEQDSK export (authority-gated; default off)
+    # ADR-001 optional TORAX GEQDSK export (authority-gated; default off).
+    # When authority is snapshotted, export failure is fail-closed (SystemExit)
+    # so the pipeline does not see a green inverse + empty GEQDSK stub.
+    _tg = None
     try:
         from mast_freegsnke.torax_geometry_export import (
             export_torax_geqdsk_from_equilibrium,
@@ -1547,8 +1550,21 @@ def main():
                 f"(profiles={_rep.get('profile_provenance')})",
                 flush=True,
             )
+        else:
+            print("[INFO] TORAX geometry export skipped (no authority snapshot)", flush=True)
+    except SystemExit:
+        raise
     except Exception as _tge:
         print(f"[WARN] torax geometry export failed: {_tge}", flush=True)
+        try:
+            if _tg is not None:
+                _stub = HERE / str(_tg.output_relpath)
+                if _stub.is_file() and _stub.stat().st_size <= 0:
+                    _stub.unlink()
+        except Exception:
+            pass
+        if _tg is not None:
+            raise SystemExit(f"torax_geometry_export_failed: {_tge}") from _tge
 
     # Multi-time synthetic probe diagnostics (contract metrics input, v10.5.0).
     # Runs LAST in child processes so the t0 inverse dump/plots stay pristine.

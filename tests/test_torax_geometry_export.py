@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 from mast_freegsnke.config import AppConfig
 from mast_freegsnke.torax_geometry_export import (
     ToraxGeometryExportAuthority,
     ToraxGeometryExportError,
+    _critical_points_empty,
+    export_torax_geqdsk_from_equilibrium,
     load_torax_geometry_export_authority,
+    write_geqdsk_declared_rcentr,
     write_torax_geometry_export_authority,
 )
 
@@ -98,3 +104,121 @@ def test_inverse_template_mentions_torax_export() -> None:
     tpl = (repo / "templates" / "inverse_run.py.tpl").read_text(encoding="utf-8")
     assert "export_torax_geqdsk_from_equilibrium" in tpl
     assert "try_load_torax_geometry_export_authority" in tpl
+    assert "torax_geometry_export_failed" in tpl
+    # Multitime shape gate must use ea["grid"] (NameError left soft-skips on 30201).
+    assert 'grid=ea["grid"]' in tpl
+
+
+def test_critical_points_empty_handles_numpy() -> None:
+    assert _critical_points_empty(None) is True
+    assert _critical_points_empty([]) is True
+    assert _critical_points_empty(np.zeros((0, 3))) is True
+    # Non-empty ndarray must NOT use truthiness (would raise AmbiguousTruthValue).
+    pts = np.array([[0.9, 0.0, 1.0], [0.85, 0.5, 0.5]], dtype=float)
+    assert _critical_points_empty(pts) is False
+
+
+def test_write_geqdsk_accepts_numpy_critical_points(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression: freegs4e find_critical returns ndarrays → old `if not opoint` crashed."""
+    import sys
+
+    nx, ny = 8, 8
+    R = np.linspace(0.2, 1.5, nx)
+    Z = np.linspace(-1.2, 1.2, ny)
+    RR, ZZ = np.meshgrid(R, Z, indexing="ij")
+    psi = np.exp(-((RR - 0.9) ** 2 + ZZ**2) / 0.25)
+
+    class _Wall:
+        R = np.array([0.2, 1.5, 1.5, 0.2])
+        Z = np.array([-1.2, -1.2, 1.2, 1.2])
+
+    class _Tok:
+        wall = _Wall()
+
+    class _Eq:
+        R = RR
+        Z = ZZ
+        Rmin, Rmax = 0.2, 1.5
+        Zmin, Zmax = -1.2, 1.2
+        nx = 8
+        ny = 8
+        tokamak = _Tok()
+
+        def psi(self):
+            return psi
+
+        def fvac(self):
+            return 0.5
+
+        def plasmaCurrent(self):
+            return 1.0e6
+
+        def fpol(self, p):
+            return np.full_like(p, 0.5, dtype=float)
+
+        def pressure(self, p):
+            return np.zeros_like(p, dtype=float)
+
+        def ffprime(self, p):
+            return np.zeros_like(p, dtype=float)
+
+        def pprime(self, p):
+            return np.zeros_like(p, dtype=float)
+
+        def q(self, p):
+            return np.ones_like(p, dtype=float)
+
+        def separatrix(self, ntheta=101):
+            th = np.linspace(0, 2 * np.pi, int(ntheta), endpoint=False)
+            return np.column_stack([0.9 + 0.3 * np.cos(th), 0.4 * np.sin(th)])
+
+    op = np.array([[0.9, 0.0, 1.0]], dtype=float)
+    xp = np.array([[0.85, 0.55, 0.2], [0.85, -0.55, 0.2]], dtype=float)
+
+    monkeypatch.setattr(
+        "mast_freegsnke.torax_geometry_export._find_critical_points",
+        lambda eq, psi_arr: (op, xp),
+    )
+
+    written = {"n": 0}
+
+    def _fake_write(data, fh, label=None):
+        written["n"] += 1
+        fh.write(f"fake-geqdsk label={label} nx={data['nx']}\n")
+
+    fake_geqdsk = SimpleNamespace(write=_fake_write)
+    fake_freegs4e = SimpleNamespace(_geqdsk=fake_geqdsk, critical=SimpleNamespace())
+    try:
+        import freegs4e as _real_f4e
+
+        monkeypatch.setattr(_real_f4e, "_geqdsk", fake_geqdsk)
+    except ImportError:
+        monkeypatch.setitem(sys.modules, "freegs4e", fake_freegs4e)
+        monkeypatch.setitem(sys.modules, "freegs4e._geqdsk", fake_geqdsk)
+
+    buf = io.StringIO()
+    meta = write_geqdsk_declared_rcentr(_Eq(), buf, rcentr_m=0.85, label="test")
+    assert written["n"] == 1
+    assert meta["n_opoint"] == 1
+    assert meta["n_xpoint"] == 2
+    assert "fake-geqdsk" in buf.getvalue()
+
+
+def test_export_atomic_no_empty_stub_on_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    auth = _valid_auth()
+    out = tmp_path / auth.output_relpath
+
+    def _boom(*_a, **_k):
+        raise ToraxGeometryExportError("forced failure")
+
+    monkeypatch.setattr(
+        "mast_freegsnke.torax_geometry_export.write_geqdsk_declared_rcentr",
+        _boom,
+    )
+    with pytest.raises(ToraxGeometryExportError, match="forced"):
+        export_torax_geqdsk_from_equilibrium(tmp_path, object(), auth, shot=30201, t0=0.2)
+    assert not out.exists()
+    if out.parent.exists():
+        assert not list(out.parent.glob("*.tmp"))

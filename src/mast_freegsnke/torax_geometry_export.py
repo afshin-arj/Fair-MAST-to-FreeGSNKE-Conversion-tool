@@ -12,7 +12,7 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, TextIO
+from typing import Any, Dict, Optional, TextIO, Tuple
 
 
 class ToraxGeometryExportError(ValueError):
@@ -152,6 +152,37 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _critical_points_empty(pts: Any) -> bool:
+    """True when find_critical returned no points (lists *or* numpy arrays).
+
+    ``if not pts`` raises AmbiguousTruthValue on non-empty ndarrays — that bug
+    left 0-byte GEQDSK stubs on SHOT/30201 (ADR-001 fail-closed).
+    """
+    if pts is None:
+        return True
+    try:
+        return len(pts) == 0
+    except TypeError:
+        return True
+
+
+def _find_critical_points(eq: Any, psi: Any) -> Tuple[Any, Any]:
+    """O/X points via freegs4e; prefer Ip-aware signature used by shape honesty."""
+    from freegs4e import critical
+
+    ip: Optional[float] = None
+    try:
+        ip = float(eq.plasmaCurrent())
+    except Exception:
+        ip = None
+    if ip is not None:
+        try:
+            return critical.find_critical(eq.R, eq.Z, psi, None, ip)
+        except TypeError:
+            pass
+    return critical.find_critical(eq.R, eq.Z, psi)
+
+
 def write_geqdsk_declared_rcentr(
     eq: Any,
     fh: TextIO,
@@ -161,7 +192,6 @@ def write_geqdsk_declared_rcentr(
 ) -> Dict[str, Any]:
     """Write GEQDSK using freegs4e machinery but **declared** rcentr (not R0=1.0)."""
     import numpy as np
-    from freegs4e import critical
     from freegs4e import _geqdsk
     from numpy import linspace, zeros
 
@@ -171,16 +201,18 @@ def write_geqdsk_declared_rcentr(
 
     psi = eq.psi()
     nx, ny = psi.shape
-    opoint, xpoint = critical.find_critical(eq.R, eq.Z, psi)
-    if not opoint:
+    opoint, xpoint = _find_critical_points(eq, psi)
+    if _critical_points_empty(opoint):
         raise ToraxGeometryExportError("critical.find_critical returned no O-point")
-    if not xpoint:
+    if _critical_points_empty(xpoint):
         raise ToraxGeometryExportError("critical.find_critical returned no X-point")
 
     rmin, rmax = float(eq.Rmin), float(eq.Rmax)
     zmin, zmax = float(eq.Zmin), float(eq.Zmax)
     fvac = float(eq.fvac())
 
+    o0 = opoint[0]
+    x0 = xpoint[0]
     data: Dict[str, Any] = {
         "nx": nx,
         "ny": ny,
@@ -191,8 +223,10 @@ def write_geqdsk_declared_rcentr(
         "rleft": rmin,
         "zmid": 0.5 * (zmin + zmax),
     }
-    data["rmagx"], data["zmagx"], data["simagx"] = opoint[0]
-    data["sibdry"] = xpoint[0][2] - data["simagx"]
+    data["rmagx"] = float(o0[0])
+    data["zmagx"] = float(o0[1])
+    data["simagx"] = float(o0[2])
+    data["sibdry"] = float(x0[2]) - data["simagx"]
     data["cpasma"] = float(eq.plasmaCurrent())
 
     psinorm = linspace(0.0, 1.0, nx, endpoint=False)
@@ -210,9 +244,13 @@ def write_geqdsk_declared_rcentr(
     qpsi[0] = qpsi[1]
     data["qpsi"] = qpsi
 
-    if getattr(eq.tokamak, "wall", None) is not None:
-        data["rlim"] = eq.tokamak.wall.R
-        data["zlim"] = eq.tokamak.wall.Z
+    wall = getattr(getattr(eq, "tokamak", None), "wall", None)
+    if wall is not None:
+        wr = getattr(wall, "R", None)
+        wz = getattr(wall, "Z", None)
+        if wr is not None and wz is not None:
+            data["rlim"] = wr
+            data["zlim"] = wz
 
     isoflux = np.array(eq.separatrix(ntheta=101))
     ind = int(np.argmin(isoflux[:, 1]))
@@ -229,6 +267,8 @@ def write_geqdsk_declared_rcentr(
         "nx": int(nx),
         "ny": int(ny),
         "cpasma_A": float(data["cpasma"]),
+        "n_opoint": int(len(opoint)),
+        "n_xpoint": int(len(xpoint)),
     }
 
 
@@ -250,10 +290,28 @@ def export_torax_geqdsk_from_equilibrium(
         shot=int(shot) if shot is not None else -1,
         t0=float(t0) if t0 is not None else float("nan"),
     )
-    with open(out_path, "w", encoding="utf-8") as fh:
-        write_meta = write_geqdsk_declared_rcentr(
-            eq, fh, rcentr_m=float(auth.rcentr_m), label=label
-        )
+    # Atomic write: never leave a 0-byte stub that trips ADR-001 verify.
+    tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            write_meta = write_geqdsk_declared_rcentr(
+                eq, fh, rcentr_m=float(auth.rcentr_m), label=label
+            )
+        if not tmp_path.is_file() or tmp_path.stat().st_size <= 0:
+            raise ToraxGeometryExportError("GEQDSK write produced empty file")
+        tmp_path.replace(out_path)
+    except Exception:
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except OSError:
+            pass
+        try:
+            if out_path.is_file() and out_path.stat().st_size <= 0:
+                out_path.unlink()
+        except OSError:
+            pass
+        raise
 
     digest = sha256_file(out_path)
     manifest = {

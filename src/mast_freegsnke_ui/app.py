@@ -413,7 +413,7 @@ def create_app(
                                     persistence_type="local",
                                 ),
                                 html.Div(
-                                    "Off by default. On → FreeGSNKE inverse t0 → "
+                                    "Off by default. On → fail-closed after inverse: non-empty "
                                     "downstream/torax/geqdsk_t0.eqdsk (declared R0; not TORAX itself).",
                                     className="small text-muted mb-2 fg-geqdsk-hint",
                                 ),

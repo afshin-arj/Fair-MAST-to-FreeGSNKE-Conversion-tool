@@ -1,3 +1,18 @@
+## 11.34.3 — GEQDSK export (ADR-001) fail-closed fix
+
+### Core
+- **TORAX GEQDSK export:** freegs4e `find_critical` returns numpy arrays; old `if not opoint` raised AmbiguousTruthValue, left a **0-byte** `geqdsk_t0.eqdsk`, and inverse only printed WARN — pipeline then fail-closed with `torax_geometry_export_missing` (SHOT/30201).
+- Emptiness checks use `len()`; Ip-aware `find_critical` aligned with shape honesty; **atomic write** (no empty stubs); inverse **SystemExit** when authority present and export fails.
+- Pipeline verify surfaces the inverse WARN/child exit line; accepts `05_downstream/torax/` if layout already moved.
+- **Multitime shape gate:** `grid=ea["grid"]` (was NameError `grid is not defined` every window sample).
+
+### UI
+- GEQDSK toggle hint notes fail-closed non-empty export.
+
+### Validate
+- Numpy critical-point + atomic-export regression tests.
+- Version **11.34.3**.
+
 ## 11.34.2 — Remaining UI/core honesty
 
 ### Core

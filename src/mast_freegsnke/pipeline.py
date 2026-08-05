@@ -1544,13 +1544,38 @@ class ShotPipeline:
                         )
                         geqdsk_ok = False
                         geqdsk_path = None
+                        child_hint = ""
+                        inv_log = run_dir / "logs" / "inverse.stdout.txt"
+                        if inv_log.is_file():
+                            try:
+                                for _ln in inv_log.read_text(
+                                    encoding="utf-8", errors="replace"
+                                ).splitlines():
+                                    low = _ln.lower()
+                                    if (
+                                        "torax geometry export failed" in low
+                                        or "torax_geometry_export_failed" in low
+                                    ):
+                                        child_hint = _ln.strip()
+                                        break
+                            except OSError:
+                                pass
                         if tg_auth_snap.exists():
                             try:
                                 from .torax_geometry_export import load_torax_geometry_export_authority
 
                                 _tg = load_torax_geometry_export_authority(tg_auth_snap)
                                 geqdsk_path = run_dir / _tg.output_relpath
-                                geqdsk_ok = geqdsk_path.is_file() and geqdsk_path.stat().st_size > 0
+                                # Also accept post-layout path if verify runs late.
+                                alt = run_dir / "05_downstream" / "torax" / Path(_tg.output_relpath).name
+                                if not (geqdsk_path.is_file() and geqdsk_path.stat().st_size > 0):
+                                    if alt.is_file() and alt.stat().st_size > 0:
+                                        geqdsk_path = alt
+                                geqdsk_ok = (
+                                    geqdsk_path is not None
+                                    and geqdsk_path.is_file()
+                                    and geqdsk_path.stat().st_size > 0
+                                )
                             except Exception as e:
                                 blocking_errors.append(
                                     f"torax_geometry_export_verify_failed: {type(e).__name__}: {e}"
@@ -1562,12 +1587,20 @@ class ShotPipeline:
                                 path=str(geqdsk_path),
                             )
                         else:
-                            blocking_errors.append(
+                            msg = (
                                 "torax_geometry_export_missing: expected GEQDSK under "
                                 "downstream/torax/ after inverse (ADR-001 fail-closed when "
                                 "export_torax_geometry=true)"
                             )
-                            _stage("torax_geometry_export", False, path=str(geqdsk_path))
+                            if child_hint:
+                                msg = f"{msg} | child: {child_hint}"
+                            blocking_errors.append(msg)
+                            _stage(
+                                "torax_geometry_export",
+                                False,
+                                path=str(geqdsk_path),
+                                child_hint=child_hint or None,
+                            )
 
                     # Evolutive forward (FAIR-MAST voltages) after successful inverse IC
                     if self.cfg.execute_evolutive and blocking_errors:
