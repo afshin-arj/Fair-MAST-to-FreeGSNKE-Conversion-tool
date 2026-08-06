@@ -243,6 +243,26 @@ def flight_deck_rows(kpis: Dict[str, Any]) -> List[Dict[str, Any]]:
     planner_val = kpis.get("planner_status")
     if not planner_val and not kpis.get("planner_present"):
         planner_val = "off"
+    fwd_conv = kpis.get("forward_n_converged")
+    fwd_times = kpis.get("forward_n_times")
+    fwd_val: Any = "—"
+    if fwd_conv is not None:
+        fwd_val = f"{fmt_kpi(fwd_conv)}/{fmt_kpi(fwd_times)}"
+        if kpis.get("forward_demo_mode"):
+            fwd_val = f"{fwd_val} DEMO"
+    evo_status = kpis.get("evolutive_ip_status")
+    evo_val: Any = evo_status
+    if evo_status == "clamp_tautology":
+        evo_val = "clamp tautology"
+    elif evo_status == "ip_free_evolution":
+        evo_val = "Ip free evolution"
+    elif evo_val is None:
+        evo_val = kpis.get("evolutive_ok")
+    evo_tone = status_tone(kpis.get("evolutive_ok"))
+    if evo_status == "clamp_tautology":
+        evo_tone = "warn"
+    elif evo_status == "ip_free_evolution":
+        evo_tone = status_tone(kpis.get("evolutive_ok"))
     return [
         {
             "key": "status",
@@ -262,15 +282,55 @@ def flight_deck_rows(kpis: Dict[str, Any]) -> List[Dict[str, Any]]:
             "tone": status_tone(kpis.get("metrics_ok")),
         },
         {
-            "key": "evolutive_ok",
-            "label": "Evolutive Ip",
-            "value": kpis.get("evolutive_ok"),
-            "tone": status_tone(kpis.get("evolutive_ok")),
+            "key": "forward_gate",
+            "label": "Forward gate",
+            "value": fwd_val,
+            "tone": "warn" if kpis.get("forward_demo_mode") else "ok",
+        },
+        {
+            "key": "forward_not_dn_peer",
+            "label": "≠ Inverse DN",
+            "value": "yes" if kpis.get("forward_not_dn_peer", True) else "no",
+            "tone": "ok" if kpis.get("forward_not_dn_peer", True) else "fail",
+        },
+        {
+            "key": "evolutive_ip_status",
+            "label": "Evolutive",
+            "value": evo_val,
+            "tone": evo_tone,
+        },
+        {
+            "key": "evolutive_n_passive",
+            "label": "n_passive",
+            "value": kpis.get("evolutive_n_passive"),
+            "tone": "warn" if (kpis.get("evolutive_n_passive") in (0, None)) else "ok",
+        },
+        {
+            "key": "evolutive_early_stop",
+            "label": "early_stop",
+            "value": kpis.get("evolutive_early_stop") or "—",
+            "tone": "warn" if kpis.get("evolutive_early_stop") else "",
+        },
+        {
+            "key": "evolutive_max_drift_m",
+            "label": "Raxis drift [m]",
+            "value": kpis.get("evolutive_max_drift_m"),
         },
         {
             "key": "evolutive_rms_A",
             "label": "Ip RMS [A]",
-            "value": kpis.get("evolutive_rms_A"),
+            "value": (
+                f"{fmt_kpi(kpis.get('evolutive_rms_A'))} (tautology)"
+                if kpis.get("evolutive_clamp_tautology") and kpis.get("evolutive_rms_A") is not None
+                else (
+                    kpis.get("evolutive_rms_A")
+                    if kpis.get("evolutive_ip_free_evolution")
+                    else "n/a (clamped)"
+                    if kpis.get("evolutive_clamp_tautology")
+                    else kpis.get("evolutive_rms_A")
+                )
+            ),
+            "tone": "warn" if kpis.get("evolutive_clamp_tautology") else "",
         },
         {
             "key": "efit_ok",
@@ -350,12 +410,57 @@ def kpi_scorecard_rows(kpis: Dict[str, Any]) -> List[Dict[str, Any]]:
             "tone": status_tone(kpis.get("metrics_ok")),
         },
         {
+            "key": "forward_gate",
+            "label": "Forward gate (≠ Inverse DN)",
+            "value": (
+                f"{fmt_kpi(kpis.get('forward_n_converged'))}/{fmt_kpi(kpis.get('forward_n_times'))}"
+                if kpis.get("forward_n_converged") is not None
+                else "—"
+            ),
+            "tone": "warn" if kpis.get("forward_demo_mode") else "ok",
+        },
+        {
+            "key": "forward_window_currents",
+            "label": "Forward window_currents",
+            "value": kpis.get("forward_window_currents"),
+        },
+        {
+            "key": "evolutive_ip_status",
+            "label": "Evolutive status",
+            "value": kpis.get("evolutive_ip_status"),
+            "tone": "warn" if kpis.get("evolutive_clamp_tautology") else status_tone(kpis.get("evolutive_ok")),
+        },
+        {
+            "key": "evolutive_n_passive",
+            "label": "Evolutive n_passive",
+            "value": kpis.get("evolutive_n_passive"),
+            "tone": "warn" if kpis.get("evolutive_n_passive") in (0, None) else "ok",
+        },
+        {
+            "key": "evolutive_early_stop",
+            "label": "Evolutive early_stop",
+            "value": kpis.get("evolutive_early_stop"),
+        },
+        {
+            "key": "evolutive_max_drift_m",
+            "label": "Evolutive max Raxis drift [m]",
+            "value": kpis.get("evolutive_max_drift_m"),
+        },
+        {
             "key": "evolutive_ok",
             "label": "Evolutive Ip ok",
             "value": kpis.get("evolutive_ok"),
             "tone": status_tone(kpis.get("evolutive_ok")),
         },
-        {"key": "evolutive_rms_A", "label": "Evolutive Ip RMS [A]", "value": kpis.get("evolutive_rms_A")},
+        {
+            "key": "evolutive_rms_A",
+            "label": "Evolutive Ip RMS [A]",
+            "value": (
+                f"{fmt_kpi(kpis.get('evolutive_rms_A'))} (clamp tautology)"
+                if kpis.get("evolutive_clamp_tautology")
+                else kpis.get("evolutive_rms_A")
+            ),
+        },
         {
             "key": "profile_source",
             "label": "Profile source (ADR-004)",

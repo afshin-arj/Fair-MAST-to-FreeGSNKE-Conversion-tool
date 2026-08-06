@@ -22,7 +22,7 @@ REPO = Path(__file__).resolve().parents[1]
 def test_evolutive_authority_default_measured_pf() -> None:
     ea = load_evolutive_authority(REPO / "configs" / "evolutive_authority.json")
     assert ea.ic_coil_currents == "measured_pf"
-    assert ea.authority_version == "11.31.0"
+    assert ea.authority_version == "11.35.0"
 
 
 def test_score_evolutive_ip_clamp_tautology(tmp_path: Path) -> None:
@@ -80,9 +80,14 @@ def test_score_evolutive_ip_clamp_tautology(tmp_path: Path) -> None:
     assert (evo / "raxis_drift.csv").exists()
 
     audit = build_science_audit(tmp_path)
-    assert audit["version"] == "1.6"
+    assert audit["version"] == "1.7"
     assert audit["evolutive_ip"]["status"] == "clamp_tautology"
     assert audit["evolutive_raxis_drift"]["ok"] is True
+    assert audit["evolutive_science_kpis"]["primary_metric"] == "raxis_drift"
+    assert audit["evolutive_science_kpis"]["n_passive"] == 0
+    assert audit["passives_ab"]["blocked"] is True
+    assert audit["forward_gate"]["not_inverse_dn_peer"] is True
+    assert (tmp_path / "01_summary" / "passives_ab_readiness.json").is_file()
     adv = audit["presentation_advisories"]
     blob = " ".join(adv.get("items") or [])
     assert "clamp tautology" in blob.lower() or "clamp_ip" in blob.lower()
@@ -92,6 +97,8 @@ def test_score_evolutive_ip_clamp_tautology(tmp_path: Path) -> None:
     summary = (tmp_path / "01_summary" / "SUMMARY.md").read_text(encoding="utf-8")
     assert "clamp_tautology" in summary
     assert "Raxis drift" in summary
+    assert "What you may publish" in summary
+    assert "not_inverse_dn_peer" in summary
 
 
 def test_score_evolutive_ip_without_clamp_is_ok(tmp_path: Path) -> None:
@@ -109,9 +116,12 @@ def test_score_evolutive_ip_without_clamp_is_ok(tmp_path: Path) -> None:
     )
     rep = score_evolutive_ip(tmp_path)
     assert rep["ok"] is True
-    assert rep["status"] == "ok"
+    assert rep["status"] == "ip_free_evolution"
+    assert rep["ip_free_evolution"] is True
     assert rep["clamp_ip_to_measured"] is False
-
+    assert "opt-in campaign" in str(rep.get("note", "")).lower() or "ip_free" in str(
+        rep.get("note", "")
+    ).lower()
 
 def test_evolutive_template_soft_stop_before_snapshot() -> None:
     text = (REPO / "templates" / "evolutive_run.py.tpl").read_text(encoding="utf-8")

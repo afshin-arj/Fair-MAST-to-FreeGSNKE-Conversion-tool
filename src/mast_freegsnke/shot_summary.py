@@ -24,8 +24,8 @@ _KNOWN_LIMITATIONS = [
     "Evolutive default: ic_coil_currents=measured_pf + clamp_ip_to_measured (experimental I+V at t0); inverse_dump remains DEMO/shape-IC. Under clamp_ip, Ip residual is a tautology — prefer Raxis drift / early_stop. n_passive=0 → example05-class stability not expected (do not invent ρ).",
     "Contract residual metrics score only families with honest channel identity + units; uncalibrated mirnov/saddle/omaha stay audit-only until calibration authority is populated.",
     "FreeGSNKE Inverse stops on GS residual / relative ψ update only; constraint loss and DN X/O placement are scored by declared inverse_shape_acceptance (not a FreeGSNKE stop). GS ok ≠ automatic DN success.",
-    "Static Forward: t0 uses Inverse dump currents (+ dump ψ IC by default); window uses solver.forward_window_currents (default measured_pf; optional inverse_dump_currents = shape DEMO only). Forward plots must use live Forward LCFS (never Inverse dump LCFS); measured-PF Forward is not Inverse DN success. Live LCFS polylines are clipped to the GS domain (R>Rmin, R>0) so separatrix rays through the solenoid are not drawn as plasma. n_converged counts tol-met GS only.",
-    "Evolutive frames use live Evolutive LCFS only (never Inverse dump LCFS / Inverse null targets). early_stop=axis_drift is not an Ip-collapse claim (n_passive=0 soft-stop common). Evolutive stays soft-stop until cited ρ exists.",
+    "Static Forward: t0 uses Inverse dump currents (+ dump ψ IC by default); window uses solver.forward_window_currents (default measured_pf; optional inverse_dump_currents = shape DEMO only). Forward plots must use live Forward LCFS (never Inverse dump LCFS); measured-PF Forward is not Inverse DN success (science_audit forward_gate.not_inverse_dn_peer=true). Live LCFS polylines are clipped to the GS domain (R>Rmin, R>0) so separatrix rays through the solenoid are not drawn as plasma. n_converged counts tol-met GS only.",
+    "Evolutive frames use live Evolutive LCFS only (never Inverse dump LCFS / Inverse null targets). Primary KPIs under default clamp: clamp_tautology / n_passive / early_stop / Raxis drift — not Ip RMS. Opt-in clamp_ip_to_measured=false → ip_free_evolution (not happy-path default). early_stop=axis_drift is not an Ip-collapse claim (n_passive=0 soft-stop common). Evolutive stays soft-stop until cited ρ exists.",
     "profile_trajectory: richer α only from cited EFIT++ pprime (archive_profiles); scalar_bridge holds authority α — never invent α.",
     "Equilibrium GIFs are presentation annexes — not a substitute for residual metrics or Ip match. Curated plots draw structure-masked open-field contours (inside limiter; NaN through solenoid/PF coils) — Inverse/Forward/Evolutive.",
     "04_efit_compare uses FAIR-MAST Level-2 EFIT++ archive products — not a live efit-ai Fortran solve.",
@@ -132,6 +132,9 @@ def write_shot_expert_overlay(
 
     rq = science_audit.get("reconstruction_quality") or {}
     evo_ip = science_audit.get("evolutive_ip") or {}
+    evo_kpis = science_audit.get("evolutive_science_kpis") or {}
+    publish_claims = science_audit.get("publish_claims") or {}
+    passives_ab = science_audit.get("passives_ab") or {}
     ohmic = science_audit.get("ohmic_drive") or {}
     phases = science_audit.get("phase_timeline") or {}
     passives = science_audit.get("passive_resistivity") or {}
@@ -182,13 +185,17 @@ def write_shot_expert_overlay(
     meas_v = ", ".join(ohmic.get("measured_voltage_circuits") or []) or "(none)"
 
     evo_ip_lines = [
-        f"| status | {evo_ip.get('status', '—')} | clamp_tautology = not circuit validation |",
+        f"| status | {evo_ip.get('status', '—')} | clamp_tautology = not circuit validation; "
+        f"ip_free_evolution = opt-in campaign |",
         f"| ok | {evo_ip.get('ok')} | |",
+        f"| clamp_ip_to_measured | {evo_ip.get('clamp_ip_to_measured', '—')} | happy-path default true |",
+        f"| ip_free_evolution | {evo_ip.get('ip_free_evolution', evo_kpis.get('ip_free_evolution', '—'))} | |",
+        f"| n_passive | {evo_ip.get('n_passive', evo_kpis.get('n_passive', '—'))} | ADR-005 |",
         f"| n | {evo_ip.get('n', '—')} | valid evolutive steps |",
         f"| steps | {evo_ip.get('n_steps_recorded', '—')}/{evo_ip.get('n_steps_requested', '—')} | recorded/requested |",
-        f"| early_stop | {evo_ip.get('early_stop', '—')} | |",
+        f"| early_stop | {evo_ip.get('early_stop', evo_kpis.get('early_stop', '—'))} | primary KPI with Raxis |",
         f"| ic_coil_currents | {evo_ip.get('ic_coil_currents', '—')} | |",
-        f"| RMS [A] | {evo_ip.get('rms_A', '—')} | vs measured ip.csv |",
+        f"| RMS [A] | {evo_ip.get('rms_A', '—')} | meaningful only when unclamped |",
         f"| MAE [A] | {evo_ip.get('mae_A', '—')} | |",
         f"| max‖res‖ [A] | {evo_ip.get('max_abs_A', '—')} | |",
         f"| RMS rel | {evo_ip.get('rms_rel', '—')} | RMS / mean‖Ip_meas‖ |",
@@ -197,8 +204,39 @@ def write_shot_expert_overlay(
         evo_ip_lines.append(
             "| note | Ip residual near zero is expected under clamp_ip — not voltage fidelity | |"
         )
+    if evo_ip.get("status") == "ip_free_evolution":
+        evo_ip_lines.append(
+            "| note | Unclamped campaign: Ip RMS/bias vs ip.csv is the scorecard (not happy-path default) | |"
+        )
     if evo_ip.get("errors"):
         evo_ip_lines.append(f"| errors | {'; '.join(evo_ip['errors'])} | |")
+
+    publish_rows: List[str] = []
+    for row in publish_claims.get("rows") or []:
+        if not isinstance(row, dict):
+            continue
+        publish_rows.append(
+            f"| {row.get('product', '—')} | {row.get('may_publish_as', '—')} | "
+            f"{row.get('not_as', '—')} |"
+        )
+    if not publish_rows:
+        publish_rows = [
+            "| Inverse | Static GS fit to declared shape targets | GS-converged ≠ automatic DN |",
+            "| Forward | Measured-PF static GS plant check | Inverse / EFIT DN peer |",
+            "| Evolutive | Active-only V-driven probe (clamp / n_passive honesty) | Validated vessel-eddy dynamics |",
+            "| EFIT archive | FreeGSNKE vs FAIR-MAST EFIT++ archive | Live EFIT++ / Py-EFIT |",
+        ]
+
+    evo_kpi_lines = [
+        f"| primary_metric | {evo_kpis.get('primary_metric', '—')} | "
+        f"{'Ip vs measured' if evo_kpis.get('ip_free_evolution') else 'prefer Raxis / early_stop under clamp'} |",
+        f"| primary_value | {evo_kpis.get('primary_value', '—')} | |",
+        f"| clamp_tautology / status | {evo_kpis.get('ip_status', '—')} | |",
+        f"| n_passive | {evo_kpis.get('n_passive', '—')} | |",
+        f"| early_stop | {evo_kpis.get('early_stop', '—')} | |",
+        f"| max Raxis drift [m] | {evo_kpis.get('max_drift_m', '—')} | |",
+        f"| science_grade_ready | {evo_kpis.get('science_grade_ready', False)} | needs cited ρ + unclamped |",
+    ]
 
     evo_ax = science_audit.get("evolutive_raxis_drift") or {}
     evo_ax_lines = [
@@ -291,9 +329,22 @@ def write_shot_expert_overlay(
             f"(produced={fwd_gate.get('n_ok', '—')}, "
             f"max_iter={fwd_gate.get('n_completed_max_iter', '—')}, "
             f"skipped={fwd_gate.get('n_skipped', '—')}) "
+            f"**not_inverse_dn_peer=`{fwd_gate.get('not_inverse_dn_peer', True)}`** "
+            f"role=`{fwd_gate.get('science_role') or '—'}` "
             f"ic_psi={fwd_gate.get('ic_psi_used') or '—'} "
             f"window_currents={fwd_gate.get('window_currents') or '—'} "
             f"profile={fwd_gate.get('profile_source_requested') or (fwd_gate.get('profile_sources_used') or ['—'])}",
+            f"- **Evolutive primary KPIs:** status=`{evo_kpis.get('ip_status') or evo_ip.get('status')}` "
+            f"n_passive=`{evo_kpis.get('n_passive', evo_ip.get('n_passive', '—'))}` "
+            f"early_stop=`{evo_kpis.get('early_stop') or evo_ip.get('early_stop') or '—'}` "
+            f"max_Raxis_drift_m=`{evo_kpis.get('max_drift_m', '—')}` "
+            f"(Ip RMS under clamp is **not** circuit fidelity)",
+            "",
+            "## What you may publish",
+            "",
+            "| Product | May publish as | Not as |",
+            "|---------|----------------|--------|",
+            *publish_rows,
             "",
             "## Presentation advisories",
             "",
@@ -319,17 +370,31 @@ def write_shot_expert_overlay(
             f"(constrain_loss=`{(shape_gate.get('t0') or {}).get('constrain_loss_final')}`)",
             f"- **Note:** {shape_gate.get('note', '')}",
             "",
-            "### Static Forward (measured-PF replay)",
+            "### Static Forward gate (measured-PF plant check — not Inverse DN)",
             "",
             f"- **Available:** `{fwd_gate.get('available')}`",
+            f"- **not_inverse_dn_peer:** `{fwd_gate.get('not_inverse_dn_peer', True)}`",
+            f"- **science_role:** `{fwd_gate.get('science_role')}`",
+            f"- **demo_mode:** `{fwd_gate.get('demo_mode')}` "
+            f"(true only when window_currents=inverse_dump_currents)",
+            f"- **Publish as:** {fwd_gate.get('publish_as', '')}",
             f"- **Window solves:** converged={fwd_gate.get('n_converged')} "
             f"max_iter={fwd_gate.get('n_completed_max_iter')} "
             f"produced={fwd_gate.get('n_ok')} skipped={fwd_gate.get('n_skipped')} "
             f"n_times={fwd_gate.get('n_times')}",
             f"- **t0 IC ψ:** `{fwd_gate.get('ic_psi_used')}`",
+            f"- **window_currents:** `{fwd_gate.get('window_currents')}`",
             f"- **Profile source:** requested=`{fwd_gate.get('profile_source_requested')}` "
             f"used=`{fwd_gate.get('profile_sources_used')}`",
             f"- **Note:** {fwd_gate.get('note', '')}",
+            "",
+            "### Evolutive science KPIs (primary — prefer over Ip RMS under clamp)",
+            "",
+            "| Quantity | Value | Notes |",
+            "|----------|-------|-------|",
+            *evo_kpi_lines,
+            "",
+            f"_{evo_kpis.get('publish_as', '')}_",
             "",
             "### Evolutive Ip vs measured FAIR-MAST Ip",
             "",
@@ -342,6 +407,12 @@ def write_shot_expert_overlay(
             "| Quantity | Value | Notes |",
             "|----------|-------|-------|",
             *evo_ax_lines,
+            "",
+            "### Passives A/B readiness (Phase 3)",
+            "",
+            f"- **blocked:** `{passives_ab.get('blocked', True)}`",
+            f"- **n_components:** `{passives_ab.get('n_components', 0)}`",
+            f"- **Note:** {passives_ab.get('note', 'Cite ADR-005 ρ before with/without passives A/B.')}",
             "",
             "### Planner voltage gap (I-track vs terminal V)",
             "",

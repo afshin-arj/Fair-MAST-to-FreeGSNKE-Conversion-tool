@@ -1,6 +1,6 @@
 {
   "authority_name": "freegsnke_evolutive_authority",
-  "authority_version": "11.31.0",
+  "authority_version": "11.35.0",
   "full_timestep_s": 0.01,
   "cover_window": true,
   "max_steps": 200,
@@ -18,5 +18,5 @@
   "snapshot_equilibria_every_n": 1,
   "min_dIy_dI": 0.01,
   "n_steps": null,
-  "notes": "Declared evolutive numerics for FreeGSNKE nl_solver/nlstepper on classic MAST (not MAST-U). v11.31.0: default ic_coil_currents=measured_pf (experimental I+V consistency at t0; inverse_dump remains DEMO/shape-IC). clamp_ip_to_measured=true → Ip residual is a clamp tautology (prefer Raxis drift). n_passive=0 loud honesty (example05-class stability not expected). Passives still awaiting cited resistivity. FAIR-MAST Level-2 measured voltages p1/p2/p4/p5 primary; P3/P6 from_current_ohmic. ADR-004 profile_trajectory overrides scale_paxis_with_ip when present."
+  "notes": "Declared evolutive numerics for FreeGSNKE nl_solver/nlstepper on classic MAST (not MAST-U). Happy-path default: clamp_ip_to_measured=true → Ip residual is clamp_tautology (prefer Raxis drift / early_stop / n_passive). Opt-in unclamped Ip campaign: set clamp_ip_to_measured=false → science_audit status ip_free_evolution; Ip RMS vs ip.csv is then a real scorecard — NOT the happy-path default until ADR-005 passives + longer stable runs (Phase 4). Soft-stops abort_when_ip_below_measured_frac / abort_when_axis_drift_m remain. ic_coil_currents=measured_pf (experimental I+V consistency at t0; inverse_dump remains DEMO/shape-IC). n_passive=0 loud honesty until Path B5 ρ cited. Passives still awaiting cited resistivity. FAIR-MAST Level-2 measured voltages p1/p2/p4/p5 primary; P3/P6 from_current_ohmic. ADR-004 profile_trajectory overrides scale_paxis_with_ip when present."
 }

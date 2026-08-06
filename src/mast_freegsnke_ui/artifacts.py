@@ -1076,6 +1076,28 @@ def overview_kpis(run_dir: Path) -> Dict[str, Any]:
     window = summary.get("window") or man.get("time_window") or {}
     blocking = list(summary.get("blocking_errors") or man.get("blocking_errors") or progress.get("blocking_errors") or [])
     evo = audit.get("evolutive_ip") if isinstance(audit, dict) else {}
+    evo_kpis = audit.get("evolutive_science_kpis") if isinstance(audit, dict) else {}
+    fwd = audit.get("forward_gate") if isinstance(audit, dict) else {}
+    if not isinstance(evo_kpis, dict):
+        evo_kpis = {}
+    if not isinstance(fwd, dict):
+        fwd = {}
+    evo_status = evo.get("status") if isinstance(evo, dict) else None
+    if evo_kpis.get("ip_status"):
+        evo_status = evo_kpis.get("ip_status")
+    evo_n_passive = evo_kpis.get("n_passive")
+    if evo_n_passive is None and isinstance(evo, dict):
+        evo_n_passive = evo.get("n_passive")
+    evo_early = evo_kpis.get("early_stop")
+    if evo_early is None and isinstance(evo, dict):
+        evo_early = evo.get("early_stop")
+    evo_drift = evo_kpis.get("max_drift_m")
+    if evo_drift is None and isinstance(audit, dict):
+        ax = audit.get("evolutive_raxis_drift") or {}
+        if isinstance(ax, dict):
+            evo_drift = ax.get("max_drift_m")
+    clamp_taut = evo_status == "clamp_tautology"
+    ip_free = bool(evo_kpis.get("ip_free_evolution") or (isinstance(evo, dict) and evo.get("ip_free_evolution")))
     status = summary.get("status") or man.get("status") or progress.get("status") or "unknown"
     stage_status = None
     planner_stage = None
@@ -1104,6 +1126,18 @@ def overview_kpis(run_dir: Path) -> Dict[str, Any]:
         "efit_ok": efit_display,
         "evolutive_ok": evo.get("ok") if isinstance(evo, dict) else None,
         "evolutive_rms_A": evo.get("rms_A") if isinstance(evo, dict) else None,
+        "evolutive_ip_status": evo_status,
+        "evolutive_n_passive": evo_n_passive,
+        "evolutive_early_stop": evo_early,
+        "evolutive_max_drift_m": evo_drift,
+        "evolutive_clamp_tautology": clamp_taut,
+        "evolutive_ip_free_evolution": ip_free,
+        "forward_not_dn_peer": fwd.get("not_inverse_dn_peer", True),
+        "forward_n_converged": fwd.get("n_converged"),
+        "forward_n_times": fwd.get("n_times"),
+        "forward_window_currents": fwd.get("window_currents"),
+        "forward_demo_mode": bool(fwd.get("demo_mode")),
+        "forward_science_role": fwd.get("science_role"),
         "profile_source": ptraj.get("profile_source"),
         "profile_traj_status": ptraj.get("status") or stage_status,
         "profile_fit_mode": ptraj.get("fit_mode"),
@@ -1139,6 +1173,9 @@ _COMPARE_NUMERIC_KEYS = (
     "window_dt",
     "n_scored",
     "evolutive_rms_A",
+    "evolutive_max_drift_m",
+    "evolutive_n_passive",
+    "forward_n_converged",
     "planner_rms_V",
     "planner_i_track_rms_A",
     "planner_plan_minus_dyn_V",
@@ -1207,8 +1244,14 @@ def compare_scorecard(
         ("window_dt", "Window Δt [s]"),
         ("n_scored", "Contracts scored"),
         ("metrics_ok", "Metrics ok"),
+        ("forward_n_converged", "Forward converged"),
+        ("forward_not_dn_peer", "Forward ≠ Inverse DN"),
+        ("evolutive_ip_status", "Evolutive status"),
+        ("evolutive_n_passive", "Evolutive n_passive"),
+        ("evolutive_early_stop", "Evolutive early_stop"),
+        ("evolutive_max_drift_m", "Evolutive max Raxis drift [m]"),
         ("evolutive_ok", "Evolutive Ip ok"),
-        ("evolutive_rms_A", "Evolutive Ip RMS [A]"),
+        ("evolutive_rms_A", "Evolutive Ip RMS [A] (meaningful if unclamped)"),
         ("profile_source", "Profile source"),
         ("profile_fit_mode", "Profile fit mode"),
         ("profile_n_knots", "Profile knots"),
@@ -1284,8 +1327,30 @@ def overview_text(run_dir: Path) -> str:
         lines.append(f"Contracts scored: {k['n_scored']} (ok={k.get('metrics_ok')})")
     if k.get("efit_ok") is not None:
         lines.append(f"EFIT archive compare ok={k['efit_ok']}")
-    if k.get("evolutive_ok") is not None:
-        lines.append(f"Evolutive Ip: ok={k['evolutive_ok']} rms_A={k.get('evolutive_rms_A')}")
+    if k.get("evolutive_ok") is not None or k.get("evolutive_ip_status"):
+        if k.get("evolutive_clamp_tautology"):
+            lines.append(
+                f"Evolutive: clamp_tautology n_passive={k.get('evolutive_n_passive')} "
+                f"early_stop={k.get('evolutive_early_stop')} "
+                f"max_Raxis_drift_m={k.get('evolutive_max_drift_m')} "
+                f"(Ip RMS under clamp is not fidelity)"
+            )
+        elif k.get("evolutive_ip_free_evolution"):
+            lines.append(
+                f"Evolutive Ip free evolution: ok={k.get('evolutive_ok')} "
+                f"rms_A={k.get('evolutive_rms_A')} early_stop={k.get('evolutive_early_stop')}"
+            )
+        else:
+            lines.append(
+                f"Evolutive: status={k.get('evolutive_ip_status')} ok={k['evolutive_ok']} "
+                f"rms_A={k.get('evolutive_rms_A')}"
+            )
+    if k.get("forward_n_converged") is not None or k.get("forward_not_dn_peer"):
+        lines.append(
+            f"Forward gate: converged={k.get('forward_n_converged')}/{k.get('forward_n_times')} "
+            f"not_inverse_dn_peer={k.get('forward_not_dn_peer', True)} "
+            f"window={k.get('forward_window_currents')}"
+        )
     if k.get("profile_source") or k.get("profile_traj_status"):
         lines.append(
             "Profile trajectory: "

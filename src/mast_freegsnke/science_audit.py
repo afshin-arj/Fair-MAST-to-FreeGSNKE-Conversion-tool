@@ -136,6 +136,14 @@ def score_evolutive_ip(run_dir: Path) -> Dict[str, Any]:
             "near zero is expected by construction (not circuit / voltage validation). "
             "Prefer evolutive_raxis_drift / early_stop for soft physics honesty."
         )
+    elif clamp_ip is False:
+        status = "ip_free_evolution"
+        note = (
+            "clamp_ip_to_measured=false (opt-in campaign, not happy-path default): "
+            "Ip residual vs ip.csv is a real scorecard metric. Soft-stops "
+            "(abort_when_ip_below_measured_frac / axis drift) still apply. "
+            "Not science-default until ADR-005 passives + stable unclamped runs."
+        )
     report.update(
         {
             "ok": True,
@@ -146,6 +154,7 @@ def score_evolutive_ip(run_dir: Path) -> Dict[str, Any]:
             "rms_rel": rms_rel,
             "residual_csv": residual_rel,
             "status": status,
+            "ip_free_evolution": clamp_ip is False,
             "note": note,
         }
     )
@@ -580,12 +589,21 @@ def forward_gate_summary(run_dir: Path) -> Dict[str, Any]:
         "profile_source_requested": None,
         "profile_sources_used": [],
         "forward_png_present": (run_dir / "forward_equilibrium.png").is_file(),
+        # Science-grade honesty (Phase 1 roadmap)
+        "not_inverse_dn_peer": True,
+        "science_role": "measured_pf_static_gs_plant_check",
+        "demo_mode": False,
+        "publish_as": (
+            "Static Grad–Shafranov measured-PF/Ip plant check (seeded from Inverse ψ/profiles). "
+            "Not a DN reconstruction peer of Inverse or archive EFIT++."
+        ),
         "note": (
             "Static Forward: t0 GS on Inverse dump currents (optional dump ψ IC); "
             "window = solver.forward_window_currents (default measured_pf). Default "
             "profile_trajectory_if_ok when cited trajectory exists. Plots must use live "
             "Forward LCFS (not Inverse dump LCFS). n_converged = tol-met only; "
-            "measured-PF Forward is not Inverse shape acceptance."
+            "measured-PF Forward is not Inverse shape acceptance. "
+            "not_inverse_dn_peer=true by design."
         ),
     }
     ft = None
@@ -626,6 +644,8 @@ def forward_gate_summary(run_dir: Path) -> Dict[str, Any]:
             if isinstance(e, dict) and e.get("profile_source_used"):
                 srcs.append(str(e["profile_source_used"]))
         srcs = sorted(set(srcs))
+    win_curr = str(ft.get("window_currents") or "measured_pf")
+    demo = win_curr == "inverse_dump_currents"
     out.update(
         {
             "available": True,
@@ -638,13 +658,165 @@ def forward_gate_summary(run_dir: Path) -> Dict[str, Any]:
             "n_times": n_times,
             "solve_mode": ft.get("solve_mode"),
             "ic_psi_used": ft.get("ic_psi_used"),
-            "window_currents": ft.get("window_currents") or "measured_pf",
+            "window_currents": win_curr,
             "profile_source_requested": ft.get("profile_source_requested"),
             "profile_sources_used": list(srcs),
             "forward_note": ft.get("note"),
+            "not_inverse_dn_peer": True,
+            "demo_mode": demo,
+            "science_role": (
+                "shape_demo_frozen_dump_currents" if demo else "measured_pf_static_gs_plant_check"
+            ),
+            "publish_as": (
+                "SHAPE DEMO only (frozen Inverse dump currents) — not science measured-PF drive."
+                if demo
+                else out["publish_as"]
+            ),
         }
     )
+    # Optional EFIT LCFS residual annex (when archive compare present)
+    efit = _safe_json(run_dir / "04_efit_compare" / "COMPARE.json") or _safe_json(
+        run_dir / "04_efit_compare" / "shape_scorecard.json"
+    )
+    if isinstance(efit, dict):
+        for key in ("lcfs_nn_mean_m", "lcfs_nn_rms_m", "mean_lcfs_nn_m"):
+            if efit.get(key) is not None:
+                try:
+                    out["efit_lcfs_nn_m"] = float(efit[key])
+                    break
+                except (TypeError, ValueError):
+                    pass
+        sc = efit.get("scorecard") if isinstance(efit.get("scorecard"), dict) else efit
+        if isinstance(sc, dict):
+            for key in ("lcfs_nn_mean_m", "mean_nn_m", "lcfs_nn_rms_m"):
+                if sc.get(key) is not None and out.get("efit_lcfs_nn_m") is None:
+                    try:
+                        out["efit_lcfs_nn_m"] = float(sc[key])
+                        break
+                    except (TypeError, ValueError):
+                        pass
     return out
+
+
+def evolutive_science_kpis(run_dir: Path) -> Dict[str, Any]:
+    """Primary Evolutive KPIs for science-grade review (not Ip RMS under clamp)."""
+    evo_ip = score_evolutive_ip(run_dir)
+    evo_ax = score_evolutive_raxis_drift(run_dir)
+    passives = passive_resistivity_status(run_dir)
+    n_passive = evo_ip.get("n_passive")
+    if n_passive is None:
+        n_passive = evo_ax.get("n_passive")
+    try:
+        n_passive_i = int(n_passive) if n_passive is not None else 0
+    except (TypeError, ValueError):
+        n_passive_i = 0
+    clamp = evo_ip.get("clamp_ip_to_measured")
+    early = evo_ip.get("early_stop") or evo_ax.get("early_stop")
+    status = str(evo_ip.get("status") or "")
+    primary_metric = "raxis_drift"
+    if clamp is False:
+        primary_metric = "ip_vs_measured"
+    elif status == "clamp_tautology":
+        primary_metric = "raxis_drift"
+    return {
+        "available": bool(evo_ip.get("ok") or evo_ax.get("ok") or evo_ip.get("errors") or evo_ax.get("errors")),
+        "clamp_ip_to_measured": clamp,
+        "ip_status": evo_ip.get("status"),
+        "ip_free_evolution": clamp is False,
+        "n_passive": n_passive_i,
+        "passive_status": passives.get("status"),
+        "early_stop": early,
+        "max_drift_m": evo_ax.get("max_drift_m"),
+        "final_drift_m": evo_ax.get("final_drift_m"),
+        "drift_threshold_m": evo_ax.get("threshold_m"),
+        "ip_rms_A": evo_ip.get("rms_A"),
+        "primary_metric": primary_metric,
+        "primary_value": (
+            evo_ip.get("rms_A") if primary_metric == "ip_vs_measured" else evo_ax.get("max_drift_m")
+        ),
+        "publish_as": (
+            "Active-only voltage-driven FreeGSNKE probe. "
+            + (
+                "Ip free evolution (opt-in campaign) — score Ip vs ip.csv."
+                if clamp is False
+                else "clamp_ip_to_measured → Ip residual is tautology; prefer Raxis drift / early_stop."
+            )
+            + (
+                " n_passive=0 until ADR-005 ρ cited."
+                if n_passive_i < 1
+                else f" n_passive={n_passive_i}."
+            )
+        ),
+        "science_grade_ready": bool(
+            n_passive_i > 0 and clamp is False and early in (None, "", False)
+        ),
+    }
+
+
+def passives_ab_readiness(run_dir: Path) -> Dict[str, Any]:
+    """Phase 3 scaffold: with/without passives A/B only when ρ is cited."""
+    passives = passive_resistivity_status(run_dir)
+    n = int(passives.get("n_components") or 0)
+    status = str(passives.get("status") or "awaiting_authority")
+    blocked = status in {"awaiting_authority", "missing", "unknown"} or n < 1
+    return {
+        "available": not blocked,
+        "blocked": blocked,
+        "passive_status": status,
+        "n_components": n,
+        "note": (
+            "Passives A/B blocked: cite classic-MAST ρ in configs/passive_resistivity.json "
+            "(ADR-005), rebuild machine_authority, then compare Evolutive with vs without "
+            "passives (Raxis drift, early_stop, residuals)."
+            if blocked
+            else "Passives cited — ready for Evolutive with/without A/B on the same shot."
+        ),
+        "compare_metrics": [
+            "evolutive_raxis_drift.max_drift_m",
+            "evolutive_ip.early_stop",
+            "evolutive_ip.n_steps_recorded",
+            "n_passive",
+        ],
+    }
+
+
+def publish_claims_table(run_dir: Path) -> Dict[str, Any]:
+    """What a physicist may publish vs demo-only (Phase 1 roadmap)."""
+    fwd = forward_gate_summary(run_dir)
+    evo = evolutive_science_kpis(run_dir)
+    shape = inverse_shape_gate_summary(run_dir)
+    return {
+        "version": "1.0",
+        "rows": [
+            {
+                "product": "Inverse",
+                "may_publish_as": "Static GS fit to declared shape/isoflux targets (read shape gate separately from GS stop)",
+                "not_as": "Automatic DN success if status=converged only",
+                "ready": bool(shape.get("available")),
+            },
+            {
+                "product": "Forward",
+                "may_publish_as": fwd.get("publish_as"),
+                "not_as": "Inverse DN peer / archive EFIT DN reconstruction",
+                "ready": True,
+                "not_inverse_dn_peer": True,
+                "demo_mode": bool(fwd.get("demo_mode")),
+            },
+            {
+                "product": "Evolutive",
+                "may_publish_as": evo.get("publish_as"),
+                "not_as": "Validated MAST vessel-eddy / Ip dynamics (until ADR-005 + unclamped campaign)",
+                "ready": False,
+                "science_grade_ready": bool(evo.get("science_grade_ready")),
+            },
+            {
+                "product": "EFIT archive compare",
+                "may_publish_as": "FreeGSNKE vs FAIR-MAST Level-2 EFIT++ archive (ADR-002 labels)",
+                "not_as": "Live EFIT++ / Py-EFIT / efit-ai run",
+                "ready": (run_dir / "04_efit_compare" / "COMPARE.json").is_file(),
+            },
+        ],
+    }
 
 
 def profile_trajectory_audit(run_dir: Path) -> Dict[str, Any]:
@@ -929,7 +1101,7 @@ def build_science_audit(run_dir: Path) -> Dict[str, Any]:
     """Write 01_summary/science_audit.json and return the audit object."""
     run_dir = Path(run_dir)
     audit: Dict[str, Any] = {
-        "version": "1.6",
+        "version": "1.7",
         "reconstruction_quality": reconstruct_quality(run_dir),
         "inverse_shape_gate": inverse_shape_gate_summary(run_dir),
         "forward_gate": forward_gate_summary(run_dir),
@@ -937,6 +1109,9 @@ def build_science_audit(run_dir: Path) -> Dict[str, Any]:
         "presentation_advisories": presentation_advisories(run_dir),
         "evolutive_ip": score_evolutive_ip(run_dir),
         "evolutive_raxis_drift": score_evolutive_raxis_drift(run_dir),
+        "evolutive_science_kpis": evolutive_science_kpis(run_dir),
+        "passives_ab": passives_ab_readiness(run_dir),
+        "publish_claims": publish_claims_table(run_dir),
         "planner_voltage_gap": planner_voltage_gap_audit(run_dir),
         "ohmic_drive": ohmic_drive_inventory(run_dir),
         "phase_timeline": phase_timeline_from_window(run_dir),
@@ -944,9 +1119,10 @@ def build_science_audit(run_dir: Path) -> Dict[str, Any]:
         "presentation_note": (
             "Equilibrium GIFs under 03_reconstruction/presentation/ and "
             "03_reconstruction/evolutive/ (or legacy presentation/, evolutive/) are annex visuals; "
-            "scientific review should start from residuals, Ip match (or Raxis drift when "
-            "clamp_ip tautology), solve_mode, inverse_shape_gate, forward_gate, and "
-            "planner I-track / voltage_model_gap (raw ΔV is annex)."
+            "scientific review should start from residuals, evolutive_science_kpis "
+            "(clamp_tautology / n_passive / early_stop / Raxis — not Ip RMS under clamp), "
+            "solve_mode, inverse_shape_gate, forward_gate (not_inverse_dn_peer), "
+            "publish_claims, and planner I-track / voltage_model_gap (raw ΔV is annex)."
         ),
     }
     # Persist phase timeline under inputs for tooling
@@ -960,5 +1136,9 @@ def build_science_audit(run_dir: Path) -> Dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "science_audit.json").write_text(
         json.dumps(audit, indent=2) + "\n", encoding="utf-8"
+    )
+    # Phase 3 annex: always record A/B readiness (blocked until ρ cited)
+    (out_dir / "passives_ab_readiness.json").write_text(
+        json.dumps(audit["passives_ab"], indent=2) + "\n", encoding="utf-8"
     )
     return audit

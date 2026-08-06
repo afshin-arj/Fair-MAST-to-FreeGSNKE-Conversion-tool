@@ -1,3 +1,23 @@
+## 11.35.0 — Forward / Evolutive science-grade honesty (Phase 1)
+
+### Science audit / SUMMARY
+- `science_audit` **v1.7**: `forward_gate.not_inverse_dn_peer`, `publish_as`, demo flag for `inverse_dump_currents`.
+- `evolutive_science_kpis` primary signals: `clamp_tautology` / `n_passive` / `early_stop` / Raxis drift (not Ip RMS under clamp).
+- `publish_claims` table + SUMMARY “What you may publish”.
+- `passives_ab` readiness annex (`01_summary/passives_ab_readiness.json`) — blocked until ADR-005 ρ cited.
+- Unclamped opt-in: `clamp_ip_to_measured=false` → status `ip_free_evolution` (not happy-path default).
+
+### UI / docs
+- Overview flight deck: Forward gate + ≠ Inverse DN; Evolutive status / n_passive / early_stop / Raxis; Ip RMS labeled tautology when clamped.
+- USER_MANUAL §8 publish table + unclamped campaign notes; ADR-005 roadmap phases 1–4.
+
+### Authority
+- `evolutive_authority` **11.35.0** notes for Phase 4 campaign; `passive_resistivity` **1.2** `science_grade_roadmap` (still `awaiting_authority` — no invented ρ).
+
+### Validate
+- Forward gate / Evolutive KPI / passives_ab / ip_free_evolution tests.
+- Version **11.35.0**.
+
 ## 11.34.6 — UI/core wiring honesty (cascade vs soft-skip + GEQDSK visibility)
 
 ### UI

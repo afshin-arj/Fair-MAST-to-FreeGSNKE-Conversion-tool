@@ -1,6 +1,6 @@
 # Fair-MAST → FreeGSNKE — User Manual
 
-**Version:** 11.34.6  
+**Version:** 11.35.0  
 **Audience:** fusion researchers, data engineers, and reviewers who need a shot-only, authority-bound path from classic MAST Level-2 data to FreeGSNKE reconstructions  
 **North star:** enter a MAST shot number; everything else is automatic  
 
@@ -285,12 +285,27 @@ Three FreeGSNKE modes answer different questions. Do not conflate their LCFS or 
 | Mode | Initial / drive | What “success” means |
 |------|-----------------|----------------------|
 | **Inverse** | Static GS; declared shape targets | Shape gate ≠ FreeGSNKE GS numerical stop |
-| **Forward** | Dump-current t0 + measured PF currents in window | Live LCFS; not the same as Inverse DN |
+| **Forward** | Dump-current t0 + measured PF currents in window | Live LCFS; **not** Inverse / archive EFIT DN peer (`not_inverse_dn_peer`) |
 | **Evolutive** | Inverse IC + mapped voltages via nlstepper | Live LCFS; soft-stop (e.g. axis drift) is **honest** under `n_passive=0` |
+
+### What you may publish
+
+| Product | May publish as | Not as |
+|---------|----------------|--------|
+| **Inverse** | Static GS fit to declared shape/isoflux targets (read shape gate separately from GS stop) | Automatic DN success if `status=converged` only |
+| **Forward** | Measured-PF / Ip static Grad–Shafranov plant check (seeded from Inverse ψ/profiles) | Inverse DN peer / archive EFIT DN reconstruction |
+| **Evolutive** | Active-only voltage-driven probe; under default clamp, prefer Raxis drift / early_stop / `n_passive` | Validated MAST vessel-eddy / Ip dynamics until ADR-005 ρ + unclamped campaign |
+| **EFIT archive** | FreeGSNKE vs FAIR-MAST Level-2 EFIT++ archive (ADR-002 labels) | Live EFIT++ / Py-EFIT / efit-ai run |
 
 **Why evolutive may soft-stop early:** without cited vessel passives, the active-only circuit model cannot capture eddy-current screening. Soft-stop + loud notes are correct science communication, not a mapping bug.
 
+**Primary Evolutive KPIs (default clamp path):** `clamp_tautology`, `n_passive`, `early_stop`, Raxis drift — **not** Ip RMS (near-zero residual is expected by construction when `clamp_ip_to_measured=true`).
+
+**Unclamped Ip campaign (opt-in):** set `clamp_ip_to_measured=false` in `configs/evolutive_authority.json` (or a dedicated campaign snapshot). SUMMARY/UI label `ip_free_evolution`. Soft-stops (`abort_when_ip_below_measured_frac`, axis drift) remain. Score Ip vs `ip.csv` only in this mode. **Do not** make unclamped the happy-path default until Path B5 passives show longer stable runs.
+
 **Shape gate vs solver stop:** Inverse may report shape residuals separately from FreeGSNKE’s internal GS convergence. Read both in the summary/science audit.
+
+**GIFs are annex:** Overview flight deck surfaces Forward gate + Evolutive science KPIs; equilibrium GIFs are not the science signal.
 
 ---
 

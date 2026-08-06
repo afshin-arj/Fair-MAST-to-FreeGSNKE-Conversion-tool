@@ -60,6 +60,18 @@ intentional.
 Record the winning citation in each component’s `source` field and bump
 `configs/passive_resistivity.json` `version` / `status` to `cited`.
 
+## Science-grade roadmap (software phases)
+
+| Phase | Status | Gate |
+|-------|--------|------|
+| 1 Honesty / scorecards | software | Forward `not_inverse_dn_peer`; Evolutive primary KPIs |
+| 2 Cite classic-MAST ρ | **blocked** | Real DOI / UDA / UKAEA memo → populate `components` |
+| 3 Passives A/B | blocked on 2 | Same shot with vs without passives |
+| 4 Unclamped Ip campaign | opt-in authority | `clamp_ip_to_measured=false` — not happy-path default |
+
+Until Phase 2 lands, `science_grade_roadmap.blocked_until` in
+`configs/passive_resistivity.json` stays `cited_classic_mast_rho_or_R_eff`.
+
 ## Green’s functions (related, separate ADRs)
 
 | Kind | Authority path | Notes |

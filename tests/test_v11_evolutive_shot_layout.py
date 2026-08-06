@@ -264,7 +264,7 @@ def test_evolutive_authority_cover_window() -> None:
     assert ea.ic_coil_currents == "measured_pf"
     assert ea.clamp_ip_to_measured is True
     assert ea.abort_when_axis_drift_m == 0.12
-    assert ea.authority_version == "11.31.0"
+    assert ea.authority_version == "11.35.0"
     # Shot 30201-like window ~0.177 s → ceil(0.1768/0.01)=18
     plan = resolve_n_steps(ea, t_start=0.2012, t_end=0.378)
     assert plan["mode"] == "cover_window"

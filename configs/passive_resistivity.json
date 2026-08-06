@@ -1,6 +1,21 @@
 {
-  "version": "1.1",
+  "version": "1.2",
   "status": "awaiting_authority",
-  "notes": "FAIR-MAST Level-2 pf_passive publishes parallelogram geometry (r/z/width/height/shapeAngle1/shapeAngle2) for classic MAST structures but no resistivity. FreeGSNKE passive pickles require resistivity_ohm_m. Populate components ONLY with cited published values keyed by pf_passive stem (vertw, mid, …) or default/*, e.g. {\"vertw\": {\"resistivity_ohm_m\": <cited>, \"source\": \"DOI/UDA note\"}}. Citation hunt (ADR-005): Berkery 2021 VALEN→EFIT segment R_eff (method); Artaserse 2013 CREATE-L vessel eddy currents (method); EFIT++/UDA/UKAEA memos for numbers. Never invent ρ; never copy MAST-U/FUSE.jl. Until then passive_coils.pickle stays empty and certify marks passive_resistivity_awaiting_authority (YELLOW). After population: rebuild machine_authority and compare Ip/flux residuals with vs without passives. Skill: .cursor/skills/passive-resistivity-path-b5.",
+  "science_grade_roadmap": {
+    "phase": 2,
+    "blocked_until": "cited_classic_mast_rho_or_R_eff",
+    "adr": "docs/adr/005-classic-mast-passive-resistivity.md",
+    "exit_criteria": [
+      "components keyed by FAIR-MAST pf_passive stems with resistivity_ohm_m + source",
+      "status flipped to cited",
+      "machine_authority rebuild yields non-empty passive_coils.pickle",
+      "evolutive meta n_passive > 0"
+    ],
+    "do_not": [
+      "invent classic-MAST rho",
+      "copy MAST-U / FUSE / FreeGSNKE MAST-U passives"
+    ]
+  },
+  "notes": "FAIR-MAST Level-2 pf_passive publishes parallelogram geometry (r/z/width/height/shapeAngle1/shapeAngle2) for classic MAST structures but no resistivity. FreeGSNKE passive pickles require resistivity_ohm_m. Populate components ONLY with cited published values keyed by pf_passive stem (vertw, mid, …) or default/*, e.g. {\"vertw\": {\"resistivity_ohm_m\": <cited>, \"source\": \"DOI/UDA note\"}}. Citation hunt (ADR-005): Berkery 2021 VALEN→EFIT segment R_eff (method); Artaserse 2013 CREATE-L vessel eddy currents (method); EFIT++/UDA/UKAEA memos for numbers. Never invent ρ; never copy MAST-U/FUSE.jl. Until then passive_coils.pickle stays empty and certify marks passive_resistivity_awaiting_authority (YELLOW). After population: rebuild machine_authority and compare Evolutive with vs without passives (Phase 3 A/B). Skill: .cursor/skills/passive-resistivity-path-b5.",
   "components": {}
 }

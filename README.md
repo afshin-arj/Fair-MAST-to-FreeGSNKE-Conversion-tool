@@ -10,7 +10,7 @@ Classic MAST FAIR-MAST Level-2 data → FreeGSNKE equilibrium reconstruction →
 
 | | |
 |---|---|
-| **Version** | **11.34.6** |
+| **Version** | **11.35.0** |
 | **Machine** | Classic MAST (not MAST-U) |
 | **Solver** | [FreeGSNKE](https://github.com/FusionComputingLab/freegsnke) only |
 | **EFIT** | Archive compare ([ADR-002](docs/adr/002-fairmast-efit-compare.md)) — not live EFIT++ |

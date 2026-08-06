@@ -624,7 +624,8 @@ def overview_panel(shot: int, run_dir: Path) -> Any:
             ui_kit.blocking_banner(blocking, title="Blocking errors"),
             ui_kit.section(
                 "Flight deck",
-                "Pass/fail gates for this shot — expand below only when debugging.",
+                "Science gates — Forward ≠ Inverse DN; Evolutive prefers clamp_tautology / "
+                "n_passive / early_stop / Raxis over Ip RMS under clamp. GIFs are annex.",
                 ui_kit.flight_deck(kpis),
             ),
             overview_quick_links(shot, run_dir),
@@ -3386,7 +3387,7 @@ TAB_META = {
     "compare": "Browse-only A|B — KPIs, Level-2, residuals, planner ΔI/ΔV, and GIFs.",
     "efit": "Archive shape scorecard first (ADR-002) — not a live EFIT solve.",
     "gsfit": "Live GSFit peer (ADR-006) — soft-skips until calib + Green’s + settings cited.",
-    "gifs": "Inverse / forward / evolutive equilibrium GIFs with mode badges.",
+    "gifs": "Inverse / forward / evolutive equilibrium GIFs — annex only; Forward ≠ Inverse DN; Evolutive KPIs are clamp / n_passive / early_stop / Raxis.",
     "auth": "Authority matrix + profile trajectory + planner snapshot — never invent metrology.",
     "files": "Grouped, filterable artifact downloads + copy path.",
 }
@@ -3466,7 +3467,9 @@ def fill_one_tab(
             [
                 tab_banner(
                     "Equilibrium GIFs",
-                    "Presentation annexes labeled by mode (inverse / forward / evolutive) — not a substitute for residual metrics.",
+                    "Presentation annexes labeled by mode (inverse / forward / evolutive) — "
+                    "not a substitute for residual metrics. Forward GIF = measured-PF plant check "
+                    "(not Inverse DN). Evolutive GIF ≠ Ip circuit fidelity under clamp.",
                 ),
                 media_gallery(
                     shot_i, gifs, run_dir, "No presentation/evolutive GIFs yet."
