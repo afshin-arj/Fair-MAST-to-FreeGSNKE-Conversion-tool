@@ -162,9 +162,29 @@ def accordion(sections: List[tuple[str, Any, bool]], *, always_open: bool = True
     )
 
 
-def _stage_is_soft_skip(st: Dict[str, Any]) -> bool:
-    """Soft-skip / awaiting stages are not hard FAIL and count toward progress."""
+def _stage_is_cascade_skip(st: Dict[str, Any]) -> bool:
+    """True when peers were skipped because earlier blocking_errors remained.
+
+    Must not be painted as intentional soft SKIP (progress inflation / false health).
+    """
     if bool(st.get("ok")):
+        return False
+    note_l = str(st.get("note") or "").lower()
+    return (
+        note_l.startswith("skipped_blocking")
+        or "skipped_blocking_errors" in note_l
+        or note_l.startswith("skipped_fail_closed")
+    )
+
+
+def _stage_is_soft_skip(st: Dict[str, Any]) -> bool:
+    """Intentional soft-skip / awaiting — not hard FAIL; counts toward progress.
+
+    Cascade skips (``skipped_blocking_errors``) are excluded — those are FAIL/CASCADE.
+    """
+    if bool(st.get("ok")):
+        return False
+    if _stage_is_cascade_skip(st):
         return False
     status_s = str(st.get("status") or "").lower()
     note_l = str(st.get("note") or "").lower()
@@ -176,6 +196,7 @@ def _stage_is_soft_skip(st: Dict[str, Any]) -> bool:
         or note_l.startswith("snapshot_only")
         or "false_or_no" in note_l
         or note_l.startswith("compare_efit_archive=false")
+        or note_l.startswith("export_torax_geometry=false")
         or (note_l.startswith("execute_") and "false" in note_l)
     )
 
@@ -190,9 +211,10 @@ def stage_progress_bar(progress: Optional[Dict[str, Any]], running: bool) -> Any
     n = max(len(stages), 1)
     done = sum(1 for s in stages if s.get("ok") or _stage_is_soft_skip(s))
     n_skip = sum(1 for s in stages if _stage_is_soft_skip(s))
+    n_cascade = sum(1 for s in stages if _stage_is_cascade_skip(s))
     overall = str((progress or {}).get("status") or "")
     blocking = list((progress or {}).get("blocking_errors") or [])
-    hard_fail = overall == "failed" or bool(blocking)
+    hard_fail = overall == "failed" or bool(blocking) or n_cascade > 0
     pct = int(round(100 * done / n)) if stages else (8 if running else 0)
     if running and stages:
         pct = min(95, max(pct, int(round(100 * (done + 0.35) / max(n + 1, 1)))))
@@ -207,6 +229,8 @@ def stage_progress_bar(progress: Optional[Dict[str, Any]], running: bool) -> Any
     label = f"{done}/{n} stages"
     if n_skip:
         label += f" ({n_skip} skip)"
+    if n_cascade:
+        label += f" ({n_cascade} cascade)"
     label += (" · running" if running else "")
     return html.Div(
         [
@@ -244,6 +268,9 @@ def stage_timeline(progress: Optional[Dict[str, Any]], running: bool) -> Any:
         "execute_inverse": "Inverse GS",
         "execute_forward": "Forward GS",
         "execute_evolutive": "Evolutive",
+        "evolutive_execute": "Evolutive",
+        "torax_geometry_export": "GEQDSK export (ADR-001)",
+        "torax_geometry_export_authority": "GEQDSK export authority",
         "contract_metrics": "Contract residuals",
     }
     items = []
@@ -256,17 +283,29 @@ def stage_timeline(progress: Optional[Dict[str, Any]], running: bool) -> Any:
         err = st.get("error") or st.get("error_hint")
         is_current = name == current and running
         note = st.get("note")
+        cascade_skip = _stage_is_cascade_skip(st)
         soft_skip = _stage_is_soft_skip(st)
         cls = "stage-item"
         if is_current:
             cls += " stage-active"
         elif ok:
             cls += " stage-ok"
+        elif cascade_skip:
+            cls += " stage-fail"
         elif soft_skip:
             cls += " stage-skip"
         else:
             cls += " stage-fail"
-        badge = "RUN" if is_current else ("OK" if ok else ("SKIP" if soft_skip else "FAIL"))
+        if is_current:
+            badge = "RUN"
+        elif ok:
+            badge = "OK"
+        elif cascade_skip:
+            badge = "CASCADE"
+        elif soft_skip:
+            badge = "SKIP"
+        else:
+            badge = "FAIL"
         hits = st.get("cache_hits")
         synced = st.get("synced")
         dur = st.get("duration_s")
@@ -787,10 +826,11 @@ def planner_panel(shot: int, run_dir: Path, *, repo_root: Optional[Path] = None)
                 empty_state(
                     "No planner products",
                     pinfo.get("detail")
-                    or "Run with execute_planner=true and cited coil_limits + circuit_dynamics.",
+                    or "Planner products missing — shipped default.json already has execute_planner=true; check coil_limits + circuit_dynamics citations and blocking errors.",
                     steps=[
-                        "Ensure configs/default.json has execute_planner=true",
+                        "Confirm configs/default.json execute_planner=true (already default on)",
                         "Cite coil_limits_authority + circuit_dynamics_authority",
+                        "If cascade-skipped, fix earlier blockers (not GEQDSK-only)",
                         "Reconstruct — products land under SHOT/<N>/07_planner/",
                         "Or edit R/L below and Re-calculate if inputs/ already exist",
                     ],

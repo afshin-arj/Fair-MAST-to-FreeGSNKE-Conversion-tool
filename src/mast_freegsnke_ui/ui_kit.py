@@ -48,7 +48,16 @@ def planner_status_tone(status: Any) -> str:
     s = str(status).strip().lower()
     if s == "ok":
         return "ok"
-    if s in {"failed", "fail", "error", "voltage_limit_violations", "blocked"}:
+    if s in {
+        "failed",
+        "fail",
+        "error",
+        "voltage_limit_violations",
+        "blocked",
+        "cascade_skip",
+    }:
+        return "fail"
+    if s.startswith("skipped_blocking"):
         return "fail"
     if s in {
         "voltage_exceeds_measured_peak_margin",
@@ -267,13 +276,41 @@ def flight_deck_rows(kpis: Dict[str, Any]) -> List[Dict[str, Any]]:
             "key": "efit_ok",
             "label": "EFIT archive",
             "value": kpis.get("efit_ok"),
-            "tone": status_tone(kpis.get("efit_ok")),
+            "tone": (
+                "fail"
+                if kpis.get("efit_ok") == "cascade_skip"
+                else status_tone(kpis.get("efit_ok"))
+            ),
+        },
+        {
+            "key": "torax_status",
+            "label": "GEQDSK",
+            "value": (
+                f"{kpis.get('torax_sha256_short')}…"
+                if kpis.get("torax_ok") and kpis.get("torax_sha256_short")
+                else kpis.get("torax_status")
+            ),
+            "tone": (
+                "ok"
+                if kpis.get("torax_ok")
+                else (
+                    "warn"
+                    if kpis.get("torax_status") in {"off", "missing"}
+                    else "fail"
+                    if kpis.get("torax_status") in {"failed", "empty"}
+                    else ""
+                )
+            ),
         },
         {
             "key": "planner_status",
             "label": "Planner",
             "value": planner_val,
-            "tone": planner_status_tone(planner_val),
+            "tone": (
+                "fail"
+                if planner_val == "cascade_skip"
+                else planner_status_tone(planner_val)
+            ),
         },
         {
             "key": "planner_v_violations",

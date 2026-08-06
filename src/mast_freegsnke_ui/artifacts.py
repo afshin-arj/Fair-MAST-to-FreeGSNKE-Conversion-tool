@@ -924,7 +924,7 @@ def load_planner_info(run_dir: Path, *, include_gifs: bool = True) -> Dict[str, 
         out["detail"] = (
             f"planner_authority snapshotted enabled={auth.get('enabled')} "
             f"limits_policy={out.get('limit_policy')} margin={out.get('margin_factor')} "
-            "(no PLANNER.json — set execute_planner=true to run)"
+            "(no PLANNER.json — check blocking_errors / cascade skip; default.json already enables execute_planner)"
         )
     elif out["limits_status"]:
         out["detail"] = (
@@ -934,7 +934,8 @@ def load_planner_info(run_dir: Path, *, include_gifs: bool = True) -> Dict[str, 
         )
     else:
         out["detail"] = (
-            "No planner products — set execute_planner=true and ensure cited coil limits + R/L."
+            "No planner products — check blocking_errors and coil limits + R/L "
+            "(default.json already has execute_planner=true)."
         )
     # Shape targets file even when PLANNER.json lacks the block
     shape_rel = "07_planner/shape_targets.json"
@@ -987,6 +988,79 @@ def load_planner_info(run_dir: Path, *, include_gifs: bool = True) -> Dict[str, 
     return out
 
 
+def load_torax_export_info(run_dir: Path) -> Dict[str, Any]:
+    """ADR-001 GEQDSK export status for Overview / fingerprint (never invents metrology)."""
+    run_dir = Path(run_dir)
+    out: Dict[str, Any] = {
+        "present": False,
+        "ok": False,
+        "status": "missing",
+        "path": None,
+        "bytes": None,
+        "sha256_short": None,
+        "rcentr_m": None,
+        "note": None,
+        "stage_note": None,
+    }
+    candidates = [
+        run_dir / "downstream" / "torax" / "geqdsk_t0.eqdsk",
+        run_dir / "05_downstream" / "torax" / "geqdsk_t0.eqdsk",
+    ]
+    geq: Optional[Path] = None
+    for p in candidates:
+        if p.is_file():
+            geq = p
+            break
+    man = None
+    for parent in (
+        run_dir / "downstream" / "torax",
+        run_dir / "05_downstream" / "torax",
+    ):
+        mp = parent / "export_manifest.json"
+        if mp.is_file():
+            man = _safe_json(mp)
+            break
+    progress = load_progress(run_dir) or {}
+    stage_note = None
+    stage_ok = None
+    for s in progress.get("stage_log") or []:
+        if isinstance(s, dict) and s.get("stage") == "torax_geometry_export":
+            stage_note = s.get("note")
+            stage_ok = bool(s.get("ok"))
+            break
+    out["stage_note"] = stage_note
+    if geq is not None:
+        try:
+            sz = int(geq.stat().st_size)
+        except OSError:
+            sz = 0
+        out["present"] = True
+        out["path"] = str(geq.relative_to(run_dir)).replace("\\", "/")
+        out["bytes"] = sz
+        if isinstance(man, dict):
+            sha = str(man.get("sha256") or "")
+            out["sha256_short"] = sha[:16] if sha else None
+            out["rcentr_m"] = man.get("rcentr_m")
+            out["note"] = man.get("note")
+            out["ok"] = bool(man.get("ok")) and sz > 0
+        else:
+            out["ok"] = sz > 0
+        out["status"] = "ok" if out["ok"] else "empty"
+    elif stage_note and "false" in str(stage_note).lower():
+        out["status"] = "off"
+        out["note"] = str(stage_note)
+    elif stage_ok is False:
+        out["status"] = "failed"
+        out["note"] = str(stage_note or "torax_geometry_export failed")
+    else:
+        for b in list(progress.get("blocking_errors") or []):
+            if "torax_geometry_export" in str(b).lower():
+                out["status"] = "failed"
+                out["note"] = str(b)[:180]
+                break
+    return out
+
+
 def overview_kpis(run_dir: Path) -> Dict[str, Any]:
     """Compact KPI dict for the overview strip."""
     run_dir = Path(run_dir)
@@ -998,13 +1072,14 @@ def overview_kpis(run_dir: Path) -> Dict[str, Any]:
     efit = load_efit_compare(run_dir) or {}
     ptraj = load_profile_trajectory_info(run_dir)
     planner = load_planner_info(run_dir, include_gifs=False)
+    torax = load_torax_export_info(run_dir)
     window = summary.get("window") or man.get("time_window") or {}
     blocking = list(summary.get("blocking_errors") or man.get("blocking_errors") or progress.get("blocking_errors") or [])
     evo = audit.get("evolutive_ip") if isinstance(audit, dict) else {}
     status = summary.get("status") or man.get("status") or progress.get("status") or "unknown"
-    # Stage-log hint for profile_trajectory soft-skip
     stage_status = None
     planner_stage = None
+    efit_stage_note = None
     for s in progress.get("stage_log") or man.get("stage_log") or []:
         if not isinstance(s, dict):
             continue
@@ -1012,6 +1087,13 @@ def overview_kpis(run_dir: Path) -> Dict[str, Any]:
             stage_status = s.get("status") or s.get("note")
         if s.get("stage") == "planner":
             planner_stage = s.get("note") or ("ok" if s.get("ok") else "failed")
+        if s.get("stage") == "efit_compare":
+            efit_stage_note = s.get("note")
+    if planner_stage and "skipped_blocking" in str(planner_stage).lower():
+        planner_stage = "cascade_skip"
+    efit_display: Any = efit.get("ok")
+    if efit_stage_note and "skipped_blocking" in str(efit_stage_note).lower():
+        efit_display = "cascade_skip"
     return {
         "shot": summary.get("shot") or man.get("shot") or run_dir.name,
         "status": status,
@@ -1019,7 +1101,7 @@ def overview_kpis(run_dir: Path) -> Dict[str, Any]:
         "t_end": window.get("t_end"),
         "n_scored": metrics.get("n_scored"),
         "metrics_ok": metrics.get("ok"),
-        "efit_ok": efit.get("ok"),
+        "efit_ok": efit_display,
         "evolutive_ok": evo.get("ok") if isinstance(evo, dict) else None,
         "evolutive_rms_A": evo.get("rms_A") if isinstance(evo, dict) else None,
         "profile_source": ptraj.get("profile_source"),
@@ -1038,6 +1120,12 @@ def overview_kpis(run_dir: Path) -> Dict[str, Any]:
         "planner_voltage_gap": planner.get("voltage_model_gap_overall"),
         "planner_v_violations": planner.get("n_voltage_violations_raw"),
         "planner_present": bool(planner.get("present")),
+        "torax_status": torax.get("status"),
+        "torax_ok": torax.get("ok"),
+        "torax_path": torax.get("path"),
+        "torax_bytes": torax.get("bytes"),
+        "torax_sha256_short": torax.get("sha256_short"),
+        "torax_note": torax.get("note") or torax.get("stage_note"),
         "blocking_n": len(blocking),
         "blocking": blocking[:8],
         "modes": summary.get("modes") or {},
@@ -1416,6 +1504,10 @@ def results_fingerprint(run_dir: Optional[Path]) -> str:
         "03_reconstruction/metrics/reconstruction_metrics.json",
         "03_reconstruction/evolutive/evolutive_meta.json",
         "03_reconstruction/evolutive_plan/evolutive_from_plan_meta.json",
+        "downstream/torax/export_manifest.json",
+        "downstream/torax/geqdsk_t0.eqdsk",
+        "05_downstream/torax/export_manifest.json",
+        "05_downstream/torax/geqdsk_t0.eqdsk",
     ):
         p = run_dir / rel
         try:
@@ -1430,6 +1522,8 @@ def results_fingerprint(run_dir: Optional[Path]) -> str:
         "03_reconstruction/evolutive",
         "04_efit_compare/plots",
         "07_planner",
+        "downstream/torax",
+        "05_downstream/torax",
     ):
         d = run_dir / drel
         try:

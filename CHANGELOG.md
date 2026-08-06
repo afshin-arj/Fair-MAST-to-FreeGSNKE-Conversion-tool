@@ -1,3 +1,19 @@
+## 11.34.6 — UI/core wiring honesty (cascade vs soft-skip + GEQDSK visibility)
+
+### UI
+- **Stage taxonomy:** `skipped_blocking_errors` is **CASCADE** (not soft SKIP); cascade does not count as progress “done”.
+- **GEQDSK chip** on Overview flight deck; `results_fingerprint` includes `downstream/torax/` (+ `05_downstream`).
+- **Blocking banner** stays visible while the run is in progress when blockers accumulate.
+- Planner empty-state copy no longer implies `execute_planner` is off when default.json already enables it.
+
+### Core
+- Cascade filter accepts stable `code=torax_geometry_export_*` prefixes; docs clarify GEQDSK export verify is non-cascading while forward/authority failures still cascade.
+- CHANGELOG 11.34.3 corrected: inverse export is fail-soft WARN (pipeline fail-closed).
+
+### Validate
+- UI stage taxonomy + cascade `code=` tests.
+- Version **11.34.6**.
+
 ## 11.34.5 — GEQDSK export: correct freegs4e signIp
 
 ### Root cause (SHOT/30201 re-run)
@@ -33,7 +49,7 @@
 
 ### Core
 - **TORAX GEQDSK export:** freegs4e `find_critical` returns numpy arrays; old `if not opoint` raised AmbiguousTruthValue, left a **0-byte** `geqdsk_t0.eqdsk`, and inverse only printed WARN — pipeline then fail-closed with `torax_geometry_export_missing` (SHOT/30201).
-- Emptiness checks use `len()`; Ip-aware `find_critical` aligned with shape honesty; **atomic write** (no empty stubs); inverse **SystemExit** when authority present and export fails.
+- Emptiness checks use `len()`; Ip-aware `find_critical` aligned with shape honesty; **atomic write** (no empty stubs); inverse **fail-soft WARN** after dump (pipeline fail-closes on missing/empty GEQDSK).
 - Pipeline verify surfaces the inverse WARN/child exit line; accepts `05_downstream/torax/` if layout already moved.
 - **Multitime shape gate:** `grid=ea["grid"]` (was NameError `grid is not defined` every window sample).
 

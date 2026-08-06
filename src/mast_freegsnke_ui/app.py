@@ -1008,19 +1008,22 @@ def create_app(
         out_log = log_text if cache.get("log_sig") != log_sig else no_update
 
         if cache.get("block_sig") != block_sig or (running and cache.get("running") != running):
-            if blocking_ui and not running:
+            if blocking_ui:
+                title = (
+                    "Blocking errors (run in progress — fail-fast)"
+                    if running
+                    else "Blocking errors (fail-fast — do not invent metrology)"
+                )
                 out_banner = dbc.Alert(
                     [
-                        html.Strong("Blocking errors (fail-fast — do not invent metrology)"),
+                        html.Strong(title),
                         html.Ul([html.Li(x) for x in blocking_ui[:6]], className="mb-0 mt-1 small"),
                     ],
                     color="danger",
                     className="py-2",
                 )
-            elif running:
-                out_banner = None
             else:
-                out_banner = None if not blocking_ui else no_update
+                out_banner = None
         else:
             out_banner = no_update
 

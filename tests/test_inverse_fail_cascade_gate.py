@@ -69,5 +69,7 @@ def test_pipeline_geqdsk_blockers_do_not_cascade_skip_peers() -> None:
         "torax_geometry_export_missing: expected GEQDSK under downstream/torax/"
     ]
     assert cascade_skip_blockers(only_torax) == []
+    coded = ["code=torax_geometry_export_missing: expected GEQDSK"]
+    assert cascade_skip_blockers(coded) == []
     mixed = only_torax + ["freegsnke_inverse_failed (see logs/inverse.stderr.txt)"]
     assert cascade_skip_blockers(mixed) == [mixed[1]]

@@ -70,11 +70,17 @@ def cascade_skip_blockers(blocking_errors: List[str]) -> List[str]:
     ADR-001 GEQDSK export failure still belongs in ``blocking_errors`` so the run
     fails closed when ``export_torax_geometry=true``, but must **not** cascade-skip
     reconstruction peers that only need a successful Inverse (SHOT/30201).
+
+    Forward / authority snapshot failures still cascade (intentional).
+    Prefer stable ``code=torax_geometry_export_*`` prefixes when appending.
     """
     out: List[str] = []
     for err in blocking_errors:
         s = str(err)
-        low = s.lower()
+        low = s.lower().lstrip()
+        # Strip optional code= prefix for matching
+        if low.startswith("code="):
+            low = low[5:]
         if low.startswith("torax_geometry_export_missing"):
             continue
         if low.startswith("torax_geometry_export_verify_failed"):
@@ -1599,7 +1605,7 @@ class ShotPipeline:
                                 )
                             except Exception as e:
                                 blocking_errors.append(
-                                    f"torax_geometry_export_verify_failed: {type(e).__name__}: {e}"
+                                    f"code=torax_geometry_export_verify_failed: {type(e).__name__}: {e}"
                                 )
                         if geqdsk_ok:
                             _stage(
@@ -1609,7 +1615,7 @@ class ShotPipeline:
                             )
                         else:
                             msg = (
-                                "torax_geometry_export_missing: expected GEQDSK under "
+                                "code=torax_geometry_export_missing: expected GEQDSK under "
                                 "downstream/torax/ after inverse (ADR-001 fail-closed when "
                                 "export_torax_geometry=true)"
                             )
