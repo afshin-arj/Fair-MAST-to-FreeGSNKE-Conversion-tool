@@ -1,3 +1,31 @@
+## 11.35.1 — Audit fixes (honesty, exit codes, provenance, docs)
+
+### Correctness / honesty
+- **Planner limitations:** f-string interpolation fixed (no raw `{planner_auth.*}` placeholders leak into `PLANNER.json`); the voltage-limit claim is now conditional on the active limit policy (fail-closed cited Vmax vs soft `measured_peak_margin` headroom) instead of an unconditional promise.
+- **Authority snapshot failures** (`planner` / `plasma_scalars` / `coil_limits` / `circuit_dynamics`) report `ok=false` + a `*_snapshot_failed` degraded note when executors are off — never `ok=true`.
+- **experimental_data report** `root`/`files_written` now name the real layout path `02_measured_data/` (legacy `experimental_data/` exists only as a `shot_layout` alias); removed the always-true `or True` conditional.
+- SUMMARY's dead `provenance/hashes.json` probe now reads the real `file_hashes.json`.
+
+### Exit codes / batch
+- New `EXIT_DEGRADED = 17` (`mast_freegsnke.exit_codes`): a run with `status=degraded` now exits 17 instead of being indistinguishable from failed (11); `blocking_errors`/failed stay 11. `run_exit_for_manifest()` fails closed on unknown status.
+- Batch loop marks degraded shots `[DEGRADED]` (never triggers `abort_on_failure`) and ranks hard failures above degraded in the worst exit code (11 outranks 17).
+
+### Provenance / authority
+- `coil_map.resolved.json` is hashed at snapshot time (`contracts/coil_map.sha256.json`), mirroring voltage_map; surfaced in SUMMARY authority lines.
+- Top-level run config is copied + SHA-256 hashed into `06_authorities/config/` (`config_snapshot` stage, `AppConfig.source_path`) and recorded as `manifest.config_snapshot`.
+- Manifest payload builder de-duplicated; the failure path now carries the full payload (incl. `degraded_notes`, `config_snapshot`) instead of a reduced one.
+
+### Corpus / robustness
+- `robustness_run` writes a deterministic root `stability_scorecard.json` rollup (worst window tier + max relative degradation) so `corpus-build`/atlas work on genuine robustness output; `test_v5_atlas` fixtures are built through the production writer.
+
+### Docs / packaging / dead code
+- `requirements-gsfit.txt` is pip-parseable; `run_ui.cmd` gained the Python 3.11 check; `requires-python = ">=3.11,<3.12"`; README/USER_MANUAL trees document `05_downstream/`; POSIX UI command documented.
+- Removed never-consumed `AppConfig.diagnostics_compare` (config files + 3 test constructors updated) and dead `metrics.run_residual_contracts` / `metrics.write_metrics` / `efit_compare._try_freegsnke_boundary` (`metrics.compare_timeseries` retained — used by `robustness.scoring`).
+
+### Validate
+- New `tests/test_audit_fixes_11351.py` (9 tests: planner claim, coil-map hash, config snapshot+hash, SUMMARY hash lines, snapshot-failure honesty, version-drift guard) and `tests/test_exit_codes_degraded.py` (9 tests: exit-code matrix + batch degraded semantics).
+- Full suite: 452 passed, 6 skipped. Version **11.35.1**.
+
 ## 11.35.0 — Forward / Evolutive science-grade honesty (Phase 1)
 
 ### Science audit / SUMMARY

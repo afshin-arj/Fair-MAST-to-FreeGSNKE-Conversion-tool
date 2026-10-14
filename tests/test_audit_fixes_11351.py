@@ -15,18 +15,35 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+import mast_freegsnke
 from mast_freegsnke.coil_map import load_coil_map, snapshot_coil_map_hash
 from mast_freegsnke.config import AppConfig
 from mast_freegsnke.planner import voltage_limitation_claim
 from mast_freegsnke.shot_summary import write_shot_expert_overlay
 
 REPO = Path(__file__).resolve().parents[1]
+
+
+def test_version_is_consistent_across_packaging_and_docs() -> None:
+    """Drift guard: package version must match pyproject + version tables in docs
+    (the 11.35.1 audit shipped with the bump forgotten in the first commit)."""
+    ver = mast_freegsnke.__version__
+    m = re.search(r'^version = "([^"]+)"', (REPO / "pyproject.toml").read_text(encoding="utf-8"), re.M)
+    assert m, "pyproject.toml version field missing"
+    assert m.group(1) == ver, f"pyproject {m.group(1)} != package {ver}"
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    assert f"**Version** | **{ver}**" in readme, "README version table drifted"
+    manual = (REPO / "docs" / "USER_MANUAL.md").read_text(encoding="utf-8")
+    assert f"**Version:** {ver}" in manual, "USER_MANUAL version drifted"
+    changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert f"## {ver} " in changelog, f"CHANGELOG missing top entry for {ver}"
 
 
 # ---------------------------------------------------------------------------
