@@ -26,6 +26,7 @@ _MOVE_MAP: Tuple[Tuple[str, str], ...] = (
     ("contracts", "06_authorities/contracts"),
     ("provenance", "06_authorities/provenance"),
     ("machine_authority_snapshot", "06_authorities/machine_authority_snapshot"),
+    ("config_snapshot", "06_authorities/config"),
 )
 
 _DUMPS: Tuple[str, ...] = ()
@@ -134,7 +135,7 @@ def finalize_shot_layout(run_dir: Path, *, shot: int) -> Dict[str, Any]:
             "03_reconstruction": "FreeGSNKE metrics, synthetic probes, GIFs, evolutive, dumps",
             "04_efit_compare": "FreeGSNKE vs FAIR-MAST EFIT++ archive (ADR-002)",
             "05_downstream": "Optional TORAX GEQDSK export (ADR-001)",
-            "06_authorities": "Contracts, provenance hashes, machine authority snapshot",
+            "06_authorities": "Contracts, provenance hashes, machine authority snapshot, run config hash",
             "07_planner": "Optional GSPulse-style feedforward planner (ADR-004 Phase 2)",
             "08_gsfit": "Optional GSFit live reconstruction peer (ADR-006; gated)",
             "inputs": "Tooling CSVs + authority snapshots (keep at root for FreeGSNKE scripts)",

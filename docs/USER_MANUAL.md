@@ -225,6 +225,7 @@ SHOT/<N>/
 ├── 02_measured_data/          # Level-2 CSV + diagnostic plots
 ├── 03_reconstruction/         # metrics · GIFs · evolutive · scripts
 ├── 04_efit_compare/           # vs EFIT++ archive
+├── 05_downstream/             # optional TORAX GEQDSK export (ADR-001)
 ├── 06_authorities/            # snapshotted JSON + hashes
 ├── 07_planner/                # GSPulse-method planner outputs
 ├── 08_gsfit/                  # GSFit live peer (often awaiting)

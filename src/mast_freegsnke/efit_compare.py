@@ -484,11 +484,6 @@ def _try_freegsnke_products(
     return boundary, shape, t_fg, notes
 
 
-def _try_freegsnke_boundary(run_dir: Path) -> Optional[Tuple[np.ndarray, np.ndarray]]:
-    b, _, _, _ = _try_freegsnke_products(run_dir)
-    return b
-
-
 def run_efit_compare(
     run_dir: Path,
     *,

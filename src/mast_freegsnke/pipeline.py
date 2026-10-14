@@ -48,7 +48,7 @@ from .diagnostic_calibration import (
     merge_calibration_contracts,
     snapshot_diagnostic_calibration,
 )
-from .coil_map import apply_coil_map, load_coil_map, validate_coil_map, write_resolved_coil_map
+from .coil_map import apply_coil_map, load_coil_map, snapshot_coil_map_hash, validate_coil_map
 from .voltage_map import (
     apply_voltage_map,
     load_voltage_map,
@@ -107,6 +107,7 @@ _LAYOUT_SHIM_NAMES = frozenset(
         "metrics",
         "provenance",
         "machine_authority_snapshot",
+        "config_snapshot",
         "experimental_data",
         "synthetic",
         "presentation",
@@ -378,6 +379,31 @@ class ShotPipeline:
             _stage("machine_authority", False, note=note)
             if self.cfg.require_machine_authority:
                 blocking_errors.append("machine_authority_required_but_missing")
+
+        # Snapshot the top-level run config itself (the root authority) with a
+        # SHA-256, so the declared execution inputs are hashed like every other
+        # authority. Moved to 06_authorities/config/ by shot_layout.
+        config_snapshot_meta: Optional[Dict[str, Any]] = None
+        try:
+            cfg_src = _resolve_config_path(getattr(self.cfg, "source_path", None), repo_root)
+            if cfg_src is not None and cfg_src.exists():
+                import hashlib
+
+                snap_dir = ensure_dir(run_dir / "config_snapshot")
+                cfg_dst = snap_dir / cfg_src.name
+                shutil.copy2(str(cfg_src), str(cfg_dst))
+                digest = hashlib.sha256(cfg_dst.read_bytes()).hexdigest()
+                meta = {"path": f"config_snapshot/{cfg_src.name}", "sha256": digest}
+                (snap_dir / "config.sha256.json").write_text(
+                    json.dumps(meta, indent=2) + "\n", encoding="utf-8"
+                )
+                config_snapshot_meta = meta
+                _stage("config_snapshot", True, path=meta["path"], sha256=digest)
+            else:
+                _stage("config_snapshot", True, note="no_config_source_path")
+        except Exception as e:
+            degraded_notes.append(f"config_snapshot_failed: {type(e).__name__}: {e}")
+            _stage("config_snapshot", False, error=str(e))
 
 
 
@@ -694,10 +720,18 @@ class ShotPipeline:
                 try:
                     coil_map = load_coil_map(cm_path)
                     cm_report = validate_coil_map(coil_map)
-                    write_resolved_coil_map(run_dir, coil_map)
+                    # Binding mapping authority: resolved map + SHA-256 snapshot
+                    # (same contract as voltage_map; feeds shot_summary authority lines).
+                    cm_meta = snapshot_coil_map_hash(coil_map, run_dir)
                     if not cm_report.get("ok", False):
                         blocking_errors.append("coil_map_invalid: " + "; ".join(cm_report.get("errors", [])))
-                        _stage("coil_map", False, n=cm_report.get("n"), errors=cm_report.get("errors"))
+                        _stage(
+                            "coil_map",
+                            False,
+                            n=cm_report.get("n"),
+                            errors=cm_report.get("errors"),
+                            sha256=cm_meta.get("sha256"),
+                        )
                     else:
                         apply_rep = apply_coil_map(raw_pf, inputs_dir / "pf_currents.csv", coil_map)
                         write_json(inputs_dir / "coil_map_apply_report.json", apply_rep)
@@ -961,7 +995,8 @@ class ShotPipeline:
                         blocking_errors.append(f"planner_authority_failed: {type(e).__name__}: {e}")
                         _stage("planner_authority", False, error=str(e))
                     else:
-                        _stage("planner_authority", True, note=f"snapshot_failed:{e}")
+                        degraded_notes.append(f"planner_authority_snapshot_failed: {e}")
+                        _stage("planner_authority", False, note=f"snapshot_failed:{e}")
             elif self.cfg.execute_planner:
                 blocking_errors.append(
                     "planner_authority_required: set planner_authority_path when execute_planner=true"
@@ -996,7 +1031,8 @@ class ShotPipeline:
                         )
                         _stage("plasma_scalars_authority", False, error=str(e))
                     else:
-                        _stage("plasma_scalars_authority", True, note=f"snapshot_failed:{e}")
+                        degraded_notes.append(f"plasma_scalars_authority_snapshot_failed: {e}")
+                        _stage("plasma_scalars_authority", False, note=f"snapshot_failed:{e}")
             elif self.cfg.execute_planner:
                 blocking_errors.append(
                     "plasma_scalars_authority_required: set plasma_scalars_authority_path "
@@ -1046,7 +1082,8 @@ class ShotPipeline:
                         blocking_errors.append(f"coil_limits_authority_failed: {type(e).__name__}: {e}")
                         _stage("coil_limits_authority", False, error=str(e))
                     else:
-                        _stage("coil_limits_authority", True, note=f"snapshot_failed:{e}")
+                        degraded_notes.append(f"coil_limits_authority_snapshot_failed: {e}")
+                        _stage("coil_limits_authority", False, note=f"snapshot_failed:{e}")
             elif self.cfg.execute_planner:
                 blocking_errors.append(
                     "coil_limits_authority_required: set coil_limits_authority_path "
@@ -1082,7 +1119,8 @@ class ShotPipeline:
                         )
                         _stage("circuit_dynamics_authority", False, error=str(e))
                     else:
-                        _stage("circuit_dynamics_authority", True, note=f"snapshot_failed:{e}")
+                        degraded_notes.append(f"circuit_dynamics_authority_snapshot_failed: {e}")
+                        _stage("circuit_dynamics_authority", False, note=f"snapshot_failed:{e}")
             elif self.cfg.execute_planner:
                 _stage("circuit_dynamics_authority", True, note="no_path_freegsnke_fallback")
             else:
@@ -2367,8 +2405,11 @@ class ShotPipeline:
                 )
 
             status = _compute_status()
-            _write_manifest(
-                {
+
+            def _manifest_payload() -> dict:
+                # Single builder for both manifest writes (pre- and post-layout);
+                # the payloads are identical, only the stage_log grows in between.
+                return {
                     "cache_dir": str(shot_cache) if shot_cache is not None else None,
                     "download_report": download_report,
                     "extract_meta": extract_meta,
@@ -2384,9 +2425,11 @@ class ShotPipeline:
                     "machine_authority_snapshot": machine_snapshot,
                     "diagnostic_calibration_snapshot": calibration_snapshot,
                     "diagnostic_calibration_apply": calibration_apply,
+                    "config_snapshot": config_snapshot_meta,
                     "degraded_notes": list(degraded_notes) if degraded_notes else None,
                 }
-            )
+
+            _write_manifest(_manifest_payload())
 
             # Expert overlay (pre-layout paths still valid for metrics/evolutive)
             try:
@@ -2441,26 +2484,7 @@ class ShotPipeline:
                 _stage("shot_layout", False, error=str(e))
 
             status = _compute_status()
-            _write_manifest(
-                {
-                    "cache_dir": str(shot_cache) if shot_cache is not None else None,
-                    "download_report": download_report,
-                    "extract_meta": extract_meta,
-                    "time_window": final_tw.__dict__ if final_tw is not None else None,
-                    "time_window_qc": window_diag.__dict__ if window_diag is not None else None,
-                    "time_window_override": window_override,
-                    "time_window_consensus": consensus_obj.__dict__ if consensus_obj is not None else None,
-                    "freegsnke_execution": exec_summary,
-                    "reconstruction_metrics": metrics_summary,
-                    "science_audit": science_audit,
-                    "efit_compare": efit_compare_report,
-                    "gsfit": gsfit_report,
-                    "machine_authority_snapshot": machine_snapshot,
-                    "diagnostic_calibration_snapshot": calibration_snapshot,
-                    "diagnostic_calibration_apply": calibration_apply,
-                    "degraded_notes": list(degraded_notes) if degraded_notes else None,
-                }
-            )
+            _write_manifest(_manifest_payload())
 
             if blocking_errors:
                 raise RuntimeError("Pipeline completed with blocking errors: " + "; ".join(blocking_errors))
@@ -2469,7 +2493,14 @@ class ShotPipeline:
 
         except Exception as e:
             status = "failed"
-            _write_manifest(
+            # Full payload when all locals are bound (the common case: the
+            # deliberate blocking-errors raise after a complete run); fall back
+            # to the always-safe minimal payload for very early failures.
+            try:
+                payload = _manifest_payload()
+            except Exception:
+                payload = {}
+            payload.update(
                 {
                     "cache_dir": str(shot_cache) if shot_cache is not None else None,
                     "download_report": download_report,
@@ -2477,4 +2508,5 @@ class ShotPipeline:
                     "exception": {"type": type(e).__name__, "message": str(e), "traceback": traceback.format_exc()},
                 }
             )
+            _write_manifest(payload)
             raise

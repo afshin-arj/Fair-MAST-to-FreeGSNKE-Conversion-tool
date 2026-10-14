@@ -33,7 +33,6 @@ def _cfg(tmp_path: Path) -> AppConfig:
         execute_freegsnke=True,
         freegsnke_run_mode="both",
         freegsnke_python=None,
-        diagnostics_compare=[],
         diagnostic_contracts_path=None,
         diagnostic_calibration_path=None,
         coil_map_path=None,

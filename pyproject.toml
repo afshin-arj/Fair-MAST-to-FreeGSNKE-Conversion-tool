@@ -7,7 +7,7 @@ name = "mast-freegsnke-pipeline"
 version = "11.35.0"
 description = "Shot-only FAIR-MAST (classic MAST) → FreeGSNKE: static inverse/forward + evolutive forward, authorities, residual metrics"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.12"
 dependencies = [
   "requests>=2.31.0",
   "numpy>=1.23.0",

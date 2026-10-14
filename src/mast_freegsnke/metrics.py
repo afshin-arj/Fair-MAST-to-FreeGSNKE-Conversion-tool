@@ -75,54 +75,6 @@ def compare_timeseries(
     )
 
 
-def run_residual_contracts(run_dir: Path, contracts: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Run residual comparisons defined by deterministic contracts.
-
-    Contract schema (each entry):
-      {
-        "name": "psi_loop_01" (optional),
-        "exp_csv": "inputs/flux_loop_01.csv",
-        "syn_csv": "outputs/flux_loop_01_synth.csv",
-        "time_col": "time",
-        "value_col": "psi"
-      }
-    """
-    results: List[Dict[str, Any]] = []
-    errors: List[Dict[str, Any]] = []
-
-    for c in contracts:
-        try:
-            exp_csv = (run_dir / str(c["exp_csv"]))
-            syn_csv = (run_dir / str(c["syn_csv"]))
-            if not exp_csv.exists() or not syn_csv.exists():
-                raise FileNotFoundError(f"Missing exp/syn CSV: {exp_csv} or {syn_csv}")
-            m = compare_timeseries(
-                exp_csv=exp_csv,
-                syn_csv=syn_csv,
-                time_col=str(c.get("time_col", "time")),
-                value_col=str(c["value_col"]),
-                name=str(c.get("name", c.get("value_col", "trace"))),
-            )
-            results.append(m.__dict__)
-        except Exception as e:
-            errors.append({"contract": c, "error": str(e), "type": type(e).__name__})
-
-    return {
-        "n_contracts": int(len(contracts)),
-        "n_ok": int(len(results)),
-        "n_failed": int(len(errors)),
-        "metrics": results,
-        "errors": errors,
-    }
-
-
-def write_metrics(run_dir: Path, payload: Dict[str, Any]) -> Path:
-    out = run_dir / "reconstruction_metrics.json"
-    out.write_text(json.dumps(payload, indent=2, sort_keys=True))
-    return out
-
-
-
 def compare_from_contracts(run_dir: Path, contracts: List[DiagnosticContract]) -> Dict[str, Any]:
     """
     Compute residual metrics for all contracts, writing residual CSVs and a summary JSON.

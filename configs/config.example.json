@@ -9,7 +9,6 @@
   "evolutive_authority_path": null,
   "diagnostic_contracts_path": null,
   "diagnostic_calibration_path": null,
-  "diagnostics_compare": [],
   "enable_contract_metrics": false,
   "enable_experimental_data": true,
   "experimental_data_plots": true,

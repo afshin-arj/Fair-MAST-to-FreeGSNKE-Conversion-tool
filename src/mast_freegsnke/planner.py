@@ -267,6 +267,23 @@ def residual_compare_class(drive_label: str) -> str:
     return f"other:{lab}"
 
 
+def voltage_limitation_claim(policy_src: Optional[str]) -> str:
+    """Honest voltage-limit limitation text, conditional on the actual limit policy.
+
+    Cited-Vmax policies are fail-closed (over-limit plans raise PlannerError);
+    measured_peak_margin is a declared soft engineering envelope (V overshoot is
+    reported loudly, never raised as a plant rating). The claim must reflect the
+    policy actually in force — not an unconditional promise.
+    """
+    if policy_src == "measured_peak_margin":
+        return (
+            "Voltage box limits: I box is hard; V overshoot vs the measured_peak_margin "
+            "envelope is reported as voltage_exceeds_measured_peak_margin "
+            "(soft engineering headroom, not a plant rating)"
+        )
+    return "Voltage box limits are fail-closed: cited-Vmax over-limit plans raise PlannerError"
+
+
 def load_circuit_dynamics(path: Path) -> CircuitDynamics:
     path = Path(path)
     if not path.exists():
@@ -1762,10 +1779,10 @@ def run_planner_stage(
             },
         },
         "limitations": [
-            "method=gspulse_python v1.5: current-tracking + circuit dynamics QP "
+            f"method=gspulse_python v1.5: current-tracking + circuit dynamics QP "
             f"(solver={planner_auth.qp_solver}) "
-            "+ vacuum-coil Green's isoflux (require={planner_auth.require_isoflux}) "
-            "+ Picard plasma freeze (require={planner_auth.require_picard}) "
+            f"+ vacuum-coil Green's isoflux (require={planner_auth.require_isoflux}) "
+            f"+ Picard plasma freeze (require={planner_auth.require_picard}) "
             "+ optional ψ_bry absolute mean-flux (not upstream GSPulse MATLAB/MEQ)",
             (
                 "picard=true mode=forward_gs_freeze_plasma_offsets — plasma offsets frozen "
@@ -1789,7 +1806,7 @@ def run_planner_stage(
             "voltage_model_gap: polarity_suspect/sign_mismatch is YELLOW — cite voltage_map before flipping",
             "P4/P5 voltage_map sign=-1 (v2.2) restores corr(V,dI/dt)>0; Solenoid early bias ≠ p1 flip",
             "Never invents coil I/V limits — citation required",
-            "Voltage box limits are fail-closed: over-limit plans raise PlannerError",
+            voltage_limitation_claim(policy_src),
             "Ejima ψ_bry requires cited R_p + L_I (never invent / never silent li→L_I)",
             f"circuit_dynamics_mutuals={mutuals_note}",
         ],

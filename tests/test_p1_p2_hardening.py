@@ -72,7 +72,6 @@ def _mk_cfg(tmp_path: Path, **over) -> AppConfig:
         execute_freegsnke=False,
         freegsnke_run_mode="none",
         freegsnke_python=None,
-        diagnostics_compare=[],
         diagnostic_contracts_path=None,
         diagnostic_calibration_path=None,
         coil_map_path=None,

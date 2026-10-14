@@ -38,6 +38,8 @@ cd Fair-MAST-to-FreeGSNKE-Conversion-tool
 chmod +x setup_fresh.sh run_pipeline.sh
 ./setup_fresh.sh
 ./run_pipeline.sh
+# Browser UI (no run_ui.cmd on POSIX):
+.venv/bin/mast-freegsnke ui --config configs/default.json
 ```
 
 Requires **Python 3.11**. Happy path prompts **only** for the shot number.
@@ -63,6 +65,7 @@ SHOT/<N>/
 ├── 02_measured_data/    Level-2 CSV + plots
 ├── 03_reconstruction/   metrics · GIFs · evolutive
 ├── 04_efit_compare/     vs EFIT++ archive
+├── 05_downstream/       optional TORAX GEQDSK export (ADR-001)
 ├── 06_authorities/      snapshotted JSON + hashes
 ├── 07_planner/          optional GSPulse-method planner
 ├── 08_gsfit/            GSFit live peer (often awaiting)
@@ -86,7 +89,7 @@ SHOT/<N>/
 - **Fail fast** — missing authority **blocks**; never invent metrology  
 - **Manifest everything** — every stage outcome is recorded  
 
-Browser UI: `run_ui.cmd` → `http://127.0.0.1:8050`
+Browser UI: Windows `run_ui.cmd`, or `.venv/bin/mast-freegsnke ui --config configs/default.json` on POSIX → `http://127.0.0.1:8050`
 
 ---
 

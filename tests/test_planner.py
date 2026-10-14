@@ -315,6 +315,12 @@ def test_run_planner_stage_with_synthetic_dynamics(tmp_path: Path) -> None:
     assert meta.get("voltage_model_gap_overall") is not None
     resid = pd.read_csv(out / "planning_residual_vs_measured_V.csv")
     assert "gap_status" in resid.columns
+    # Audit fix: limitations must interpolate authority values — never leak raw
+    # f-string field references like "{planner_auth.require_isoflux}".
+    assert isinstance(meta.get("limitations"), list) and meta["limitations"]
+    for lim in meta["limitations"]:
+        assert "planner_auth." not in lim, f"uninterpolated placeholder leaked: {lim}"
+        assert "require={" not in lim, f"uninterpolated placeholder leaked: {lim}"
     ohmic = resid[resid["residual_compare_class"] == "deferred_ohmic_synthetic"]
     assert len(ohmic) >= 1
     assert ohmic["rms_V"].apply(lambda x: np.isfinite(float(x))).all()

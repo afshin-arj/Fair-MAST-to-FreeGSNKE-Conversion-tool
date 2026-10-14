@@ -39,7 +39,7 @@ Download cache reuse (allow_cache_reuse=true in configs/default.json):
 Manual install + CLI:
 
 pip install -e .
-pip install -e ".[zarr]"   # optional, enables extraction
+# Extraction stack (zarr/xarray/s3fs) is a core dependency — no extra needed.
 
 mast-freegsnke doctor --config configs/default.json
 mast-freegsnke check --shot 30201 --config configs/default.json

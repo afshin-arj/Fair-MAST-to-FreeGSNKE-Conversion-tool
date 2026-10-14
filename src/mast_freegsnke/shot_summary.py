@@ -157,8 +157,12 @@ def write_shot_expert_overlay(
         "contracts/voltage_map.sha256.json",
         "06_authorities/contracts/coil_map.resolved.json",
         "contracts/coil_map.resolved.json",
-        "06_authorities/provenance/hashes.json",
-        "provenance/hashes.json",
+        "06_authorities/contracts/coil_map.sha256.json",
+        "contracts/coil_map.sha256.json",
+        "06_authorities/config/config.sha256.json",
+        "config_snapshot/config.sha256.json",
+        "06_authorities/provenance/file_hashes.json",
+        "provenance/file_hashes.json",
         "06_authorities/machine_authority_snapshot/authority_manifest.json",
         "machine_authority_snapshot/authority_manifest.json",
     ]:
@@ -170,6 +174,16 @@ def write_shot_expert_overlay(
     )
     if vm_hash and vm_hash.get("sha256"):
         auth_lines.append(f"- voltage_map sha256: `{vm_hash['sha256'][:16]}…`")
+    cm_hash = _safe_load_json(run_dir / "06_authorities" / "contracts" / "coil_map.sha256.json") or _safe_load_json(
+        run_dir / "contracts" / "coil_map.sha256.json"
+    )
+    if cm_hash and cm_hash.get("sha256"):
+        auth_lines.append(f"- coil_map sha256: `{cm_hash['sha256'][:16]}…`")
+    cfg_hash = _safe_load_json(run_dir / "06_authorities" / "config" / "config.sha256.json") or _safe_load_json(
+        run_dir / "config_snapshot" / "config.sha256.json"
+    )
+    if cfg_hash and cfg_hash.get("sha256"):
+        auth_lines.append(f"- config sha256: `{cfg_hash['sha256'][:16]}…`")
 
     phase_lines: List[str] = []
     if phases.get("available") and isinstance(phases.get("phases"), list):

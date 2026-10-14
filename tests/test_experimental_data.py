@@ -98,6 +98,12 @@ def test_build_experimental_data_creates_pack(tmp_path: Path) -> None:
     # Plots are portable Agg; require at least plasma plot when matplotlib present
     assert (root / "05_plots" / "01_plasma_ip.png").exists()
     assert (root / "05_plots" / "02_pf_currents_circuits.png").exists()
+    # Audit fix: report root and file labels must name the REAL layout path
+    # (02_measured_data), not the legacy experimental_data/ alias.
+    assert rep.root == "02_measured_data"
+    assert rep.files_written, "pack should record what it wrote"
+    for rel in rep.files_written:
+        assert rel.startswith("02_measured_data/"), rel
 
 
 def test_build_experimental_data_missing_inputs(tmp_path: Path) -> None:

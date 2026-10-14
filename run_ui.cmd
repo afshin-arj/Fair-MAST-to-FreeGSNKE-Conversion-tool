@@ -20,6 +20,14 @@ if errorlevel 1 (
   exit /b 1
 )
 
+REM Same guard as run_pipeline.cmd: the supported stack is Python 3.11.
+python -c "import sys; raise SystemExit(0 if sys.version_info[:2]==(3,11) else 1)" >nul 2>nul
+if errorlevel 1 (
+  echo [FAIL] .venv is not Python 3.11. Delete .venv and run setup_fresh.cmd
+  python -V
+  exit /b 1
+)
+
 REM Only reinstall when dash is missing (avoid multi-minute pip on every launch).
 python -c "import dash, dash_bootstrap_components" >nul 2>nul
 if errorlevel 1 (

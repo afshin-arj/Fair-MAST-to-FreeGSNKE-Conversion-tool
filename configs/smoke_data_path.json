@@ -10,7 +10,6 @@
   "execute_freegsnke": false,
   "freegsnke_run_mode": "none",
   "freegsnke_python": null,
-  "diagnostics_compare": [],
   "diagnostic_contracts_path": null,
   "coil_map_path": null,
   "enable_contract_metrics": false,

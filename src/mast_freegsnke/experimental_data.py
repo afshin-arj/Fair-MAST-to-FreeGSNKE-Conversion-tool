@@ -362,7 +362,7 @@ def build_experimental_data(
     include_l3: bool = True,
     plots: bool = True,
 ) -> ExperimentalDataReport:
-    """Build SHOT/<N>/experimental_data from existing extract + authorities.
+    """Build SHOT/<N>/02_measured_data (experimental pack) from existing extract + authorities.
 
     Non-blocking by design: returns ok=False with errors/warnings rather than raising
     for missing optional families. Portable across Windows/POSIX lab machines.
@@ -370,8 +370,9 @@ def build_experimental_data(
     run_dir = Path(run_dir)
     inputs = run_dir / "inputs"
     root = run_dir / "02_measured_data"
-    report = ExperimentalDataReport(root=_rel(run_dir, root) if root.exists() or True else "02_measured_data")
-    report.root = "experimental_data"
+    # Report root is the REAL layout path (02_measured_data); the legacy
+    # experimental_data/ name is only a shot_layout compatibility alias.
+    report = ExperimentalDataReport(root=_rel(run_dir, root))
 
     if not inputs.exists():
         report.ok = False
@@ -382,7 +383,7 @@ def build_experimental_data(
         (root / sub).mkdir(parents=True, exist_ok=True)
 
     _write_readme(root / "00_index" / "README.txt", shot)
-    report.files_written.append("experimental_data/00_index/README.txt")
+    report.files_written.append("02_measured_data/00_index/README.txt")
 
     window = _load_window(inputs)
     catalog: Dict[str, Any] = {
@@ -572,14 +573,14 @@ def build_experimental_data(
             ),
             encoding="utf-8",
         )
-        report.files_written.append("experimental_data/l1/README.txt")
+        report.files_written.append("02_measured_data/l1/README.txt")
     else:
         (l1_dir / "SKIPPED.txt").write_text(
             "experimental_data_include_l1=false\n", encoding="utf-8"
         )
     catalog["families"]["l1"] = l1_status
     _write_json(l1_dir / "STATUS.json", l1_status)
-    report.files_written.append("experimental_data/l1/STATUS.json")
+    report.files_written.append("02_measured_data/l1/STATUS.json")
 
     # --- L3 ---
     l3_dir = root / "l3"
@@ -605,14 +606,14 @@ def build_experimental_data(
             ),
             encoding="utf-8",
         )
-        report.files_written.append("experimental_data/l3/README.txt")
+        report.files_written.append("02_measured_data/l3/README.txt")
     else:
         (l3_dir / "SKIPPED.txt").write_text(
             "experimental_data_include_l3=false\n", encoding="utf-8"
         )
     catalog["families"]["l3"] = l3_status
     _write_json(l3_dir / "STATUS.json", l3_status)
-    report.files_written.append("experimental_data/l3/STATUS.json")
+    report.files_written.append("02_measured_data/l3/STATUS.json")
 
     # --- plots ---
     plots_dir = root / "05_plots"
@@ -776,7 +777,7 @@ def build_experimental_data(
     catalog["warnings"] = list(report.warnings)
     cat_path = root / "00_index" / "catalog.json"
     _write_json(cat_path, catalog)
-    report.files_written.append("experimental_data/00_index/catalog.json")
+    report.files_written.append("02_measured_data/00_index/catalog.json")
     report.catalog = catalog
 
     # Core L2 families expected after a normal extract
@@ -784,5 +785,4 @@ def build_experimental_data(
     if not required_ok:
         report.ok = False
         report.errors.append("core_ip_missing")
-    report.root = "experimental_data"
     return report

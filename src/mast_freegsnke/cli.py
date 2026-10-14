@@ -22,6 +22,7 @@ from .config import AppConfig, run_dir_for_shot
 from .console_io import console_print
 from .contracts_status import contract_metrics_status_line
 from .download import BulkDownloader
+from .exit_codes import EXIT_DEGRADED, run_exit_for_manifest
 from .mastapp import MastAppClient
 from .pipeline import ShotPipeline
 from .probe_geometry import build_geometry_from_machine_dir, write_geometry_templates, smoke_test_geometry
@@ -1209,12 +1210,20 @@ def main(argv=None) -> int:
                     tend=args.tend,
                 )
                 print(f"[OK] Run folder: {run_dir}")
-                # Surface blocking errors as non-zero exit for shot-only automation.
+                # Surface run status as exit codes for shot-only automation:
+                # success -> 0, degraded -> EXIT_DEGRADED (17), failed -> 11.
                 try:
                     man = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
-                    if man.get("status") != "success" or man.get("blocking_errors"):
+                    rc = run_exit_for_manifest(man)
+                    if rc == EXIT_DEGRADED:
+                        print(
+                            f"[DEGRADED] Run completed with status=degraded "
+                            f"degraded_notes={man.get('degraded_notes')}"
+                        )
+                        return rc
+                    if rc != 0:
                         print(f"[FAIL] Run completed with status={man.get('status')} blocking_errors={man.get('blocking_errors')}")
-                        return 11
+                        return rc
                 except Exception as e:
                     print(f"[FAIL] Could not read/validate manifest.json after run: {e}")
                     return 12

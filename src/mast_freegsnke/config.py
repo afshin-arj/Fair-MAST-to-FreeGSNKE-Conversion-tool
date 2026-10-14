@@ -37,10 +37,6 @@ class AppConfig:
     # Optional python interpreter path for FreeGSNKE environment; defaults to current interpreter.
     freegsnke_python: Optional[str]
 
-    # Optional residual comparison configuration.
-    # Each entry is a dict contract that describes how to compare experimental vs synthetic traces.
-    diagnostics_compare: List[Dict[str, Any]]
-
     # Optional: path to diagnostic contracts authority JSON.
     diagnostic_contracts_path: Optional[str]
     # Optional: path to diagnostic calibration authority (mirnov/saddle/omaha).
@@ -121,6 +117,11 @@ class AppConfig:
     # Hard wall-clock limit for each FreeGSNKE script (seconds). None disables.
     # Protects the pipeline from FreeGSNKE's uncapped residual-resize hang.
     freegsnke_script_timeout_s: Optional[float] = 3600.0
+    # Absolute path of the config file this instance was loaded from (None when
+    # constructed programmatically). Lets the pipeline snapshot + hash the
+    # top-level run config into 06_authorities/config/ like every other
+    # declared authority ("declared JSON, snapshotted, hashed").
+    source_path: Optional[str] = None
 
 
     @staticmethod
@@ -191,7 +192,6 @@ class AppConfig:
         freegsnke_run_mode = str(obj.get("freegsnke_run_mode", "none")).lower()
         freegsnke_python = (str(obj["freegsnke_python"]) if obj.get("freegsnke_python") else None)
 
-        diagnostics_compare = list(obj.get("diagnostics_compare", []))
         diagnostic_contracts_path = (str(obj["diagnostic_contracts_path"]) if obj.get("diagnostic_contracts_path") else None)
         diagnostic_calibration_path = (
             str(obj["diagnostic_calibration_path"]) if obj.get("diagnostic_calibration_path") else None
@@ -365,7 +365,6 @@ class AppConfig:
             execute_freegsnke=execute_freegsnke,
             freegsnke_run_mode=freegsnke_run_mode,
             freegsnke_python=freegsnke_python,
-            diagnostics_compare=diagnostics_compare,
             diagnostic_contracts_path=diagnostic_contracts_path,
             diagnostic_calibration_path=diagnostic_calibration_path,
             coil_map_path=coil_map_path,
@@ -409,6 +408,7 @@ class AppConfig:
             execute_gsfit=execute_gsfit,
             gsfit_authority_path=gsfit_authority_path,
             freegsnke_script_timeout_s=freegsnke_script_timeout_s,
+            source_path=str(Path(path).resolve()),
         )
 
 

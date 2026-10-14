@@ -29,7 +29,6 @@
   "execute_evolutive": true,
   "execute_evolutive_from_plan": true,
   "freegsnke_python": ".venv-freegsnke/Scripts/python.exe",
-  "diagnostics_compare": [],
   "diagnostic_contracts_path": "configs/diagnostic_contracts.json",
   "diagnostic_calibration_path": "configs/diagnostic_calibration.json",
   "passive_resistivity_path": "configs/passive_resistivity.json",

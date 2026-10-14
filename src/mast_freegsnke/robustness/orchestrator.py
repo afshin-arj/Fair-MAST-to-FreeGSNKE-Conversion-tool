@@ -16,6 +16,49 @@ from .attribution import sensitivity_attribution, dominant_failure_modes_markdow
 from .plotting import generate_plots
 from ..diagnostic_contracts import load_contracts
 
+# Deterministic worst-first tier ordering (unknown tiers rank below GREEN).
+_TIER_RANK = {"GREEN": 0, "YELLOW": 1, "RED": 2}
+
+
+def write_root_stability_rollup(out_root: Path, per_window_summary: List[Dict[str, Any]]) -> Path:
+    """Write the root-level ``stability_scorecard.json`` rollup for a robustness run.
+
+    Production robustness_run writes stability scorecards per window
+    (``windows/<id>/stability_scorecard.json``), while the v5 corpus schema
+    (``corpus.schema.REQUIRED_ROBUSTNESS_FILES``) and ``corpus.atlas`` read a
+    root-level scorecard. This deterministic rollup aggregates the worst window
+    tier and the maximum relative degradation so corpus-build works on genuine
+    robustness-run output instead of a fabricated file.
+    """
+    rows = sorted(
+        (
+            {
+                "window_id": str(r.get("window_id")),
+                "tier": r.get("tier"),
+                "relative_degradation": r.get("relative_degradation"),
+            }
+            for r in per_window_summary
+        ),
+        key=lambda r: r["window_id"],
+    )
+    tiers = [r["tier"] for r in rows if r["tier"] in _TIER_RANK]
+    rels = [
+        float(r["relative_degradation"])
+        for r in rows
+        if isinstance(r["relative_degradation"], (int, float)) and not isinstance(r["relative_degradation"], bool)
+    ]
+    payload: Dict[str, Any] = {
+        "ok": bool(rows),
+        "method": "worst_window_tier_max_relative_degradation",
+        "tier": max(tiers, key=lambda t: _TIER_RANK[t]) if tiers else None,
+        "relative_degradation": max(rels) if rels else 0.0,
+        "n_windows": len(rows),
+        "windows": rows,
+    }
+    path = out_root / "stability_scorecard.json"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+    return path
+
 def robustness_run(
     run_dir: Path,
     policy: str = "maximin",
@@ -145,6 +188,12 @@ def robustness_run(
     else:
         global_choice = {"ok": False, "error": "no window summaries"}
     (out_root / "global_robust_choice.json").write_text(json.dumps(global_choice, indent=2, sort_keys=True))
+
+    # Root-level stability rollup: corpus.schema / corpus.atlas require
+    # robustness_v4/stability_scorecard.json, but per-window scorecards alone
+    # left corpus-build unable to index genuine robustness-run output.
+    # Deterministic aggregation (worst window tier, max relative degradation).
+    write_root_stability_rollup(out_root, per_window_summary)
 
     # stability summary markdown
     md = ["# Robustness v4 Summary", "", f"- policy: `{policy}`", f"- windows: {len(windows)}", ""]

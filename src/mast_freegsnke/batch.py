@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Callable, List, Optional, Tuple, Union
 
 from .shot_suitability import EXIT_UNSUITABLE, ShotSuitability, format_unsuitable_message
+from .exit_codes import EXIT_DEGRADED
 
 
 def run_shot_batch(
@@ -23,7 +24,11 @@ def run_shot_batch(
     describe: Optional[Callable[[int], str]] = None,
     suitability: Optional[Callable[[int], Union[ShotSuitability, bool]]] = None,
 ) -> int:
-    """Run shots sequentially; return the worst (max) exit code among executed shots.
+    """Run shots sequentially; return the worst exit code among executed shots.
+
+    Hard failures (e.g. 11) outrank degraded runs (``EXIT_DEGRADED``, 17), and
+    degraded runs never trigger ``abort_on_failure`` — they completed, with
+    honesty flags recorded in ``manifest.json``.
 
     When ``suitability`` is provided and a shot is unsuitable, print a
     professional message, skip the pipeline for that shot, and continue to the
@@ -74,7 +79,11 @@ def run_shot_batch(
 
         rc = run_one(shot)
         results.append((shot, rc))
-        if rc != 0:
+        if rc == EXIT_DEGRADED:
+            # Degraded runs completed: pack is usable, honesty flags are in
+            # manifest.json. Not a failure — must not trigger abort_on_failure.
+            print(f"[DEGRADED] Shot {shot} completed with degraded status (exit {rc}) -> {runs_dir / str(shot)}")
+        elif rc != 0:
             print(f"[FAIL] Shot {shot} exited with code {rc}")
             if abort_on_failure:
                 skipped_abort = list(shots[i:])
@@ -88,12 +97,20 @@ def run_shot_batch(
             print(f"[OK] Shot {shot} completed -> {runs_dir / str(shot)}")
 
     executed = [(s, rc) for s, rc in results if rc != EXIT_UNSUITABLE]
-    if executed:
-        worst_rc = max(rc for _, rc in executed)
+    # Hard failures outrank degraded (11 < 17, so a plain max() would wrongly
+    # report a failed batch as merely degraded).
+    hard_rcs = [rc for _, rc in executed if rc not in (0, EXIT_DEGRADED)]
+    if hard_rcs:
+        worst_rc = max(hard_rcs)
+    elif executed:
+        worst_rc = max(rc for _, rc in executed)  # 0, or EXIT_DEGRADED when any degraded
     elif skipped_unsuitable and not executed:
         worst_rc = EXIT_UNSUITABLE
     else:
         worst_rc = 0
+
+    degraded_shots = [shot for shot, rc in results if rc == EXIT_DEGRADED]
+    failed = [shot for shot, rc in results if rc not in (0, EXIT_DEGRADED, EXIT_UNSUITABLE)]
 
     if len(shots) > 1 or skipped_unsuitable:
         print("")
@@ -104,14 +121,21 @@ def run_shot_batch(
             if rc == EXIT_UNSUITABLE:
                 print(f"  [SKIP] shot {shot}  (not suitable for analysis)")
             else:
-                mark = "OK  " if rc == 0 else "FAIL"
+                mark = "OK  " if rc == 0 else ("DEGRADED" if rc == EXIT_DEGRADED else "FAIL")
                 print(f"  [{mark}] shot {shot}  (exit {rc})  -> {runs_dir / str(shot)}")
         for shot in skipped_abort:
             print(f"  [SKIP] shot {shot}  (not run: batch_abort_on_failure)")
-        failed = [shot for shot, rc in results if rc not in (0, EXIT_UNSUITABLE)]
-        if not failed and not skipped_abort and not skipped_unsuitable:
+        if not failed and not degraded_shots and not skipped_abort and not skipped_unsuitable:
             print(f"[OK] All {len(shots)} shots completed successfully.")
-        elif not failed and skipped_unsuitable and executed and all(rc == 0 for _, rc in executed):
+        elif not failed and degraded_shots and not skipped_abort:
+            msg = (
+                f"{len(degraded_shots)}/{len(shots)} shot(s) completed with degraded status: "
+                + ", ".join(str(s) for s in degraded_shots)
+            )
+            if skipped_unsuitable:
+                msg += "; unsuitable: " + ", ".join(str(s) for s in skipped_unsuitable)
+            print("[DEGRADED] " + msg)
+        elif not failed and skipped_unsuitable and executed and all(rc in (0, EXIT_DEGRADED) for _, rc in executed):
             print(
                 f"[OK] {len(executed)} suitable shot(s) completed; "
                 f"{len(skipped_unsuitable)} unsuitable skipped: "
@@ -123,6 +147,10 @@ def run_shot_batch(
                 parts.append(
                     f"{len(failed)}/{len(shots)} shots failed: "
                     + ", ".join(str(s) for s in failed)
+                )
+            if degraded_shots:
+                parts.append(
+                    f"{len(degraded_shots)} degraded: " + ", ".join(str(s) for s in degraded_shots)
                 )
             if skipped_unsuitable:
                 parts.append(

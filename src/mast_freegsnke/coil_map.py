@@ -147,6 +147,24 @@ def write_resolved_coil_map(run_dir: Path, coil_map: CoilMap) -> Path:
     return out_path
 
 
+def snapshot_coil_map_hash(coil_map: CoilMap, run_dir: Path) -> Dict[str, Any]:
+    """Write resolved map + SHA-256 of the resolved JSON into contracts/.
+
+    Mirrors voltage_map.snapshot_voltage_map_hash: the binding PF mapping
+    authority is hashed at snapshot time (the root authority co-pilot), not
+    only later via end-of-run provenance.
+    """
+    import hashlib
+
+    path = write_resolved_coil_map(run_dir, coil_map)
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    meta: Dict[str, Any] = {"path": str(path.relative_to(run_dir)).replace("\\", "/"), "sha256": digest}
+    (Path(run_dir) / "contracts" / "coil_map.sha256.json").write_text(
+        json.dumps(meta, indent=2) + "\n", encoding="utf-8"
+    )
+    return meta
+
+
 def apply_coil_map(
     raw_csv: Path,
     out_csv: Path,
